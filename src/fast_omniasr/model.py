@@ -40,3 +40,45 @@ class OmniASR:
 
     def transcribe_numpy(self, waveform: np.ndarray, sample_rate: int = 16000) -> Transcription:
         return self._transcribe(prepare_audio(waveform, sample_rate))
+
+    @classmethod
+    def from_pretrained(cls, repo_id: str, *, backend: str = "onnx", revision: str | None = None,
+                         cache_dir: str | Path | None = None, device: str = "cpu", threads: int = 4):
+        """Download and verify model/tokenizer assets from a Hugging Face Hub repo.
+
+        The repo must publish `model.onnx`, `tokenizer.model` and a `config.json`
+        with a `files` map of expected sha256 checksums (see
+        EmreAkgul/omniASR-CTC-300M-v2-ONNX for the reference layout).
+        """
+        if backend != "onnx":
+            raise ValueError("from_pretrained currently supports backend='onnx' only")
+        try:
+            from huggingface_hub import hf_hub_download
+        except ImportError as exc:
+            raise ImportError("Install fast-omniasr[hub] for huggingface_hub") from exc
+        import hashlib
+        import json
+
+        def fetch(filename: str) -> Path:
+            return Path(hf_hub_download(repo_id, filename, revision=revision, cache_dir=cache_dir))
+
+        def fetch_and_verify(filename: str, config: dict) -> Path:
+            path = fetch(filename)
+            expected = config.get("files", {}).get(filename, {}).get("sha256")
+            if not expected:
+                raise ValueError(f"config.json is missing a files.{filename}.sha256 entry")
+            digest = hashlib.sha256()
+            with path.open("rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != expected:
+                raise RuntimeError(
+                    f"{filename} checksum mismatch: downloaded asset does not match {repo_id}/config.json"
+                )
+            return path
+
+        config = json.loads(fetch("config.json").read_text())
+        # Smallest file first so a corrupted asset is caught before the much larger model download.
+        tokenizer_path = fetch_and_verify("tokenizer.model", config)
+        model_path = fetch_and_verify("model.onnx", config)
+        return cls(model_path, tokenizer_path, backend=backend, device=device, threads=threads)

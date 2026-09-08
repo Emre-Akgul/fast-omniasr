@@ -15,6 +15,7 @@ dependencies = ["numpy>=1.24", "soundfile>=0.12", "sentencepiece>=0.2"]
 onnx = ["onnxruntime>=1.23,<2"]
 cuda = ["onnxruntime-gpu>=1.23,<2"]
 tensorrt = ["cuda-python>=12"]
+hub = ["huggingface_hub>=0.20"]
 dev = ["pytest>=8", "ruff>=0.9"]
 
 [tool.setuptools.packages.find]

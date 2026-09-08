@@ -23,7 +23,7 @@ The same clip measured by the original exploration harness (H2D + inference + D2
 ## Installation
 
 ```bash
-python -m pip install -e ".[onnx]"      # ONNX Runtime CPU
+python -m pip install -e ".[onnx,hub]"  # ONNX Runtime CPU + from_pretrained()
 python -m pip install -e ".[cuda]"      # ONNX Runtime GPU (device="cuda")
 python -m pip install -e ".[tensorrt]"  # cuda-python; also requires a separate TensorRT install
 ```
@@ -35,14 +35,20 @@ Automatic CPU fallback is disabled — the requested provider/backend must actua
 ```python
 from fast_omniasr import OmniASR
 
-model = OmniASR("dynamic.onnx", "omniASR_tokenizer_written_v2.model")
+model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="onnx")
 print(model.transcribe("speech.wav").text)
-
-# or from a NumPy waveform
-result = model.transcribe_numpy(waveform, sample_rate=16000)
 ```
 
-Audio must be mono, 16 kHz, at least 400 samples. Assets (model + tokenizer) are supplied locally, never downloaded automatically.
+`from_pretrained` downloads `model.onnx`/`tokenizer.model` via `huggingface_hub` (requires the `hub` extra), verifies each against the sha256 in the repo's `config.json`, and caches them locally — later calls (even fully offline, e.g. `HF_HUB_OFFLINE=1`) reuse the cache. Only `backend="onnx"` is supported here for now.
+
+Or supply local assets directly (no download, no `hub` extra needed):
+
+```python
+model = OmniASR("dynamic.onnx", "omniASR_tokenizer_written_v2.model")
+result = model.transcribe_numpy(waveform, sample_rate=16000)  # or from a NumPy waveform
+```
+
+Audio must be mono, 16 kHz, at least 400 samples.
 
 <details>
 <summary>TensorRT backend</summary>
@@ -85,8 +91,8 @@ python -m ruff check .
 python -m pytest tests/unit
 ```
 
-Integration tests need real assets via env vars and skip otherwise: `OMNIASR_ONNX`/`OMNIASR_TOKENIZER`/`OMNIASR_TEST_WAV` for ONNX, `OMNIASR_TRT_FP32_ENGINE` (+ same tokenizer/WAV) and `OMNIASR_TRT_FP16_ENGINE`/`OMNIASR_TRT_FP16_TEST_WAV` for TensorRT.
+Integration tests need real assets via env vars and skip otherwise: `OMNIASR_ONNX`/`OMNIASR_TOKENIZER`/`OMNIASR_TEST_WAV` for ONNX, `OMNIASR_TRT_FP32_ENGINE` (+ same tokenizer/WAV) and `OMNIASR_TRT_FP16_ENGINE`/`OMNIASR_TRT_FP16_TEST_WAV` for TensorRT. `tests/integration/test_hub.py` needs only `OMNIASR_TEST_WAV` but hits the real Hub repo over the network.
 
 ## License
 
-Project code is [MIT](LICENSE). Upstream models, tokenizers and third-party software retain their own licenses and are not bundled. Independent project, not affiliated with Meta or NVIDIA.
+Project code is [MIT](LICENSE) and does not bundle any model weights. The converted `omniASR_CTC_300M_v2` ONNX/tokenizer assets are published separately at [EmreAkgul/omniASR-CTC-300M-v2-ONNX](https://huggingface.co/EmreAkgul/omniASR-CTC-300M-v2-ONNX) under Apache-2.0, per the upstream [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) license (format conversion only, no retraining). Not affiliated with or endorsed by Meta or NVIDIA.
