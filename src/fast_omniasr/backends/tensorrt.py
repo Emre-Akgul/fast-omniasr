@@ -17,6 +17,7 @@ class TensorRTBackend:
         except ImportError as exc:
             raise ImportError("Install fast-omniasr[tensorrt] for the cuda-python dependency") from exc
         self._cudart = cudart
+        self.closed = False  # set early so close()/__del__ can clean up a partial init
         logger = trt.Logger(trt.Logger.WARNING)
         runtime = trt.Runtime(logger)
         engine = runtime.deserialize_cuda_engine(Path(path).read_bytes())
@@ -44,6 +45,35 @@ class TensorRTBackend:
         if not self.context.set_tensor_address("logits", self.output_ptr):
             raise RuntimeError("Failed to bind the logits tensor address")
 
+    def close(self) -> None:
+        """Free the CUDA stream and device buffers. Safe to call more than once, and
+        safe on a partially-constructed instance (e.g. if __init__ raised partway through)."""
+        if getattr(self, "closed", True):
+            return
+        self.closed = True
+        cudart = self._cudart
+        input_ptr = getattr(self, "input_ptr", None)
+        if input_ptr is not None:
+            cudart.cudaFree(input_ptr)
+        output_ptr = getattr(self, "output_ptr", None)
+        if output_ptr is not None:
+            cudart.cudaFree(output_ptr)
+        stream = getattr(self, "stream", None)
+        if stream is not None:
+            cudart.cudaStreamDestroy(stream)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:  # noqa: S110, BLE001 -- best effort; cuda module may be torn down at shutdown
+            pass
+
     def _check(self, result):
         error, *values = result
         if int(error) != 0:
@@ -53,6 +83,8 @@ class TensorRTBackend:
         return values[0] if len(values) == 1 else values
 
     def infer(self, waveform: np.ndarray) -> np.ndarray:
+        if self.closed:
+            raise RuntimeError("TensorRTBackend is closed")
         cudart = self._cudart
         waveform = np.asarray(waveform)
         if waveform.dtype != np.float32 or waveform.ndim != 2 or waveform.shape[0] != 1:

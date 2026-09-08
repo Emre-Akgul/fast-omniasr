@@ -18,6 +18,16 @@ def test_missing_huggingface_hub_raises_helpful_import_error(monkeypatch):
         OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX")
 
 
-def test_non_onnx_backend_rejected_before_any_download():
-    with pytest.raises(ValueError, match="backend='onnx' only"):
+def test_tensorrt_backend_requires_explicit_precision_before_any_download():
+    with pytest.raises(ValueError, match="precision='fp32' or precision='fp16'"):
         OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="tensorrt")
+
+
+def test_unknown_backend_rejected_before_any_download():
+    with pytest.raises(ValueError, match="backend must be 'onnx' or 'tensorrt'"):
+        OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="bogus")
+
+
+def test_precision_rejected_for_onnx_backend():
+    with pytest.raises(ValueError, match="precision is only used with backend='tensorrt'"):
+        OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="onnx", precision="fp16")

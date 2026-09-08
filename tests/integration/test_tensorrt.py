@@ -87,3 +87,33 @@ def test_fp16_known_experimental_transcript(fp16_assets):
         "  t   consen o mcnc   penulm   at w  k  lit it  mt c   m  o ng     "
         "iceae  tl n o    l  il t fal  w  convt"
     )
+
+
+def test_close_is_idempotent_and_blocks_further_use(assets):
+    from fast_omniasr import OmniASR
+    model = OmniASR(assets[0], assets[1], backend="tensorrt")
+    model.close()
+    model.close()  # must not double-free or raise
+    with pytest.raises(RuntimeError, match="closed"):
+        model.transcribe(assets[2])
+
+
+def test_context_manager_closes_on_exit(assets):
+    from fast_omniasr import OmniASR
+    with OmniASR(assets[0], assets[1], backend="tensorrt") as model:
+        model.transcribe(assets[2])
+    assert model.backend.closed
+
+
+def test_repeated_construct_and_close_does_not_leak_gpu_memory(assets):
+    """Regression test: constructing/destroying many models in a long-running process must
+    not exhaust GPU memory, since each engine alone can be gigabytes of device memory."""
+    import gc
+
+    from fast_omniasr import OmniASR
+    for _ in range(5):
+        with OmniASR(assets[0], assets[1], backend="tensorrt") as model:
+            result = model.transcribe(assets[2])
+            assert result.logits_shape == (1, 249, 10288)
+        del model
+        gc.collect()

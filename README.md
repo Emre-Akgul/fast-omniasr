@@ -39,7 +39,15 @@ model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="o
 print(model.transcribe("speech.wav").text)
 ```
 
-`from_pretrained` downloads `model.onnx`/`tokenizer.model` via `huggingface_hub` (requires the `hub` extra), verifies each against the sha256 in the repo's `config.json`, and caches them locally — later calls (even fully offline, e.g. `HF_HUB_OFFLINE=1`) reuse the cache. Only `backend="onnx"` is supported here for now.
+`from_pretrained` downloads `model.onnx`/`tokenizer.model` via `huggingface_hub` (requires the `hub` extra), verifies each against the sha256 in the repo's `config.json`, and caches them locally — later calls (even fully offline, e.g. `HF_HUB_OFFLINE=1`) reuse the cache.
+
+For the fast path with no manual export or `build_tensorrt.py` call, pass `backend="tensorrt"` and an explicit `precision` (no "auto" — see [Performance and accuracy](#performance-and-accuracy) before choosing `"fp16"`):
+
+```python
+model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="tensorrt", precision="fp16")
+```
+
+The first call downloads the ONNX asset, builds a local engine (this takes a while — TensorRT engine builds are not fast), and caches it under `~/.cache/fast-omniasr/tensorrt/<key>/model.engine`, keyed by the ONNX content hash, precision, profile, and local TensorRT version/GPU identity (engines aren't portable across any of those). Later calls with the same key reuse the cached engine instead of rebuilding; if any of those fields change, a new engine is built rather than reusing an incompatible one. `precision="fp16"` warns once per process about the accuracy caveat.
 
 Or supply local assets directly (no download, no `hub` extra needed):
 
@@ -71,7 +79,7 @@ python build_tensorrt.py artifacts/dynamic.onnx --output artifacts/omniasr_fp32.
 python build_tensorrt.py artifacts/dynamic.onnx --precision fp16 --output artifacts/omniasr_fp16.engine
 ```
 
-Tested with PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, and TensorRT 10.16.1.11 (CUDA 12). Obtain `omniASR_tokenizer_written_v2.model` from the official assets separately. The TensorRT profile is batch one, 16,000/80,000/480,000 MIN/OPT/MAX samples, TF32 disabled; engines are built for the local hardware/software stack and portability is not validated.
+Tested with PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, and TensorRT 10.16.1.11 (CUDA 12). Obtain `omniASR_tokenizer_written_v2.model` from the official assets separately. The TensorRT profile is batch one, 16,000/80,000/480,000 MIN/OPT/MAX samples, TF32 disabled; engines are built for the local hardware/software stack and portability is not validated. `build_tensorrt.py` and `OmniASR.from_pretrained(..., backend="tensorrt")` call the same underlying `fast_omniasr.tensorrt_builder.build_engine`, so there's one build recipe, not two.
 
 ONNX FP32 is the verified runtime; TensorRT FP32 and FP16 are explicit, separate experimental backends (not fallback-interchangeable). Mixed-precision TensorRT engines are ongoing stabilization work, not wired into `build_tensorrt.py` or the runtime yet.
 </details>
