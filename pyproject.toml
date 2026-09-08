@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fast-omniasr"
+version = "0.1.0"
+description = "Standalone OmniASR inference with reproducible runtime comparisons"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "soundfile>=0.12", "sentencepiece>=0.2"]
+
+[project.optional-dependencies]
+onnx = ["onnxruntime>=1.23,<2"]
+cuda = ["onnxruntime-gpu>=1.23,<2"]
+dev = ["pytest>=8", "ruff>=0.9"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requires exported model assets", "cuda: requires GPU access", "slow: expensive model inference"]
+
+[tool.ruff]
+line-length = 100
