@@ -1,79 +1,92 @@
 # fast-omniasr
 
-A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr), currently supporting exported `omniASR_CTC_300M_v2` CTC models with ONNX Runtime, without importing PyTorch, fairseq2 or Transformers. TensorRT engine building is available as an experimental conversion tool; the Python inference API currently supports ONNX only.
+A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr). Runs exported `omniASR_CTC_300M_v2` models on ONNX Runtime or TensorRT — no PyTorch, fairseq2 or Transformers on the inference path.
 
-| Backend | 30 s latency | Sampled process VRAM | Exact transcripts vs fairseq2 FP32 |
-|---|---:|---:|---:|
-| fairseq2 FP16 | 137.6 ms | 1,822 MiB | 39/40 |
-| TensorRT FP16 enabled | **79.8 ms** | **1,380 MiB** | 34/40 |
-| TensorRT FP32 | 403.5 ms | 2,096 MiB | 40/40 |
+## Benchmark
 
-Measured on an RTX 3060 Laptop GPU. **TensorRT FP16 is experimental and is not recognition-equivalent to FP32.** Latency is warmed inference on one continuous 30-second clip; transcript counts come from a separate 40-clip English/Turkish FLEURS sample. These are not public ONNX API timings. See [performance and accuracy](#performance-and-accuracy) for measurement scope and limitations.
+30-second clip, RTX 3060 Laptop GPU, through the public `OmniASR` API (`benchmarks/benchmark.py`, warm median of 10 runs, includes file load, normalization, inference and decoding):
+
+| Backend | Latency | Exact transcripts vs FP32 (40-clip FLEURS sample) |
+|---|---:|---:|
+| ONNX Runtime CUDA (FP32) | 358 ms | reference |
+| TensorRT FP32 | 374 ms | 40/40 |
+| TensorRT FP16 | **76 ms** | 34/40 |
+
+**TensorRT FP16 is experimental and not recognition-equivalent to FP32.** See [Performance and accuracy](#performance-and-accuracy) for WER, tolerance and sample-size caveats.
+
+<details>
+<summary>Forward-only research harness numbers</summary>
+
+The same clip measured by the original exploration harness (H2D + inference + D2H only, no file load/decode, so not directly comparable to the table above): fairseq2 FP16 137.6 ms / 1,822 MiB, TensorRT FP16 79.8 ms / 1,380 MiB, TensorRT FP32 403.5 ms / 2,096 MiB. The harness's FP16 figure and the public API's closely agree (79.8 vs. 76.4 ms), which is what justifies quoting the public number as the headline.
+</details>
 
 ## Installation
 
 ```bash
-python -m pip install -e ".[onnx]"
+python -m pip install -e ".[onnx]"      # ONNX Runtime CPU
+python -m pip install -e ".[cuda]"      # ONNX Runtime GPU (device="cuda")
+python -m pip install -e ".[tensorrt]"  # cuda-python; also requires a separate TensorRT install
 ```
 
-For CUDA, install the `cuda` extra instead of `onnx`, provide compatible CUDA/cuDNN libraries, and use `device="cuda"`. Automatic CPU fallback is disabled.
+Automatic CPU fallback is disabled — the requested provider/backend must actually initialize.
 
 ## Usage
-
-Supply a local exported ONNX model and its matching original SentencePiece tokenizer. Assets are not downloaded automatically by the runtime.
 
 ```python
 from fast_omniasr import OmniASR
 
 model = OmniASR("dynamic.onnx", "omniASR_tokenizer_written_v2.model")
 print(model.transcribe("speech.wav").text)
+
+# or from a NumPy waveform
+result = model.transcribe_numpy(waveform, sample_rate=16000)
 ```
 
-For an existing NumPy waveform:
+Audio must be mono, 16 kHz, at least 400 samples. Assets (model + tokenizer) are supplied locally, never downloaded automatically.
+
+<details>
+<summary>TensorRT backend</summary>
 
 ```python
-result = model.transcribe_numpy(waveform, sample_rate=16000)
-print(result.text)
+model = OmniASR("omniasr_fp16.engine", "omniASR_tokenizer_written_v2.model", backend="tensorrt")
 ```
 
-Audio must be mono, 16 kHz, with at least 400 samples. The runtime applies whole-waveform normalization and greedy CTC decoding. Resampling, padded batching and language conditioning are not supported. Keep any ONNX external weight files alongside the model.
+`backend` defaults to `"onnx"` and is never inferred from the file extension. The TensorRT backend binds reusable device buffers sized to the engine's profile maximum and runs inference with `set_tensor_address` + `execute_async_v3` on its own CUDA stream via `cuda-python` — buffers are allocated once and reused across calls; a length outside the engine's `[min, max]` profile raises `ValueError` before touching the GPU. `device`/`threads` are accepted but unused for this backend.
+</details>
 
 ## Export and engine building
 
-Conversion uses a separate environment with PyTorch, matching fairseq2/fairseq2n, omnilingual-asr and ONNX. The tested export stack was PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0 and ONNX 1.17.0. These are not runtime dependencies.
+<details>
+<summary>Requires a separate environment with PyTorch, fairseq2 and omnilingual-asr (not runtime dependencies)</summary>
 
 ```bash
 python export_onnx.py --output artifacts/dynamic.onnx
-```
-
-The exporter loads the official model card and may download weights into fairseq2's cache. Obtain the matching `omniASR_tokenizer_written_v2.model` from the official assets separately.
-
-TensorRT building requires a compatible TensorRT installation (tested with CUDA-12 TensorRT 10.16.1.11):
-
-```bash
 python build_tensorrt.py artifacts/dynamic.onnx --output artifacts/omniasr_fp32.engine
 python build_tensorrt.py artifacts/dynamic.onnx --precision fp16 --output artifacts/omniasr_fp16.engine
 ```
 
-The engine profile is batch one with MIN/OPT/MAX sample counts of 16,000/80,000/480,000. TF32 is disabled. FP16 must be explicitly requested. Engines are generated for the local hardware/software stack; portability is not validated.
+Tested with PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, and TensorRT 10.16.1.11 (CUDA 12). Obtain `omniASR_tokenizer_written_v2.model` from the official assets separately. The TensorRT profile is batch one, 16,000/80,000/480,000 MIN/OPT/MAX samples, TF32 disabled; engines are built for the local hardware/software stack and portability is not validated.
+
+ONNX FP32 is the verified runtime; TensorRT FP32 and FP16 are explicit, separate experimental backends (not fallback-interchangeable). Mixed-precision TensorRT engines are ongoing stabilization work, not wired into `build_tensorrt.py` or the runtime yet.
+</details>
 
 ## Performance and accuracy
 
-Exploratory measurements on an RTX 3060 Laptop GPU processed a continuous 30-second clip in **79.8 ms with TensorRT FP16 enabled**, versus **137.6 ms with fairseq2 FP16**. Sampled TensorRT process VRAM was **1,380 MiB**. Those September 8, 2026 measurements include transfers and inference, but exclude audio preprocessing and decoding; they are not timings of the public ONNX API.
-
-FP16 is experimental: TensorRT preserved **34/40** transcripts on a small English/Turkish FLEURS sample. Aggregate WER matched FP32 at 22.82%, but offsetting language-level errors hid recognition changes. TensorRT FP32 preserved all 40 transcripts; three clips failed tight logit tolerance. These findings do not establish production recognition parity. The original experiment workspace retains the detailed evidence; it is not bundled in this repository.
+TensorRT FP16 preserved **34/40** transcripts against FP32 on a small English/Turkish FLEURS sample; aggregate WER matched FP32 at 22.82% only because offsetting language-level errors hid the recognition changes. TensorRT FP32 preserved all 40 transcripts, though 3 clips failed a tight logit tolerance. None of this establishes production recognition parity, and 40 clips is too small a sample for general claims. The original experiment workspace holds the detailed evidence; it isn't bundled here.
 
 ## Benchmark and tests
 
 ```bash
-python benchmarks/benchmark.py speech.wav --model dynamic.onnx --tokenizer omniASR_tokenizer_written_v2.model
+python benchmarks/benchmark.py speech.wav --model dynamic.onnx --tokenizer tokenizer.model
+python benchmarks/benchmark.py speech.wav --model omniasr_fp16.engine --tokenizer tokenizer.model --backend tensorrt
+
 python -m pip install -e ".[dev]"
 python -m ruff check .
 python -m pytest tests/unit
 ```
 
-The benchmark measures end-to-end ONNX transcription, including file loading and decoding. Integration tests require `OMNIASR_ONNX`, `OMNIASR_TOKENIZER`, and `OMNIASR_TEST_WAV` pointing to the original five-second English `eng_cont_5s.wav` fixture. Without those assets they skip.
+Integration tests need real assets via env vars and skip otherwise: `OMNIASR_ONNX`/`OMNIASR_TOKENIZER`/`OMNIASR_TEST_WAV` for ONNX, `OMNIASR_TRT_FP32_ENGINE` (+ same tokenizer/WAV) and `OMNIASR_TRT_FP16_ENGINE`/`OMNIASR_TRT_FP16_TEST_WAV` for TensorRT.
 
 ## License
 
-Project code is licensed under [MIT](LICENSE). Upstream models, tokenizers and third-party software retain their own licenses and are not bundled. This is an independent project, not affiliated with Meta or NVIDIA.
+Project code is [MIT](LICENSE). Upstream models, tokenizers and third-party software retain their own licenses and are not bundled. Independent project, not affiliated with Meta or NVIDIA.
