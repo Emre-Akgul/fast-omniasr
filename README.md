@@ -23,12 +23,12 @@ The same clip measured by the original exploration harness (H2D + inference + D2
 ## Installation
 
 ```bash
-python -m pip install -e ".[onnx,hub]"  # ONNX Runtime CPU + from_pretrained()
-python -m pip install -e ".[cuda]"      # ONNX Runtime GPU (device="cuda")
-python -m pip install -e ".[tensorrt]"  # cuda-python; also requires a separate TensorRT install
+python -m pip install "fast-omniasr[onnx,hub]"  # ONNX Runtime CPU + from_pretrained()
+python -m pip install "fast-omniasr[cuda]"      # ONNX Runtime GPU (device="cuda")
+python -m pip install "fast-omniasr[tensorrt]"  # cuda-python; also requires a separate TensorRT install
 ```
 
-Automatic CPU fallback is disabled — the requested provider/backend must actually initialize.
+Automatic CPU fallback is disabled — the requested provider/backend must actually initialize. For a source checkout instead (e.g. to work on the library itself), use `pip install -e ".[onnx,hub]"` from the repo root.
 
 ## Usage
 
