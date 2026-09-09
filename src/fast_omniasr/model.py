@@ -62,7 +62,8 @@ class OmniASR:
         """Download and verify model/tokenizer assets from a Hugging Face Hub repo.
 
         The repo must publish `model.onnx`, `tokenizer.model` and a `config.json`
-        with a `files` map of expected sha256 checksums (see
+        with a `files` map of expected sha256 checksums. Any ONNX external-data
+        files must also be listed in that map (see
         EmreAkgul/omniASR-CTC-300M-v2-ONNX for the reference layout).
 
         `backend="tensorrt"` requires an explicit `precision` ("fp32" or "fp16" — there is
@@ -103,9 +104,26 @@ class OmniASR:
             return path
 
         config = json.loads(fetch("config.json").read_text())
-        # Smallest file first so a corrupted asset is caught before the much larger model download.
-        tokenizer_path = fetch_and_verify("tokenizer.model", config)
-        model_path = fetch_and_verify("model.onnx", config)
+        files = config.get("files")
+        if not isinstance(files, dict):
+            raise TypeError("config.json is missing a files map")
+        required = {"model.onnx", "tokenizer.model"}
+        if not required.issubset(files):
+            missing = ", ".join(sorted(required - files.keys()))
+            raise ValueError(f"config.json is missing required file entries: {missing}")
+        for filename in files:
+            if not isinstance(files[filename], dict):
+                raise TypeError(f"config.json has an invalid entry for {filename}")
+            path = Path(filename)
+            if path.is_absolute() or ".." in path.parts:
+                raise ValueError(f"config.json contains an unsafe filename: {filename}")
+
+        # Smallest file first so corruption is caught before larger downloads when possible.
+        verified = {}
+        for filename in sorted(files, key=lambda name: files[name].get("size", 0)):
+            verified[filename] = fetch_and_verify(filename, config)
+        tokenizer_path = verified["tokenizer.model"]
+        model_path = verified["model.onnx"]
         if backend == "onnx":
             return cls(model_path, tokenizer_path, backend="onnx", device=device, threads=threads)
 

@@ -1,6 +1,6 @@
 # fast-omniasr
 
-A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr). Runs exported `omniASR_CTC_300M_v2` models on ONNX Runtime or TensorRT — no PyTorch, fairseq2 or Transformers on the inference path.
+A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr). Runs all eight released CTC models (`300M`, `1B`, `3B`, and `7B`, both original and v2) on ONNX Runtime or TensorRT — no PyTorch, fairseq2 or Transformers on the inference path.
 
 ## Benchmark
 
@@ -74,12 +74,55 @@ model = OmniASR("omniasr_fp16.engine", "omniASR_tokenizer_written_v2.model", bac
 <summary>Requires a separate environment with PyTorch, fairseq2 and omnilingual-asr (not runtime dependencies)</summary>
 
 ```bash
-python export_onnx.py --output artifacts/dynamic.onnx
-python build_tensorrt.py artifacts/dynamic.onnx --output artifacts/omniasr_fp32.engine
-python build_tensorrt.py artifacts/dynamic.onnx --precision fp16 --output artifacts/omniasr_fp16.engine
+# Export fine-tuned weights using their matching base architecture.
+python export_onnx.py \
+  --model omniASR_CTC_1B_v2 \
+  --checkpoint checkpoints/step_100/model \
+  --output artifacts/finetuned/model.onnx
+
+python build_tensorrt.py artifacts/finetuned/model.onnx --output artifacts/omniasr_fp32.engine
+python build_tensorrt.py artifacts/finetuned/model.onnx --precision fp16 --output artifacts/omniasr_fp16.engine
 ```
 
-Tested with PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, and TensorRT 10.16.1.11 (CUDA 12). Obtain `omniASR_tokenizer_written_v2.model` from the official assets separately. The TensorRT profile is batch one, 16,000/80,000/480,000 MIN/OPT/MAX samples, TF32 disabled; engines are built for the local hardware/software stack and portability is not validated. `build_tensorrt.py` and `OmniASR.from_pretrained(..., backend="tensorrt")` call the same underlying `fast_omniasr.tensorrt_builder.build_engine`, so there's one build recipe, not two.
+`--checkpoint` accepts a fairseq2-compatible custom model checkpoint file or the `model` directory within a native sharded fairseq2 step checkpoint. Incompatible checkpoint formats raise a fairseq2 model-checkpoint error. `--model` selects the base architecture and must match the fine-tuned weights. The checkpoint does not reliably carry enough architecture metadata to infer this safely.
+
+Fine-tuned checkpoints are assumed to retain the base model's original tokenizer and token-ID mapping. The exporter infers and downloads that tokenizer from the model generation (`omniASR_CTC_*` uses v1; `omniASR_CTC_*_v2` uses written-v2), checks its vocabulary size against the CTC output as a compatibility sanity check, and saves it beside the graph as `tokenizer.model`. Equal vocabulary sizes do not establish tokenizer identity.
+
+Fine-tuned export supports checkpoints whose architecture, CTC head, and vocabulary remain compatible with one of the eight supported OmniASR CTC model cards. Custom architectures, modified CTC heads or vocabularies, adapter-only checkpoints, LLM variants, and arbitrary Hugging Face model directories are not supported. Merge adapters into a full compatible checkpoint before exporting.
+
+| Model/checkpoint | Support |
+|---|---|
+| Official 300M/1B/3B/7B, original and v2 | `from_pretrained()` |
+| Compatible fine-tuned custom checkpoint file | `export_onnx.py --checkpoint` |
+| Compatible native fairseq2 sharded model checkpoint | `export_onnx.py --checkpoint` |
+| Modified architecture, CTC head, or vocabulary | Not supported |
+| Adapter-only, LLM/seq2seq, or arbitrary HF model | Not supported |
+
+Official exports remain available for reproducibility by omitting `--checkpoint`:
+
+```bash
+python export_onnx.py --model omniASR_CTC_300M_v2 --output artifacts/official/model.onnx
+```
+
+Supported base models are `omniASR_CTC_{300M,1B,3B,7B}` and `omniASR_CTC_{300M,1B,3B,7B}_v2`. Large ONNX exports may place tensor data in companion files; keep the entire output directory together when loading, publishing, or building an engine.
+
+The custom-checkpoint path was integration-tested with [Peacockery/omni-ctc-300m-tajik](https://huggingface.co/Peacockery/omni-ctc-300m-tajik), loaded with the compatible `omniASR_CTC_300M_v2` configuration because its CTC head and tokenizer contain 10,288 entries. On a real speech clip, fairseq2 and ONNX Runtime produced the same frame count, greedy token IDs, and transcript; FP32 logits matched with `rtol=1e-4, atol=1e-3` (maximum absolute difference `0.000612`).
+
+### Maintainer: publishing converted models
+
+The runtime does not publish models. Maintainers can create a checksummed Hub bundle and publish it under the standard repository name with the repository tooling:
+
+```bash
+python tools/publish_hub.py \
+  --model omniASR_CTC_1B_v2 \
+  --onnx artifacts/1b-v2/model.onnx \
+  --tokenizer omniASR_tokenizer_written_v2.model \
+  --upload
+```
+
+Without `--upload`, this prepares and validates the bundle as a dry run. The publisher discovers ONNX external-data files, includes their sizes and SHA-256 digests in `config.json`, and uploads every required asset. `OmniASR.from_pretrained()` downloads and verifies all files declared by this manifest, so the same API works for large models once their repositories are published.
+
+Tested with PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, and TensorRT 10.16.1.11 (CUDA 12). The TensorRT profile is batch one, 16,000/80,000/480,000 MIN/OPT/MAX samples, TF32 disabled; engines are built for the local hardware/software stack and portability is not validated. `build_tensorrt.py` and `OmniASR.from_pretrained(..., backend="tensorrt")` call the same underlying `fast_omniasr.tensorrt_builder.build_engine`, so there's one build recipe, not two.
 
 ONNX FP32 is the verified runtime; TensorRT FP32 and FP16 are explicit, separate experimental backends (not fallback-interchangeable). Mixed-precision TensorRT engines are ongoing stabilization work, not wired into `build_tensorrt.py` or the runtime yet.
 </details>
@@ -103,4 +146,4 @@ Integration tests need real assets via env vars and skip otherwise: `OMNIASR_ONN
 
 ## License
 
-Project code is [MIT](LICENSE) and does not bundle any model weights. The converted `omniASR_CTC_300M_v2` ONNX/tokenizer assets are published separately at [EmreAkgul/omniASR-CTC-300M-v2-ONNX](https://huggingface.co/EmreAkgul/omniASR-CTC-300M-v2-ONNX) under Apache-2.0, per the upstream [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) license (format conversion only, no retraining). Not affiliated with or endorsed by Meta or NVIDIA.
+Project code is [MIT](LICENSE) and does not bundle any model weights. Converted ONNX/tokenizer assets are published separately under Apache-2.0 for [300M](https://huggingface.co/EmreAkgul/omniASR-CTC-300M-ONNX), [300M v2](https://huggingface.co/EmreAkgul/omniASR-CTC-300M-v2-ONNX), [1B](https://huggingface.co/EmreAkgul/omniASR-CTC-1B-ONNX), [1B v2](https://huggingface.co/EmreAkgul/omniASR-CTC-1B-v2-ONNX), [3B](https://huggingface.co/EmreAkgul/omniASR-CTC-3B-ONNX), [3B v2](https://huggingface.co/EmreAkgul/omniASR-CTC-3B-v2-ONNX), [7B](https://huggingface.co/EmreAkgul/omniASR-CTC-7B-ONNX), and [7B v2](https://huggingface.co/EmreAkgul/omniASR-CTC-7B-v2-ONNX), per the upstream [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) license (format conversion only, no retraining). Not affiliated with or endorsed by Meta or NVIDIA.
