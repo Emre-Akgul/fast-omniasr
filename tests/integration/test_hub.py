@@ -30,9 +30,9 @@ def test_from_pretrained_offline_after_first_download(wav, monkeypatch):
     assert result.text == "now i want to return to the conservation of mechanical energy"
 
 
-def test_from_pretrained_rejects_non_onnx_backend():
+def test_from_pretrained_tensorrt_requires_precision():
     from fast_omniasr import OmniASR
-    with pytest.raises(ValueError, match="backend='onnx' only"):
+    with pytest.raises(ValueError, match="requires precision"):
         OmniASR.from_pretrained(REPO_ID, backend="tensorrt")
 
 

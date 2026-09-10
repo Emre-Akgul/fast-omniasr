@@ -31,3 +31,13 @@ def test_unknown_backend_rejected_before_any_download():
 def test_precision_rejected_for_onnx_backend():
     with pytest.raises(ValueError, match="precision is only used with backend='tensorrt'"):
         OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="onnx", precision="fp16")
+
+
+@pytest.mark.parametrize("parameter", ["min_samples", "opt_samples", "max_samples"])
+def test_tensorrt_profile_rejected_for_onnx_backend(parameter):
+    with pytest.raises(ValueError, match="only used with backend='tensorrt'"):
+        OmniASR.from_pretrained(
+            "EmreAkgul/omniASR-CTC-300M-v2-ONNX",
+            backend="onnx",
+            **{parameter: 8000},
+        )

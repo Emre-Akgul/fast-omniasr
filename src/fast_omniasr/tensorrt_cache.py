@@ -11,7 +11,14 @@ import json
 import os
 from pathlib import Path
 
-from .tensorrt_builder import BUILDER_CONFIG_VERSION, build_engine
+from .tensorrt_builder import (
+    BUILDER_CONFIG_VERSION,
+    DEFAULT_MAX_SAMPLES,
+    DEFAULT_MIN_SAMPLES,
+    DEFAULT_OPT_SAMPLES,
+    build_engine,
+    validate_profile,
+)
 
 _DEFAULT_CACHE_ROOT = Path.home() / ".cache" / "fast-omniasr" / "tensorrt"
 
@@ -59,10 +66,15 @@ def _locked(lock_path: Path):
 
 
 def get_or_build_engine(onnx_path: str | Path, *, precision: str,
-                         min_samples: int = 16000, opt_samples: int = 80000,
-                         max_samples: int = 480000, cache_dir: str | Path | None = None) -> Path:
+                         min_samples: int = DEFAULT_MIN_SAMPLES,
+                         opt_samples: int = DEFAULT_OPT_SAMPLES,
+                         max_samples: int = DEFAULT_MAX_SAMPLES,
+                         cache_dir: str | Path | None = None) -> Path:
     if precision not in ("fp32", "fp16"):
         raise ValueError("precision must be 'fp32' or 'fp16'")
+    min_samples, opt_samples, max_samples = validate_profile(
+        min_samples, opt_samples, max_samples
+    )
     onnx_path = Path(onnx_path)
     root = Path(cache_dir) if cache_dir is not None else _DEFAULT_CACHE_ROOT
     metadata = {

@@ -1,6 +1,7 @@
 import os
 import warnings
 
+import numpy as np
 import pytest
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow, pytest.mark.cuda]
@@ -27,6 +28,8 @@ def test_first_call_builds_second_call_reuses_cache(wav, tmp_path):
             REPO_ID, backend="tensorrt", precision="fp16", engine_cache_dir=tmp_path,
         )
     assert any("FP16" in str(w.message) for w in caught)
+    assert model.backend.min_samples == 400
+    assert model.transcribe_numpy(np.zeros(400, dtype=np.float32)).logits_shape == (1, 1, 10288)
     result = model.transcribe(wav)
     assert result.text == KNOWN_TRANSCRIPT
 

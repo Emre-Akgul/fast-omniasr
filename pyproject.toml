@@ -23,6 +23,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = ["--import-mode=importlib"]
 markers = ["integration: requires exported model assets", "cuda: requires GPU access", "slow: expensive model inference"]
 
 [tool.ruff]

@@ -5,6 +5,7 @@ import numpy as np
 
 from .audio import load_audio, prepare_audio
 from .decoder import greedy_token_ids
+from .tensorrt_builder import DEFAULT_MAX_SAMPLES, DEFAULT_MIN_SAMPLES, DEFAULT_OPT_SAMPLES
 from .tokenizer import Tokenizer
 
 
@@ -58,6 +59,9 @@ class OmniASR:
     def from_pretrained(cls, repo_id: str, *, backend: str = "onnx", precision: str | None = None,
                          revision: str | None = None, cache_dir: str | Path | None = None,
                          engine_cache_dir: str | Path | None = None,
+                         min_samples: int | None = None,
+                         opt_samples: int | None = None,
+                         max_samples: int | None = None,
                          device: str = "cpu", threads: int = 4):
         """Download and verify model/tokenizer assets from a Hugging Face Hub repo.
 
@@ -68,7 +72,8 @@ class OmniASR:
 
         `backend="tensorrt"` requires an explicit `precision` ("fp32" or "fp16" — there is
         no "auto", so the FP16 accuracy caveat is never silently opted into) and builds a
-        local engine on first use, cached under `engine_cache_dir` (default
+        local engine on first use using the requested min/opt/max sample profile, cached under
+        `engine_cache_dir` (default
         `~/.cache/fast-omniasr/tensorrt`) keyed by the ONNX content, precision, profile and
         local TensorRT/GPU identity. A later call with the same key reuses the cached engine.
         """
@@ -76,6 +81,13 @@ class OmniASR:
             raise ValueError("backend must be 'onnx' or 'tensorrt'")
         if backend == "onnx" and precision is not None:
             raise ValueError("precision is only used with backend='tensorrt'")
+        if backend == "onnx" and any(
+            value is not None for value in (min_samples, opt_samples, max_samples)
+        ):
+            raise ValueError(
+                "min_samples, opt_samples and max_samples are only used with "
+                "backend='tensorrt'"
+            )
         if backend == "tensorrt" and precision not in ("fp32", "fp16"):
             raise ValueError("backend='tensorrt' requires precision='fp32' or precision='fp16'")
         try:
@@ -135,5 +147,12 @@ class OmniASR:
                 stacklevel=2,
             )
         from .tensorrt_cache import get_or_build_engine
-        engine_path = get_or_build_engine(model_path, precision=precision, cache_dir=engine_cache_dir)
+        engine_path = get_or_build_engine(
+            model_path,
+            precision=precision,
+            min_samples=DEFAULT_MIN_SAMPLES if min_samples is None else min_samples,
+            opt_samples=DEFAULT_OPT_SAMPLES if opt_samples is None else opt_samples,
+            max_samples=DEFAULT_MAX_SAMPLES if max_samples is None else max_samples,
+            cache_dir=engine_cache_dir,
+        )
         return cls(engine_path, tokenizer_path, backend="tensorrt", device=device, threads=threads)

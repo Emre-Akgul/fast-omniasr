@@ -49,6 +49,8 @@ def test_empty_cache_builds(counting_builder, onnx_a, tmp_path):
     engine_path = get_or_build_engine(onnx_a, precision="fp16", cache_dir=tmp_path / "cache")
     assert len(counting_builder) == 1
     assert engine_path.exists()
+    metadata = json.loads((engine_path.parent / "metadata.json").read_text())
+    assert metadata["profile"] == {"min": 400, "opt": 80000, "max": 480000}
 
 
 def test_second_call_reuses_cache(counting_builder, onnx_a, tmp_path):
@@ -76,6 +78,16 @@ def test_precision_change_produces_distinct_entries(counting_builder, onnx_a, tm
     assert fp16.exists() and fp32.exists()  # neither call clobbered the other's entry
 
 
+def test_profile_change_produces_distinct_entries(counting_builder, onnx_a, tmp_path):
+    cache_dir = tmp_path / "cache"
+    default = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir)
+    custom = get_or_build_engine(
+        onnx_a, precision="fp32", min_samples=8000, cache_dir=cache_dir
+    )
+    assert default != custom
+    assert len(counting_builder) == 2
+
+
 def test_incompatible_metadata_triggers_rebuild(counting_builder, onnx_a, tmp_path):
     cache_dir = tmp_path / "cache"
     engine_path = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache_dir)
@@ -100,6 +112,27 @@ def test_missing_or_corrupted_metadata_triggers_rebuild(counting_builder, onnx_a
 def test_invalid_precision_raises(onnx_a, tmp_path):
     with pytest.raises(ValueError, match="precision"):
         get_or_build_engine(onnx_a, precision="int8", cache_dir=tmp_path / "cache")
+
+
+@pytest.mark.parametrize(
+    ("profile", "message"),
+    [
+        ((399, 80000, 480000), "at least 400"),
+        ((16000, 8000, 480000), "min_samples <= opt_samples <= max_samples"),
+        ((400, 80000, 79999), "min_samples <= opt_samples <= max_samples"),
+        ((400.0, 80000, 480000), "must be integers"),
+    ],
+)
+def test_invalid_profile_raises_before_querying_gpu(onnx_a, tmp_path, profile, message):
+    with pytest.raises(ValueError, match=message):
+        get_or_build_engine(
+            onnx_a,
+            precision="fp32",
+            min_samples=profile[0],
+            opt_samples=profile[1],
+            max_samples=profile[2],
+            cache_dir=tmp_path / "cache",
+        )
 
 
 def test_concurrent_builds_of_same_key_build_only_once(counting_builder, onnx_a, tmp_path,

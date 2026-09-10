@@ -47,7 +47,7 @@ For the fast path with no manual export or `build_tensorrt.py` call, pass `backe
 model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="tensorrt", precision="fp16")
 ```
 
-The first call downloads the ONNX asset, builds a local engine (this takes a while — TensorRT engine builds are not fast), and caches it under `~/.cache/fast-omniasr/tensorrt/<key>/model.engine`, keyed by the ONNX content hash, precision, profile, and local TensorRT version/GPU identity (engines aren't portable across any of those). Later calls with the same key reuse the cached engine instead of rebuilding; if any of those fields change, a new engine is built rather than reusing an incompatible one. `precision="fp16"` warns once per process about the accuracy caveat.
+The first call downloads the ONNX asset, builds a local engine, and caches it under `~/.cache/fast-omniasr/tensorrt/<key>/model.engine`. The cache key includes the ONNX hash, precision, profile, TensorRT version, and GPU identity. The default profile accepts 400 to 480,000 samples and optimizes for 80,000 samples. Advanced users can pass `min_samples`, `opt_samples`, and `max_samples`; a changed profile creates a separate cached engine. `precision="fp16"` warns once per process about its accuracy caveat.
 
 Or supply local assets directly (no download, no `hub` extra needed):
 
@@ -82,6 +82,11 @@ python export_onnx.py \
 
 python build_tensorrt.py artifacts/finetuned/model.onnx --output artifacts/omniasr_fp32.engine
 python build_tensorrt.py artifacts/finetuned/model.onnx --precision fp16 --output artifacts/omniasr_fp16.engine
+
+# Optional profile tuning (defaults: 400/80,000/480,000 samples).
+python build_tensorrt.py artifacts/finetuned/model.onnx \
+  --min-samples 8000 --opt-samples 80000 --max-samples 480000 \
+  --output artifacts/omniasr_custom.engine
 ```
 
 `--checkpoint` accepts a fairseq2-compatible custom model checkpoint file or the `model` directory within a native sharded fairseq2 step checkpoint. Incompatible checkpoint formats raise a fairseq2 model-checkpoint error. `--model` selects the base architecture and must match the fine-tuned weights. The checkpoint does not reliably carry enough architecture metadata to infer this safely.
@@ -122,7 +127,7 @@ python tools/publish_hub.py \
 
 Without `--upload`, this prepares and validates the bundle as a dry run. The publisher discovers ONNX external-data files, includes their sizes and SHA-256 digests in `config.json`, and uploads every required asset. `OmniASR.from_pretrained()` downloads and verifies all files declared by this manifest, so the same API works for large models once their repositories are published.
 
-Tested with PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, and TensorRT 10.16.1.11 (CUDA 12). The TensorRT profile is batch one, 16,000/80,000/480,000 MIN/OPT/MAX samples, TF32 disabled; engines are built for the local hardware/software stack and portability is not validated. `build_tensorrt.py` and `OmniASR.from_pretrained(..., backend="tensorrt")` call the same underlying `fast_omniasr.tensorrt_builder.build_engine`, so there's one build recipe, not two.
+Tested with PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, and TensorRT 10.16.1.11 (CUDA 12). The current default TensorRT profile is batch one, 400/80,000/480,000 MIN/OPT/MAX samples with TF32 disabled; the performance figures above were measured with the earlier 16,000/80,000/480,000 profile. Engines are built for the local hardware/software stack and portability is not validated. `build_tensorrt.py` and `OmniASR.from_pretrained(..., backend="tensorrt")` call the same underlying `fast_omniasr.tensorrt_builder.build_engine`, so there's one build recipe, not two.
 
 ONNX FP32 is the verified runtime; TensorRT FP32 and FP16 are explicit, separate experimental backends (not fallback-interchangeable). Mixed-precision TensorRT engines are ongoing stabilization work, not wired into `build_tensorrt.py` or the runtime yet.
 </details>

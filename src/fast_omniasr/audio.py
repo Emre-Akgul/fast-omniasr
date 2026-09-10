@@ -4,6 +4,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+MIN_AUDIO_SAMPLES = 400
+
 
 def prepare_audio(waveform: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
     if sample_rate != 16000:
@@ -11,8 +13,10 @@ def prepare_audio(waveform: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
     audio = np.asarray(waveform, dtype=np.float32)
     if audio.ndim != 1:
         raise ValueError("Expected a mono, one-dimensional waveform")
-    if audio.size < 400:
-        raise ValueError("At least 400 samples are required by the feature extractor")
+    if audio.size < MIN_AUDIO_SAMPLES:
+        raise ValueError(
+            f"At least {MIN_AUDIO_SAMPLES} samples are required by the feature extractor"
+        )
     if not np.isfinite(audio).all():
         raise ValueError("Audio contains NaN or infinity")
     audio = (audio - audio.mean()) / np.sqrt(audio.var() + np.float32(1e-5))
