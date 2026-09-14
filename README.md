@@ -1,6 +1,6 @@
 # fast-omniasr
 
-A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr). Runs all eight released CTC models (`300M`, `1B`, `3B`, and `7B`, both original and v2) on ONNX Runtime or TensorRT — no PyTorch, fairseq2 or Transformers on the inference path.
+A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr). Its CTC runtime runs all eight released CTC models (`300M`, `1B`, `3B`, and `7B`, both original and v2) on ONNX Runtime or TensorRT without PyTorch, fairseq2 or Transformers on the CTC inference path. A separate experimental LLM-ASR runtime uses PyTorch/TorchScript for full-prefix greedy decoding as a correctness baseline.
 
 ## Benchmark
 
@@ -71,7 +71,7 @@ model = OmniASR("omniasr_fp16.engine", "omniASR_tokenizer_written_v2.model", bac
 ## Export and engine building
 
 <details>
-<summary>Requires a separate environment with PyTorch, fairseq2 and omnilingual-asr (not runtime dependencies)</summary>
+<summary>Requires a separate environment with PyTorch, fairseq2 and omnilingual-asr (not CTC runtime dependencies)</summary>
 
 ```bash
 # Export fine-tuned weights using their matching base architecture.
@@ -148,6 +148,83 @@ python -m pytest tests/unit
 ```
 
 Integration tests need real assets via env vars and skip otherwise: `OMNIASR_ONNX`/`OMNIASR_TOKENIZER`/`OMNIASR_TEST_WAV` for ONNX, `OMNIASR_TRT_FP32_ENGINE` (+ same tokenizer/WAV) and `OMNIASR_TRT_FP16_ENGINE`/`OMNIASR_TRT_FP16_TEST_WAV` for TensorRT. `tests/integration/test_hub.py` needs only `OMNIASR_TEST_WAV` but hits the real Hub repo over the network.
+
+## Experimental LLM-ASR: 300M v2 greedy baseline
+
+`fast_omniasr.llm.OmniASRLLM` is a separate runtime for
+`omniASR_LLM_300M_v2`. It runs exported speech-encoder and full-prefix decoder
+TorchScript graphs using PyTorch, with no fairseq2 or omnilingual_asr runtime
+imports. This first milestone targets transcript parity, not speed: every output
+token recomputes the decoder prefix. The CTC backend interface is unchanged.
+
+Install `pip install -e '.[llm]'` for inference. Export additionally requires a
+working upstream `omnilingual_asr` / fairseq2 installation (tested with fairseq2
+0.6 and PyTorch 2.8). Use a new artifact directory and a mono 16 kHz speech clip:
+
+```bash
+python export_llm.py --output /path/to/llm-300m-v2 --audio speech.wav
+# Optional: --checkpoint /path/to/omniASR-LLM-300M-v2.pt
+python tools/validate_llm.py /path/to/llm-300m-v2
+```
+
+The exporter checks the reference input syntax, variable audio/token lengths,
+and generated token IDs against fairseq2 incremental greedy decoding. The report
+records the maximum absolute logit error across every step, including EOS. It writes
+`encoder.pt`, `decoder.pt`, `tokenizer.model`, `config.json`, `reference.json`,
+and a byte-for-byte copy of the input clip with its lowercased source extension
+(for example, `parity.wav` or `parity.flac`). The reference uses an artifact-relative
+audio path, so the entire directory can be moved to another machine. Use
+`tools/validate_llm.py /path/to/llm-300m-v2 --audio speech.wav` to override it;
+the normalized audio hash must still match.
+The separate validator loads those artifacts with reference-package imports
+blocked, requires exact tokens and text, and rejects truncated generation.
+Float32 weights require roughly 6.1 GiB of artifact storage in addition to the
+source checkpoint; export and CPU inference need substantial RAM.
+
+```python
+from fast_omniasr.llm import OmniASRLLM
+
+model = OmniASRLLM('/path/to/llm-300m-v2')
+result = model.transcribe('speech.wav', max_new_tokens=512)
+print(result.text)
+print(result.stop_reason)  # "eos" means complete; limits are reported explicitly.
+```
+
+Scope: batch one, CPU float32 parity, clips up to 30 seconds, unspecified
+language (the reference's learned language-zero embedding is retained).
+No KV cache, beam search, repetition/compression stopping, explicit language
+conditioning, TensorRT, or Unlimited support yet. Greedy output is not expected
+to match the upstream default five-beam output. Load only trusted model assets.
+
+The export syntax follows the upstream
+[model implementation](https://github.com/facebookresearch/omnilingual-asr/blob/main/src/omnilingual_asr/models/wav2vec2_llama/model.py)
+and [generation implementation](https://github.com/facebookresearch/omnilingual-asr/blob/main/src/omnilingual_asr/models/wav2vec2_llama/beamsearch.py).
+
+Reference compatibility note: upstream 300M v2 configurations may expose a
+9,812-entry `target_vocab_info` despite the checkpoint's 10,288 output classes.
+The exporter validates the tokenizer against the output projection and preserves
+the reference's language-marker index, recording both sizes in `config.json`.
+It does not silently change the model's prompt syntax to repair this upstream
+inconsistency.
+
+Initial parity evidence is recorded in
+[`benchmarks/llm_300m_v2_parity.json`](benchmarks/llm_300m_v2_parity.json):
+a three-second LJSpeech excerpt matched all 47 text tokens through EOS against
+fairseq2 incremental decoding on CPU float32. The first-step maximum absolute
+logit difference was `3.8147e-6`; the maximum across all 48 decoder steps
+(47 text tokens plus EOS) was `9.5367e-6`. Encoder checks additionally cover the 400-sample lower boundary, 0.5, 1, 2,
+4, and 30 seconds, with varying decoder prefix lengths. This is a smoke test on one
+speech excerpt, not a multilingual accuracy validation matrix.
+
+To rerun the real-artifact integration test:
+
+```bash
+FAST_OMNIASR_LLM_DIR=/path/to/llm-300m-v2 pytest tests/integration/test_llm.py -q
+```
+
+The integration test also accepts `FAST_OMNIASR_LLM_TEST_WAV` as an audio override.
+CI keeps the lightweight CTC matrix and runs the LLM generation unit tests in a
+separate Python 3.11 job with CPU PyTorch installed.
 
 ## License
 
