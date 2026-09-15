@@ -1,4 +1,4 @@
-"""Full-prefix greedy baseline for exported omniASR_LLM_300M_v2 graphs."""
+"""Greedy decoding with full-prefix or explicit-cache omniASR_LLM_300M_v2 graphs."""
 
 import json
 from dataclasses import dataclass
@@ -20,11 +20,12 @@ class LLMTranscription:
 class OmniASRLLM:
     """Load trusted TorchScript assets. PyTorch is an optional runtime dependency.
 
-    This correctness baseline recomputes the decoder prefix at every step.
+    The default baseline recomputes the prefix. Set cached=True to load the
+    explicit-cache decoder, which processes the prefix once per transcription.
     It supports one mono 16 kHz clip, up to 30 seconds, without language conditioning.
     """
 
-    def __init__(self, directory: str | Path, *, device: str = "cpu"):
+    def __init__(self, directory: str | Path, *, device: str = "cpu", cached: bool = False):
         import torch
 
         directory = Path(directory)
@@ -38,7 +39,9 @@ class OmniASRLLM:
         if self.device.type != "cpu":
             raise ValueError("This experimental export supports CPU inference only")
         self.encoder = torch.jit.load(str(directory / "encoder.pt"), map_location=self.device)
-        self.decoder = torch.jit.load(str(directory / "decoder.pt"), map_location=self.device)
+        self.cached = cached
+        decoder_file = "decoder_cached.pt" if cached else "decoder.pt"
+        self.decoder = torch.jit.load(str(directory / decoder_file), map_location=self.device)
         self.encoder.eval()
         self.decoder.eval()
         self.tokenizer = Tokenizer(directory / "tokenizer.model")
@@ -60,7 +63,7 @@ class OmniASRLLM:
             else prepare_audio(audio, sample_rate)
         )
         if waveform.shape[1] > 30 * 16000:
-            raise ValueError("This baseline supports clips of at most 30 seconds")
+            raise ValueError("This runtime supports clips of at most 30 seconds")
         with torch.inference_mode():
             context = self.encoder(torch.from_numpy(waveform).to(self.device))
             tokens = [self.config["bos_idx"]]
@@ -70,9 +73,17 @@ class OmniASRLLM:
             if budget < 1:
                 raise ValueError("Audio prefix exceeds decoder context capacity")
             reason = "max_new_tokens" if budget == max_new_tokens else "context_limit"
+            cache = None
             for _ in range(budget):
-                ids = torch.tensor([tokens], dtype=torch.int64, device=self.device)
-                logits = self.decoder(context, ids)
+                if getattr(self, "cached", False):
+                    ids = torch.tensor([[tokens[-1]]], dtype=torch.int64, device=self.device)
+                    if cache is None:
+                        logits, cache = self.decoder.prefill(context, ids)
+                    else:
+                        logits, cache = self.decoder.decode_step(ids, cache)
+                else:
+                    ids = torch.tensor([tokens], dtype=torch.int64, device=self.device)
+                    logits = self.decoder(context, ids)
                 if not torch.isfinite(logits).all():
                     raise RuntimeError("Decoder produced non-finite logits")
                 token = int(logits.argmax(-1).item())

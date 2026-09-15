@@ -77,3 +77,30 @@ def test_artifact_model_guard(tmp_path):
     (tmp_path / "config.json").write_text(json.dumps({"format_version": 1, "model": "CTC"}))
     with pytest.raises(ValueError, match="Unsupported"):
         OmniASRLLM(tmp_path)
+
+
+def test_cached_runtime_prefills_once_and_only_steps_one_token():
+    model, _ = runtime([])
+    model.cached = True
+    calls = []
+
+    class Cached:
+        def prefill(self, context, ids):
+            calls.append(("prefill", ids.tolist()))
+            return self.result(5, 5)
+
+        def decode_step(self, ids, cache):
+            calls.append(("step", ids.tolist(), cache))
+            return self.result(5 if cache == 5 else 2, cache + 1)
+
+        def result(self, token, cache):
+            logits = torch.full((1, 10), -10.0)
+            logits[0, token] = 10
+            return logits, cache
+
+    model.decoder = Cached()
+    for _ in range(2):
+        result = model.transcribe(np.zeros(1600, dtype=np.float32))
+        assert result.token_ids == [5, 5]
+        assert result.stop_reason == "eos"
+    assert calls == [("prefill", [[0]]), ("step", [[5]], 5), ("step", [[5]], 6)] * 2

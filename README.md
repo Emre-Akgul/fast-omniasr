@@ -149,13 +149,13 @@ python -m pytest tests/unit
 
 Integration tests need real assets via env vars and skip otherwise: `OMNIASR_ONNX`/`OMNIASR_TOKENIZER`/`OMNIASR_TEST_WAV` for ONNX, `OMNIASR_TRT_FP32_ENGINE` (+ same tokenizer/WAV) and `OMNIASR_TRT_FP16_ENGINE`/`OMNIASR_TRT_FP16_TEST_WAV` for TensorRT. `tests/integration/test_hub.py` needs only `OMNIASR_TEST_WAV` but hits the real Hub repo over the network.
 
-## Experimental LLM-ASR: 300M v2 greedy baseline
+## Experimental LLM-ASR: 300M v2 greedy decoding
 
 `fast_omniasr.llm.OmniASRLLM` is a separate runtime for
-`omniASR_LLM_300M_v2`. It runs exported speech-encoder and full-prefix decoder
-TorchScript graphs using PyTorch, with no fairseq2 or omnilingual_asr runtime
-imports. This first milestone targets transcript parity, not speed: every output
-token recomputes the decoder prefix. The CTC backend interface is unchanged.
+`omniASR_LLM_300M_v2`. It runs exported speech-encoder and decoder TorchScript graphs using PyTorch,
+with no fairseq2 or omnilingual_asr runtime imports. The default full-prefix
+baseline recomputes the prefix at every token; the opt-in cached decoder processes
+the prefix once. The CTC backend interface is unchanged.
 
 Install `pip install -e '.[llm]'` for inference. Export additionally requires a
 working upstream `omnilingual_asr` / fairseq2 installation (tested with fairseq2
@@ -192,8 +192,9 @@ print(result.stop_reason)  # "eos" means complete; limits are reported explicitl
 
 Scope: batch one, CPU float32 parity, clips up to 30 seconds, unspecified
 language (the reference's learned language-zero embedding is retained).
-No KV cache, beam search, repetition/compression stopping, explicit language
-conditioning, TensorRT, or Unlimited support yet. Greedy output is not expected
+An opt-in explicit KV-cache decoder is available alongside the full-prefix baseline.
+No beam search, repetition/compression stopping, explicit language conditioning,
+TensorRT, or Unlimited support yet. Greedy output is not expected
 to match the upstream default five-beam output. Load only trusted model assets.
 
 The export syntax follows the upstream
@@ -215,6 +216,59 @@ logit difference was `3.8147e-6`; the maximum across all 48 decoder steps
 (47 text tokens plus EOS) was `9.5367e-6`. Encoder checks additionally cover the 400-sample lower boundary, 0.5, 1, 2,
 4, and 30 seconds, with varying decoder prefix lengths. This is a smoke test on one
 speech excerpt, not a multilingual accuracy validation matrix.
+
+Day 2 adds `decoder_cached.pt`, a TorchScript module with two methods:
+
+```python
+logits, cache = decoder.prefill(audio_context, bos)  # bos: int64 [1, 1]
+logits, cache = decoder.decode_step(token, cache)    # token: int64 [1, 1]
+```
+
+`cache` is a list `[K0, V0, K1, V1, ...]`. Each tensor has shape
+`[batch, cached_positions, kv_heads, head_dim]`; K contains interleaved RoPE,
+V is the unrotated value projection. Cache length supplies the next absolute
+position. Prefill processes the audio prefix and BOS once; each step projects only
+one new token, attends to all cached positions, and returns new cache tensors.
+The caller owns the cache; a new prefill starts an independent request.
+
+```bash
+python tools/export_cached_llm.py /path/to/llm-300m-v2 \
+  --audio english.wav --audio turkish.wav
+python tools/validate_llm.py /path/to/llm-300m-v2 --cached
+```
+
+```python
+model = OmniASRLLM("/path/to/llm-300m-v2", cached=True)
+result = model.transcribe("speech.wav")
+```
+
+The curated [Day 2 parity report](benchmarks/llm_300m_v2_cached_parity.json) records exact
+three-way greedy equality on five clips (245 steps including EOS):
+
+| Clip | Language | Steps including EOS |
+| --- | --- | ---: |
+| LJSpeech, 3 s | English | 48 |
+| JFK, 5 s | English | 35 |
+| Turkish sample, 5 s | Turkish | 73 |
+| FLEURS excerpt, 3 s | English | 38 |
+| FLEURS complete utterance, 4.2 s | Turkish | 51 |
+
+The real decoder has 12 layers, 8 K/V heads, and head dimension 512. Across this
+matrix the largest cached logit difference is `5.722e-6`, and the largest K/V
+difference is `8.107e-6`. These are greedy decoding regression checks, not an
+accuracy benchmark against human transcripts.
+
+The default still loads `decoder.pt`. Both runtimes require only PyTorch and the
+normal standalone dependencies. Exporting and checking the incremental oracle
+requires fairseq2 and omnilingual_asr. See [cache validation and benchmarking](benchmarks/README.md#explicit-llm-kv-cache-cpu)
+for the reproducible protocol and the distinction between generated fixtures and
+curated benchmark records. On the four-thread i7-11800H CPU benchmark,
+100 decoder steps fell from 229.92 s to 19.01 s (12.10×), including prefill and
+excluding the encoder. Late cached steps stayed near 173–178 ms as output length
+grew from 10 to 100; baseline late steps rose from 1,835 to 2,761 ms.
+[Raw scaling measurements](benchmarks/llm_300m_v2_cache_scaling.json) include three
+warm repetitions with identical forced tokens. ONNX export of prefill/step is a
+separate next step.
 
 To rerun the real-artifact integration test:
 

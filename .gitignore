@@ -30,3 +30,4 @@ results/
 *.pth
 *.ckpt
 *.model
+artifacts/llm-*/

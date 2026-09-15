@@ -1,0 +1,110 @@
+{
+  "torch_version": "2.8.0+cu128",
+  "threads": 4,
+  "device": "cpu",
+  "audio": "artifacts/llm-day2/parity.wav",
+  "audio_context_positions": 151,
+  "repeats": 3,
+  "encoder_timed": false,
+  "protocol": "Identical forced tokens; includes prefill; ignores EOS; median warm runs; 10/25/50 are prefixes of each 100-step run",
+  "measurements": [
+    {
+      "output_steps": 10,
+      "full_prefix": {
+        "total_seconds": 18.399092578001728,
+        "first_step_ms": 1747.5541069998144,
+        "last_5_steps_mean_ms": 1835.1089650002905,
+        "runs_seconds": [
+          18.433365939002215,
+          18.399092578001728,
+          17.750314422000883
+        ]
+      },
+      "cached": {
+        "total_seconds": 3.338953637998202,
+        "first_step_ms": 1815.833771999678,
+        "last_5_steps_mean_ms": 174.1627450001033,
+        "runs_seconds": [
+          3.338953637998202,
+          3.2724091219997717,
+          3.401277669000592
+        ]
+      },
+      "speedup": 5.5104366735180275
+    },
+    {
+      "output_steps": 25,
+      "full_prefix": {
+        "total_seconds": 47.29736387600224,
+        "first_step_ms": 1747.5541069998144,
+        "last_5_steps_mean_ms": 2033.1483355999808,
+        "runs_seconds": [
+          48.99653830800071,
+          47.29736387600224,
+          46.66285346400127
+        ]
+      },
+      "cached": {
+        "total_seconds": 5.889232829999855,
+        "first_step_ms": 1815.833771999678,
+        "last_5_steps_mean_ms": 172.96117880014208,
+        "runs_seconds": [
+          5.889232829999855,
+          5.799876492001204,
+          5.996346826000263
+        ]
+      },
+      "speedup": 8.03115876741511
+    },
+    {
+      "output_steps": 50,
+      "full_prefix": {
+        "total_seconds": 102.2489679670025,
+        "first_step_ms": 1747.5541069998144,
+        "last_5_steps_mean_ms": 2159.4753200000923,
+        "runs_seconds": [
+          104.86113610899793,
+          102.2489679670025,
+          101.11368813199897
+        ]
+      },
+      "cached": {
+        "total_seconds": 10.192961435997859,
+        "first_step_ms": 1815.833771999678,
+        "last_5_steps_mean_ms": 177.50502360031533,
+        "runs_seconds": [
+          10.192961435997859,
+          10.135313613998733,
+          10.464014535002207
+        ]
+      },
+      "speedup": 10.031330797141651
+    },
+    {
+      "output_steps": 100,
+      "full_prefix": {
+        "total_seconds": 229.92261176500142,
+        "first_step_ms": 1747.5541069998144,
+        "last_5_steps_mean_ms": 2760.632300600082,
+        "runs_seconds": [
+          233.90057331099797,
+          229.92261176500142,
+          226.31118343199796
+        ]
+      },
+      "cached": {
+        "total_seconds": 19.006686441000056,
+        "first_step_ms": 1815.833771999678,
+        "last_5_steps_mean_ms": 177.6764346002892,
+        "runs_seconds": [
+          18.903205871000864,
+          19.006686441000056,
+          19.33496017699872
+        ]
+      },
+      "speedup": 12.096932965076252
+    }
+  ],
+  "measurement_date": "2026-09-14",
+  "cpu_model": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz"
+}
