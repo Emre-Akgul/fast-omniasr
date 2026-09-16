@@ -9,8 +9,13 @@ from pathlib import Path
 
 
 class BlockReferenceImports(importlib.abc.MetaPathFinder):
+    def __init__(self, forbid_torch=False):
+        self.forbidden = {"fairseq2", "fairseq2n", "omnilingual_asr"}
+        if forbid_torch:
+            self.forbidden.add("torch")
+
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.split(".")[0] in {"fairseq2", "fairseq2n", "omnilingual_asr"}:
+        if fullname.split(".")[0] in self.forbidden:
             raise ImportError(
                 f"Reference dependency forbidden during standalone validation: {fullname}"
             )
@@ -21,20 +26,24 @@ def main():
     parser.add_argument("directory", type=Path)
     parser.add_argument("--audio", type=Path)
     parser.add_argument("--cached", action="store_true")
+    parser.add_argument("--backend", choices=["torch", "onnx"], default="torch")
+    parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     args = parser.parse_args()
-    sys.meta_path.insert(0, BlockReferenceImports())
-    import torch
+    sys.meta_path.insert(0, BlockReferenceImports(forbid_torch=args.backend == "onnx"))
+    if args.backend == "torch":
+        import torch
+
+        torch.set_num_threads(4)
 
     from fast_omniasr.audio import load_audio
     from fast_omniasr.llm import OmniASRLLM
 
-    torch.set_num_threads(4)
     reference = json.loads((args.directory / "reference.json").read_text())
     references = [reference]
-    if args.cached:
+    if args.cached or args.backend == "onnx":
         suite = json.loads((args.directory / "cached_reference.json").read_text())
         references.extend(suite["clips"][1:])
-    model = OmniASRLLM(args.directory, cached=args.cached)
+    model = OmniASRLLM(args.directory, cached=args.cached, backend=args.backend, device=args.device)
     results = []
     for index, expected in enumerate(references):
         audio = (
@@ -58,6 +67,9 @@ def main():
                 "token_ids": result.token_ids,
                 "stop_reason": result.stop_reason,
                 "reference_imports_blocked": True,
+                "torch_imports_blocked": args.backend == "onnx",
+                "backend": args.backend,
+                "device": args.device,
             }
         )
         print(json.dumps(results[-1]), flush=True)

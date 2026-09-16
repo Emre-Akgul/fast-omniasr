@@ -25,8 +25,17 @@ class OmniASRLLM:
     It supports one mono 16 kHz clip, up to 30 seconds, without language conditioning.
     """
 
-    def __init__(self, directory: str | Path, *, device: str = "cpu", cached: bool = False):
-        import torch
+    def __init__(
+        self,
+        directory: str | Path,
+        *,
+        device: str = "cpu",
+        cached: bool = False,
+        backend: str = "torch",
+    ):
+        if backend not in {"torch", "onnx"}:
+            raise ValueError("backend must be torch or onnx")
+        self.backend = backend
 
         directory = Path(directory)
         self.config = json.loads((directory / "config.json").read_text())
@@ -35,6 +44,16 @@ class OmniASRLLM:
             "omniASR_LLM_300M_v2",
         ):
             raise ValueError("Unsupported LLM artifact format or model")
+        if backend == "onnx":
+            from .onnx_backend import ONNXLLMBackend
+
+            self.onnx = ONNXLLMBackend(directory, device)
+            self.device = device
+            self.cached = True
+            self.tokenizer = Tokenizer(directory / "tokenizer.model")
+            return
+        import torch
+
         self.device = torch.device(device)
         if self.device.type != "cpu":
             raise ValueError("This experimental export supports CPU inference only")
@@ -49,8 +68,6 @@ class OmniASRLLM:
     def transcribe(
         self, audio: str | Path | np.ndarray, *, sample_rate: int = 16000, max_new_tokens: int = 512
     ) -> LLMTranscription:
-        import torch
-
         if (
             not isinstance(max_new_tokens, int)
             or isinstance(max_new_tokens, bool)
@@ -64,6 +81,10 @@ class OmniASRLLM:
         )
         if waveform.shape[1] > 30 * 16000:
             raise ValueError("This runtime supports clips of at most 30 seconds")
+        if getattr(self, "backend", "torch") == "onnx":
+            return self._transcribe_onnx(waveform, max_new_tokens)
+        import torch
+
         with torch.inference_mode():
             context = self.encoder(torch.from_numpy(waveform).to(self.device))
             tokens = [self.config["bos_idx"]]
@@ -92,4 +113,26 @@ class OmniASRLLM:
                     break
                 generated.append(token)
                 tokens.append(token)
+        return LLMTranscription(self.tokenizer.decode(generated), generated, reason)
+
+    def _transcribe_onnx(self, waveform, max_new_tokens):
+        context = self.onnx.encode(waveform)
+        budget = min(max_new_tokens, self.config["max_seq_len"] - context.shape[1] - 3)
+        if budget < 1:
+            raise ValueError("Audio prefix exceeds decoder context capacity")
+        reason = "max_new_tokens" if budget == max_new_tokens else "context_limit"
+        token = np.array([[self.config["bos_idx"]]], dtype=np.int64)
+        logits, cache = self.onnx.prefill(context, token)
+        generated = []
+        for index in range(budget):
+            if not np.isfinite(logits).all():
+                raise RuntimeError("Decoder produced non-finite logits")
+            next_token = int(logits.argmax(-1).item())
+            if next_token == self.config["eos_idx"]:
+                reason = "eos"
+                break
+            generated.append(next_token)
+            if index + 1 < budget:
+                token = np.array([[next_token]], dtype=np.int64)
+                logits, cache = self.onnx.decode_step(token, cache)
         return LLMTranscription(self.tokenizer.decode(generated), generated, reason)

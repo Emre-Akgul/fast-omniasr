@@ -1,6 +1,6 @@
 # fast-omniasr
 
-A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr). Its CTC runtime runs all eight released CTC models (`300M`, `1B`, `3B`, and `7B`, both original and v2) on ONNX Runtime or TensorRT without PyTorch, fairseq2 or Transformers on the CTC inference path. A separate experimental LLM-ASR runtime uses PyTorch/TorchScript for full-prefix greedy decoding as a correctness baseline.
+A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr). Its CTC runtime runs all eight released CTC models (`300M`, `1B`, `3B`, and `7B`, both original and v2) on ONNX Runtime or TensorRT without PyTorch, fairseq2 or Transformers on the CTC inference path. A separate experimental LLM-ASR runtime uses PyTorch/TorchScript as a correctness baseline or ONNX Runtime for cached greedy decoding.
 
 ## Benchmark
 
@@ -28,7 +28,10 @@ python -m pip install "fast-omniasr[cuda]"      # ONNX Runtime GPU (device="cuda
 python -m pip install "fast-omniasr[tensorrt]"  # cuda-python; also requires a separate TensorRT install
 ```
 
-Automatic CPU fallback is disabled — the requested provider/backend must actually initialize. For a source checkout instead (e.g. to work on the library itself), use `pip install -e ".[onnx,hub]"` from the repo root.
+The requested provider/backend must initialize, and ONNX Runtime run-level fallback
+is disabled. ORT may still assign supported graph plumbing, such as shape operations,
+to its CPU EP. For a source checkout instead (e.g. to work on the library itself),
+use `pip install -e ".[onnx,hub]"` from the repo root.
 
 ## Usage
 
@@ -267,8 +270,65 @@ curated benchmark records. On the four-thread i7-11800H CPU benchmark,
 excluding the encoder. Late cached steps stayed near 173–178 ms as output length
 grew from 10 to 100; baseline late steps rose from 1,835 to 2,761 ms.
 [Raw scaling measurements](benchmarks/llm_300m_v2_cache_scaling.json) include three
-warm repetitions with identical forced tokens. ONNX export of prefill/step is a
-separate next step.
+warm repetitions with identical forced tokens.
+
+Day 3 exports the frozen Day 2 graphs to a PyTorch-free ONNX Runtime path:
+
+```text
+encoder.onnx:         audio [1, samples] -> context [1, audio_positions, 4096]
+decoder_prefill.onnx: context + BOS -> logits + 24 K/V tensors
+decoder_step.onnx:    one token + 24 K/V tensors -> logits + 24 updated K/V tensors
+```
+
+Each cache tensor is float32 `[1, cached_positions, 8, 512]`. Audio positions,
+context length, and cached positions are dynamic. The decoder graphs refer to
+one external `decoder.weights` file whose offsets and shapes are recorded in
+`decoder_weights.json`; keep both files beside the graphs.
+
+```bash
+# ONNX-only inference
+python -m pip install -e ".[onnx]"
+python tools/validate_llm.py /path/to/day3 --backend onnx --device cpu
+```
+
+Use the `cuda` extra instead of `onnx` for CUDA-only inference.
+
+Export and raw-tensor oracle validation additionally require Torch and the
+`onnx` graph package:
+
+```bash
+python -m pip install -e ".[llm,onnx]" "onnx>=1.17,<2"
+python export_llm_onnx.py /path/to/day2 /path/to/day3 --stage encoder
+python export_llm_onnx.py /path/to/day2 /path/to/day3 --stage decoder
+python tools/validate_llm_onnx.py /path/to/day2 /path/to/day3 --stage contexts
+python tools/validate_llm_onnx.py /path/to/day2 /path/to/day3 --stage probes
+python tools/validate_llm_onnx.py /path/to/day2 /path/to/day3 --stage generation
+```
+
+The exporter gates the encoder at 400 samples, 0.5, 1, 3, 5, and 30 seconds.
+Decoder probes compare logits and every K/V tensor at cache lengths 10, 50,
+150, and 300. Generation validation repeats those comparisons at every step of
+the five English/Turkish Day 2 clips through EOS. Add `--device cuda` to each
+validator command for the CUDAExecutionProvider. CUDA must initialize and ORT
+run-level fallback is disabled; ORT may still place shape/control nodes on CPU.
+
+```python
+model = OmniASRLLM("/path/to/day3", backend="onnx", device="cpu")
+result = model.transcribe("speech.wav")
+```
+
+The ONNX runtime imports NumPy, ONNX Runtime, and the tokenizer only. The
+standalone validator actively blocks PyTorch, fairseq2, and omnilingual_asr
+imports. On a 6 GiB GPU, it releases the encoder before loading decoder prefill,
+then replaces prefill with the step session. Cache tensors remain explicit NumPy
+values in this correctness-first implementation, so host/device cache copies and
+cache concatenation remain optimization opportunities.
+
+The [Day 3 parity record](benchmarks/llm_300m_v2_onnx_parity.json) records exact
+CPU and CUDA greedy equality for all 245 generation steps, the raw cache error
+bounds, blocked-import standalone runs, and the dynamic-length probes. See the
+[ONNX LLM benchmark](benchmarks/README.md#onnx-llm-cache-cpu-and-cuda) for
+separate encoder, prefill, per-token, 10/25/50/100-position, and memory results.
 
 To rerun the real-artifact integration test:
 

@@ -104,3 +104,39 @@ def test_cached_runtime_prefills_once_and_only_steps_one_token():
         assert result.token_ids == [5, 5]
         assert result.stop_reason == "eos"
     assert calls == [("prefill", [[0]]), ("step", [[5]], 5), ("step", [[5]], 6)] * 2
+
+
+def test_onnx_runtime_prefills_once_and_only_steps_one_token():
+    model, _ = runtime([])
+    model.backend = "onnx"
+    calls = []
+
+    class Backend:
+        def encode(self, waveform):
+            calls.append(("encode", waveform.shape))
+            return np.zeros((1, 4, 8), dtype=np.float32)
+
+        def prefill(self, context, token):
+            calls.append(("prefill", token.tolist()))
+            return result(5), [np.zeros((1, 5, 1, 1), dtype=np.float32)] * 24
+
+        def decode_step(self, token, cache):
+            calls.append(("step", token.tolist(), cache[0].shape[1]))
+            next_token = 5 if len(calls) == 3 else 2
+            return result(next_token), [np.zeros((1, 6, 1, 1), dtype=np.float32)] * 24
+
+    def result(token):
+        logits = np.full((1, 10), -10.0, dtype=np.float32)
+        logits[0, token] = 10.0
+        return logits
+
+    model.onnx = Backend()
+    transcription = model.transcribe(np.zeros(1600, dtype=np.float32))
+    assert transcription.token_ids == [5, 5]
+    assert transcription.stop_reason == "eos"
+    assert calls == [
+        ("encode", (1, 1600)),
+        ("prefill", [[0]]),
+        ("step", [[5]], 5),
+        ("step", [[5]], 6),
+    ]

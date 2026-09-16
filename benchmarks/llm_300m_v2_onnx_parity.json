@@ -1,0 +1,109 @@
+{
+  "model": "omniASR_LLM_300M_v2",
+  "validation_date": "2026-09-16",
+  "oracle": "frozen Day-2 decoder_cached.pt",
+  "day2_sha256": {
+    "encoder.pt": "eea333ee42a559ced20f1de758497c436b65dca5d30fdded6e0fc872a8e635bf",
+    "decoder.pt": "263b4608321faaacd0541e476168560a4711fc4e203306151f26299e1a4f1a68",
+    "decoder_cached.pt": "6185b4afd6e1f72e080dc274dbd1ca27311e24b9a95dbce692123a61f742b7d7"
+  },
+  "contract": {
+    "graphs": [
+      "encoder.onnx",
+      "decoder_prefill.onnx",
+      "decoder_step.onnx"
+    ],
+    "decoder_external_data": "decoder.weights",
+    "layers": 12,
+    "cache_tensors": 24,
+    "cache_layout": [
+      "batch",
+      "sequence",
+      "kv_heads",
+      "head_dim"
+    ],
+    "kv_heads": 8,
+    "head_dim": 512,
+    "dynamic_audio_samples": true,
+    "dynamic_context_positions": true,
+    "dynamic_cached_positions": true
+  },
+  "encoder_random_probes": {
+    "samples": [400, 8000, 16000, 48000, 80000, 480000],
+    "max_channel_scaled_error_limit": 0.001,
+    "relative_l2_error_limit": 0.0001
+  },
+  "decoder_dynamic_probes": {
+    "cache_lengths": [10, 50, 150, 300],
+    "atol": 0.0002,
+    "rtol": 0.0002,
+    "cpu": {
+      "max_logit_abs_error": 0.00002193450927734375,
+      "max_key_abs_error": 0.0000171661376953125,
+      "max_value_abs_error": 0.00001609325408935547
+    },
+    "cuda": {
+      "max_logit_abs_error": 0.0000400543212890625,
+      "max_key_abs_error": 0.000041961669921875,
+      "max_value_abs_error": 0.00003707408905029297
+    }
+  },
+  "five_clip_generation": {
+    "languages": ["en", "tr"],
+    "clips": 5,
+    "steps_including_eos": 245,
+    "exact_greedy_tokens": true,
+    "same_eos_step": true,
+    "atol": 0.002,
+    "rtol": 0.002,
+    "cpu": {
+      "max_logit_abs_error": 0.0001163482666015625,
+      "max_key_abs_error": 0.0011917352676391602,
+      "max_value_abs_error": 0.0006575584411621094
+    },
+    "cuda": {
+      "max_logit_abs_error": 0.0001926422119140625,
+      "max_key_abs_error": 0.00201570987701416,
+      "max_value_abs_error": 0.0010001659393310547
+    }
+  },
+  "standalone": {
+    "cpu": {
+      "clips": 5,
+      "exact_greedy_tokens": true,
+      "same_eos_step": true
+    },
+    "cuda": {
+      "clips": 5,
+      "exact_greedy_tokens": true,
+      "same_eos_step": true
+    },
+    "blocked_imports": ["torch", "fairseq2", "fairseq2n", "omnilingual_asr"],
+    "cuda_ep_explicitly_required": true,
+    "ort_run_level_fallback_disabled": true,
+    "all_nodes_on_cuda_asserted": false
+  },
+  "cuda_memory": {
+    "device": "NVIDIA GeForce RTX 3060 Laptop GPU",
+    "device_memory_mib": 6144,
+    "arena_shrinkage_each_run": true,
+    "observed_stable_step_session_mib": 5194,
+    "benchmark_peak_process_mib": 5330
+  },
+  "evidence": {
+    "artifact_reports": [
+      "encoder_parity.json",
+      "contexts_cpu.json",
+      "contexts_cuda.json",
+      "decoder_probes_cpu.json",
+      "decoder_probes_cuda.json",
+      "generation_cpu.json",
+      "generation_cuda.json"
+    ],
+    "benchmark_reports": [
+      "llm_300m_v2_onnx_torch_cpu.json",
+      "llm_300m_v2_onnx_cpu.json",
+      "llm_300m_v2_onnx_cuda.json"
+    ]
+  }
+}

@@ -85,3 +85,87 @@ prefix lengths. Optional fairseq2 adapter coverage is retained separately:
 ```bash
 pytest tests/integration/test_llm_cache_reference.py -q
 ```
+
+## ONNX LLM cache (CPU and CUDA)
+
+Day 3 keeps the Day 2 TorchScript files frozen and exports three ONNX graphs.
+The decoder graphs share one external weight file; their K/V tensors remain
+explicit runtime inputs and outputs.
+
+```bash
+# ONNX-only inference
+python -m pip install -e ".[onnx]"
+python tools/validate_llm.py /path/to/day3 --backend onnx --device cpu
+```
+
+Use the `cuda` extra instead of `onnx` for CUDA-only inference.
+
+Export and raw-tensor oracle validation use the Torch development environment:
+
+```bash
+python -m pip install -e ".[llm,onnx]" "onnx>=1.17,<2"
+python export_llm_onnx.py /path/to/day2 /path/to/day3 --stage encoder
+python export_llm_onnx.py /path/to/day2 /path/to/day3 --stage decoder
+
+python tools/validate_llm_onnx.py /path/to/day2 /path/to/day3 --stage contexts
+python tools/validate_llm_onnx.py /path/to/day2 /path/to/day3 --stage probes
+python tools/validate_llm_onnx.py /path/to/day2 /path/to/day3 --stage generation
+```
+
+Repeat all four validation commands with `--device cuda` using an
+ONNX Runtime GPU installation. The contexts check covers the five bundled real
+clips. The probe check uses cache lengths 10, 50, 150, and 300 and compares raw
+logits plus all 24 cache outputs with the frozen `decoder_cached.pt`. The
+generation check compares those tensors after every prefill/step call and
+requires exact greedy tokens and EOS. The standalone check runs from the final
+artifact while actively rejecting imports of PyTorch, fairseq2, and
+omnilingual_asr. CUDA validation requires the CUDA EP to initialize and disables
+ORT run-level fallback. ORT remains free to place graph-shape plumbing on CPU;
+the validation does not claim that every node executes on CUDA.
+
+Run the three backends in separate processes so peak resident memory remains
+attributable to one runtime:
+
+```bash
+python tools/benchmark_llm_onnx.py /path/to/day2 /path/to/day3 \
+  --backend torch --repeats 3 --output benchmarks/llm_300m_v2_onnx_torch_cpu.json
+python tools/benchmark_llm_onnx.py /path/to/day2 /path/to/day3 \
+  --backend onnx-cpu --repeats 3 --output benchmarks/llm_300m_v2_onnx_cpu.json
+python tools/benchmark_llm_onnx.py /path/to/day2 /path/to/day3 \
+  --backend onnx-cuda --repeats 3 --output benchmarks/llm_300m_v2_onnx_cuda.json
+```
+
+The benchmark warms each graph, excludes graph/session construction from phase
+latencies, and reports that construction cost separately. Decoder totals include
+prefill and use identical forced tokens at 10, 25, 50, and 100 output positions.
+The shorter measurements are prefixes of each 100-position trajectory. Process
+peak RSS, sampled CUDA process memory, and the theoretical float32 cache bytes at
+100 positions are recorded. Cache concatenation and CPU-owned cache transfers are
+part of the measured implementation.
+
+Measured with four CPU threads on an Intel Core i7-11800H and, for CUDA, an RTX
+3060 Laptop GPU with 6 GiB. Values are medians of three measured runs after one
+warmup:
+
+| Backend | 10 positions | 25 positions | 50 positions | 100 positions |
+| --- | ---: | ---: | ---: | ---: |
+| TorchScript CPU | 2.962 s | 5.461 s | 9.163 s | 16.978 s |
+| ORT CPU | 2.995 s | 5.400 s | 9.519 s | 17.857 s |
+| ORT CUDA | 0.586 s | 1.392 s | 2.835 s | 6.003 s |
+
+| Backend | Encoder | Prefill | Mean step at 100 | Peak process RSS | Peak GPU |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| TorchScript CPU | 567.4 ms | 1.560 s | 155.5 ms | 6,252 MiB | — |
+| ORT CPU | 568.9 ms | 1.558 s | 164.8 ms | 6,170 MiB | — |
+| ORT CUDA | 42.4 ms | 116.5 ms | 59.5 ms | 1,760 MiB | 5,330 MiB |
+
+Each float32 K/V position is 384 KiB. The fixture has 151 audio positions, so
+the cache is 94.125 MiB at 100 generated positions. CUDA arena shrinkage
+is enabled after every dynamic-cache run; without it, ORT retained roughly 100
+MiB per new cache shape and exhausted this 6 GiB device after five steps. Raw
+measurements are in
+[`llm_300m_v2_onnx_torch_cpu.json`](llm_300m_v2_onnx_torch_cpu.json),
+[`llm_300m_v2_onnx_cpu.json`](llm_300m_v2_onnx_cpu.json), and
+[`llm_300m_v2_onnx_cuda.json`](llm_300m_v2_onnx_cuda.json). The curated
+[parity record](llm_300m_v2_onnx_parity.json) points to the generated raw-tensor
+reports in the artifact directory.

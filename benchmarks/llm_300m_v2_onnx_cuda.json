@@ -1,0 +1,56 @@
+{
+  "backend": "onnx-cuda",
+  "device": "cuda",
+  "threads": 4,
+  "repeats": 3,
+  "latencies_exclude_session_initialization": true,
+  "fixture_context_positions": 151,
+  "cache_bytes_per_position": 393216,
+  "cache_bytes_at_100_output_positions": 98697216,
+  "peak_gpu_process_mib": 5330.0,
+  "measurements": {
+    "encoder_seconds": 0.042400697002449306,
+    "session_initialization_seconds": 5.120819527001004,
+    "peak_process_rss_mib": 1759.7578125,
+    "10": {
+      "decoder_total_seconds": 0.5861358919974009,
+      "prefill_seconds": 0.11648673399758991,
+      "mean_decode_step_seconds": 0.05217868133291227,
+      "runs_seconds": [
+        0.5873151179985143,
+        0.5861358919974009,
+        0.5838766239903634
+      ]
+    },
+    "25": {
+      "decoder_total_seconds": 1.3922101549906074,
+      "prefill_seconds": 0.11648673399758991,
+      "mean_decode_step_seconds": 0.05315343312455904,
+      "runs_seconds": [
+        1.4088973079960851,
+        1.3922101549906074,
+        1.3871704419907473
+      ]
+    },
+    "50": {
+      "decoder_total_seconds": 2.8346065119876585,
+      "prefill_seconds": 0.11648673399758991,
+      "mean_decode_step_seconds": 0.055473181591618674,
+      "runs_seconds": [
+        2.8842147439972905,
+        2.8295717889996013,
+        2.8346065119876585
+      ]
+    },
+    "100": {
+      "decoder_total_seconds": 6.0033171189897985,
+      "prefill_seconds": 0.11648673399758991,
+      "mean_decode_step_seconds": 0.05946360106051975,
+      "runs_seconds": [
+        6.063902144000167,
+        6.0020063879928784,
+        6.0033171189897985
+      ]
+    }
+  }
+}
