@@ -1,0 +1,6250 @@
+{
+  "summary": {
+    "total": 184,
+    "errors": 0,
+    "num_correct": 166,
+    "num_correct_loose": 171,
+    "loose_accuracy": 0.9293478260869565,
+    "strict_accuracy": 0.9021739130434783,
+    "total_time_s": 150.54088475368917,
+    "stt_time_s": 6.23239514103625,
+    "ttc_time_s": 144.10165084793698,
+    "avg_total_time_s": 0.8181569823570064,
+    "avg_stt_time_s": 0.0338717127230231,
+    "avg_ttc_time_s": 0.783161145912701
+  },
+  "results": [
+    {
+      "filename": "2026-03-27-15-23-05_9dbe774da758827f83606173711714aa-9d059d3ce89254cf_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "duronlar çalışmıyorduğim şu an tamam çün duronlar kalkış yapın kapı tabi",
+      "stt_time_s": 0.12826461397344247,
+      "predicted_commands": [],
+      "ttc_time_s": 4.57794029195793,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 0,
+        "reference_count": 1
+      },
+      "total_time_s": 4.709446446970105
+    },
+    {
+      "filename": "2026-03-27-15-24-39_553de7b85387004ca35f174b7cda9518-0f2760d1e9de5fcf_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_ON",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "ron üç ışıklarını aç",
+      "stt_time_s": 0.027934929996263236,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "AUX_LIGHT_ON"
+        }
+      ],
+      "ttc_time_s": 0.5298451510025188,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.558437503001187
+    },
+    {
+      "filename": "2026-03-27-15-24-47_17bf266f44b79ea30e89e2bbccc6b10d-5e532d84218a8629_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_OFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç ışıklarını kapat",
+      "stt_time_s": 0.025143990002106875,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "AUX_LIGHT_OFF"
+        }
+      ],
+      "ttc_time_s": 0.4954640689538792,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.521235751977656
+    },
+    {
+      "filename": "2026-03-27-15-25-28_e67a138872a2bf9fb1f2ee4ad6a3ce2b-2a6c58a167573c63_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_ON",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "durun üç ışıkları aç",
+      "stt_time_s": 0.02336340898182243,
+      "predicted_commands": [
+        {
+          "channel": "INVALID",
+          "action": "AUX_LIGHT_ON"
+        }
+      ],
+      "ttc_time_s": 0.4926970330416225,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5166976079926826
+    },
+    {
+      "filename": "2026-03-27-15-25-37_46e9d5f730a16b681092aacdd10917e2-9c9a9cfbbde135e9_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_OFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron ışıkları kapat",
+      "stt_time_s": 0.02406937599880621,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "AUX_LIGHT_OFF"
+        }
+      ],
+      "ttc_time_s": 0.4130300920223817,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.43772341700969264
+    },
+    {
+      "filename": "2026-03-27-15-26-02_53fab662324dfbe76209a0078388c28c-e93839bb9f2a639b_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_OFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç alt ışıklarını kapat",
+      "stt_time_s": 0.024898000992834568,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "AUX_LIGHT_OFF"
+        }
+      ],
+      "ttc_time_s": 0.49437393399421126,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.519960428995546
+    },
+    {
+      "filename": "2026-03-27-15-26-09_4b6c8440bf101b537eb659150a7aa997-e0895fd1e676ca9b_input.wav",
+      "reference": [
+        {
+          "action": "LED_ON",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç ledlerini aç",
+      "stt_time_s": 0.023690936039201915,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "LED_ON"
+        }
+      ],
+      "ttc_time_s": 0.5008082140120678,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5250994180096313
+    },
+    {
+      "filename": "2026-03-27-15-26-36_e93b308b99b096653571588b39ec212a-d904224b26882eec_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_OFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "durun üç alt ışığını kapat",
+      "stt_time_s": 0.024281572026666254,
+      "predicted_commands": [
+        {
+          "channel": "INVALID",
+          "action": "AUX_LIGHT_OFF"
+        }
+      ],
+      "ttc_time_s": 0.41145889100153,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.436399900005199
+    },
+    {
+      "filename": "2026-03-27-15-26-43_747d28809d5f6f96d5e0da79ae5c89cd-5ad4ce23dd6be70a_input.wav",
+      "reference": [
+        {
+          "action": "LED_ON",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç ledlerini aç",
+      "stt_time_s": 0.024174498044885695,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "LED_ON"
+        }
+      ],
+      "ttc_time_s": 0.5049958549789153,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5297726049902849
+    },
+    {
+      "filename": "2026-03-27-15-26-50_1134a5da615616d9244baaa820256aca-6b7b5834d6e7f33f_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_OFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç altı şıklarını kafat",
+      "stt_time_s": 0.025427261018194258,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "GIMBAL_DOWN_60"
+        }
+      ],
+      "ttc_time_s": 0.4947342610103078,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5208518080180511
+    },
+    {
+      "filename": "2026-03-27-15-27-07_7bb4b6bc71e203529e6be528a46e0e97-e9b342bb5466d700_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç kalkış yap",
+      "stt_time_s": 0.023793976986780763,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.4989920789957978,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5233939419849776
+    },
+    {
+      "filename": "2026-03-27-15-27-19_f75dd5dbae9236a4c6d9313e9077c7f0-1b302b128d3dac11_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 20,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç yirmi metre yüksel",
+      "stt_time_s": 0.02628411102341488,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 20,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6816122820018791,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7090545289684087
+    },
+    {
+      "filename": "2026-03-27-15-27-33_ce3d5973f74065c7cf5115ec5174e4d2-1568a58c6505d26f_input.wav",
+      "reference": [
+        {
+          "action": "GIMBAL_DOWN_90",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "drone üç gimbalini doksan derece aşağıya al",
+      "stt_time_s": 0.02558307204162702,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "GIMBAL_DOWN_90"
+        }
+      ],
+      "ttc_time_s": 0.5000995270092972,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5263361160177737
+    },
+    {
+      "filename": "2026-03-27-15-27-40_bd486004913e0bdbaeb0a305f59adb94-6b64cdacfd7ff90d_input.wav",
+      "reference": [
+        {
+          "action": "SET_GIMBAL_LOCK",
+          "params": "true",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç gimbalini kitle",
+      "stt_time_s": 0.024283012025989592,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "SET_GIMBAL_LOCK",
+          "params": "true"
+        }
+      ],
+      "ttc_time_s": 0.5021939399885014,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5271617019898258
+    },
+    {
+      "filename": "2026-03-27-15-27-53_2001f81c45c0f15d9bc8f3fc1e98bb81-ef0f8aa47fec0b4e_input.wav",
+      "reference": [
+        {
+          "action": "START_RTSP_STREAM",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "drone üç canlı yayın başlat",
+      "stt_time_s": 0.02310484298504889,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "START_RTSP_STREAM"
+        }
+      ],
+      "ttc_time_s": 0.49266957701183856,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5163550089928322
+    },
+    {
+      "filename": "2026-03-27-15-28-15_a4a1f6c4b4f524c5613aece23aeb5fde-f1ca0886041acf11_input.wav",
+      "reference": [
+        {
+          "action": "AUTO_LAND",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç iniş yap",
+      "stt_time_s": 0.023892123019322753,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "AUTO_LAND"
+        }
+      ],
+      "ttc_time_s": 0.4928104110294953,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5173916700296104
+    },
+    {
+      "filename": "2026-03-27-15-29-52_970000db8b7318a54c1df2a0b496eee7-97c4d49314a90d0e_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç kalkış yap",
+      "stt_time_s": 0.02803429204504937,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.49552282103104517,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5242714330088347
+    },
+    {
+      "filename": "2026-03-27-15-30-23_5d7db7b27689a32142a2d8d2e82d05b8-26fee879566c9e26_input.wav",
+      "reference": [
+        {
+          "action": "START_RTSP_STREAM",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç canlı yayın başlat",
+      "stt_time_s": 0.024581963021773845,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "START_RTSP_STREAM"
+        }
+      ],
+      "ttc_time_s": 0.493073201039806,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5182908900314942
+    },
+    {
+      "filename": "2026-03-27-15-30-37_7b100bfc691d87edfa5c49d0cfef0ab9-6ad335b8971fc11c_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": 10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre ileri git",
+      "stt_time_s": 0.024422630958724767,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 10,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7710025340202264,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7960924750077538
+    },
+    {
+      "filename": "2026-03-27-15-30-51_3abe6ec6ea8df5958e6edebc939831ee-4a8bae9e23a87abf_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": -10,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre sola git",
+      "stt_time_s": 0.028316281968727708,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": -10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7710085499566048,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8001076640211977
+    },
+    {
+      "filename": "2026-03-27-15-31-11_e33d828206c517665c14657300bc08b4-3952422a904a85d3_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": -10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre geri gel",
+      "stt_time_s": 0.026675895031075925,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": -10,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7690426839981228,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.79650826001307
+    },
+    {
+      "filename": "2026-03-27-15-31-25_b501b5a2929fcb0398cef17e5e3dcaa8-5ba907040548b424_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 10,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç sağ on metre gel",
+      "stt_time_s": 0.03679492598166689,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6791242289473303,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7167522920062765
+    },
+    {
+      "filename": "2026-03-27-15-31-37_ceb78850c6b2c529f87d1de0b2443b19-131c2e4739188a38_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 10,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç sağa on metre gel",
+      "stt_time_s": 0.027539209986571223,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6793839779566042,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7077252210001461
+    },
+    {
+      "filename": "2026-03-27-15-31-48_2f1ffefdcdc323da1484f7ec1dd77b89-a89f85da2b680c08_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 10,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre sağa git",
+      "stt_time_s": 0.027766285988036543,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7709192680194974,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7994783709873445
+    },
+    {
+      "filename": "2026-03-27-15-32-47_dbbeacbfadfa0ec2c870c57c8ab8adde-a2b6aff28a7c7fc0_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 20,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -20,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç yirmi metre kuzeye git ardından yirmi metre güneye git",
+      "stt_time_s": 0.04628392797894776,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 6.342486952955369,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 6.389778518991079
+    },
+    {
+      "filename": "2026-03-27-15-34-08_818ae0d9757f4d8d78509d19ad9cb341-c526db417d78ee0a_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "INVALID",
+          "channel": "INVALID"
+        }
+      ],
+      "predicted_text": "dron üç on metre kuzeye git ardından on mere güneye gel güneye git",
+      "stt_time_s": 0.07581946800928563,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.122148686030414,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 2,
+        "reference_count": 3
+      },
+      "total_time_s": 1.2020155679783784
+    },
+    {
+      "filename": "2026-03-27-15-34-35_30e68945d9e3190f23a087953b41d982-38a4664eeb3f5a2f_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre kuzeye git ardından on metre güneye git",
+      "stt_time_s": 0.08053102402482182,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.0754383169696666,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 1.1604846370173618
+    },
+    {
+      "filename": "2026-03-27-15-35-27_30cbf528ca673590bd50608f0b4152f8-2a0e2d3ac40eb868_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç kalkış yap",
+      "stt_time_s": 0.023550804005935788,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.6034086990403011,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6275495000299998
+    },
+    {
+      "filename": "2026-03-27-15-36-34_8d3bf87bdb14e0b7e320e56afb7abd86-50d16c940fa7220d_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 10,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre yüksel",
+      "stt_time_s": 0.026838330959435552,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 10,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.604450747021474,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.6320184369687922
+    },
+    {
+      "filename": "2026-03-27-15-36-58_1a8286a9ad225f553abdd91a5818cd9f-481c60df0589b67c_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 10,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "drone üç on metre yüksel",
+      "stt_time_s": 0.027975250966846943,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 10,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6735065730172209,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7021715979790315
+    },
+    {
+      "filename": "2026-03-27-15-37-26_f16aadb13e8346ed5c333527eb42f713-63ce90c6d66745c8_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre kuzeye git ardından sonra on metre güneye git",
+      "stt_time_s": 0.05259916599607095,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.1161220939829946,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 1.169831939972937
+    },
+    {
+      "filename": "2026-03-27-15-37-45_8371632d8aa932bec79b159cd012393a-10069877526b982a_input.wav",
+      "reference": [],
+      "predicted_text": "",
+      "stt_time_s": 0.0340851730434224,
+      "predicted_commands": [],
+      "ttc_time_s": 0.0054276990122161806,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 0.04026511195115745
+    },
+    {
+      "filename": "2026-03-27-15-37-56_e4feb83e33b651a725ccdde5ff4429d2-3d7701b237c3bce6_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre kuzeye git",
+      "stt_time_s": 0.034603456035256386,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.6679000309668481,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.7032979999785312
+    },
+    {
+      "filename": "2026-03-27-15-38-14_0e9cdda958bbd3ae5599b40744b8ce93-6c7d2a22adf5bdcd_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -20,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre kuzeye git ardından yirmi metre güneye git",
+      "stt_time_s": 0.04128935799235478,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 2.042354391014669,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 2.0846205049892887
+    },
+    {
+      "filename": "2026-03-27-15-39-01_cc3a3b22e4aadd9a9aa1856463125a3a-e5d39354f8f688f0_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 20,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -20,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç yirmi metre kuzeye git ardından yirmimetre güneye git",
+      "stt_time_s": 0.045311682973988354,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.0871376700233668,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 1.1334148450405337
+    },
+    {
+      "filename": "2026-03-27-15-40-36_84b178e161db95c75373318a2e907562-33519e1bc94198d2_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 30,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -30,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç uzmetre kuzeye git ardından uzmetre güneye git",
+      "stt_time_s": 0.0375380459590815,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.0848677650210448,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": false,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 1.1233673359965906
+    },
+    {
+      "filename": "2026-03-27-15-41-01_a32d12111e4e979ef64bce9664356918-c189a9ef0a3d60f6_input.wav",
+      "reference": [
+        {
+          "action": "STOP_MISSION",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "duron üç dur",
+      "stt_time_s": 0.01900376396952197,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "STOP_MISSION"
+        }
+      ],
+      "ttc_time_s": 0.6708449160214514,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6903851079987362
+    },
+    {
+      "filename": "2026-03-27-15-41-12_b843026ebd4341dbc1082d88ffaa5107-59c1520bac825116_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": -10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre batıya git",
+      "stt_time_s": 0.025982023973483592,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": -10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7676359019824304,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7946912620100193
+    },
+    {
+      "filename": "2026-03-27-15-41-30_3fce2a69945f75e09f96a202f4ce6dfe-e485a1c379673882_input.wav",
+      "reference": [],
+      "predicted_text": "burdan  üçlikdir gitmi oldu",
+      "stt_time_s": 0.02377465000608936,
+      "predicted_commands": [],
+      "ttc_time_s": 0.3171125649823807,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 0.3414815629948862
+    },
+    {
+      "filename": "2026-03-27-15-42-01_fe08af16d1d3c860b53b4535a6c23184-4ecc80d49d0b6eaa_input.wav",
+      "reference": [
+        {
+          "action": "INVALID",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç defol git",
+      "stt_time_s": 0.024239139980636537,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "INVALID"
+        }
+      ],
+      "ttc_time_s": 0.490482457971666,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5153392750071362
+    },
+    {
+      "filename": "2026-03-27-15-42-09_bf1abe0004c01401080a0f6788065d09-ba18ae334f39795c_input.wav",
+      "reference": [],
+      "predicted_text": "ardı olma gene",
+      "stt_time_s": 0.017213100974913687,
+      "predicted_commands": [],
+      "ttc_time_s": 0.2986652919789776,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 0.3163447409751825
+    },
+    {
+      "filename": "2026-03-27-15-42-31_c2f81dc7873f6a3544969002af450cd9-a45e249aec3e77e7_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": -10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "drone üç on metre geri gel",
+      "stt_time_s": 0.025319578009657562,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": -10,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.766478436999023,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7925245909718797
+    },
+    {
+      "filename": "2026-03-27-15-42-54_760293c976cebc8b28c3c450e43a3401-3754e5d746881886_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": -10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre batıya git",
+      "stt_time_s": 0.02704236697172746,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": -10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7673340070177801,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.795122342009563
+    },
+    {
+      "filename": "2026-03-27-15-43-30_3a41837878fa430414670aadc5be8152-0b5a02f19ca7c81c_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 40,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 10,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": -30,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": -3,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç kırk metre kuzeye git ardından on metre sağa git ardından otuz metre geri git ardından üç metre sola git",
+      "stt_time_s": 0.09425157197983935,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 40,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": -30,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": -3,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.829972851963248,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 4,
+        "reference_count": 4
+      },
+      "total_time_s": 1.9257421520305797
+    },
+    {
+      "filename": "2026-03-27-15-44-39_999b218083010a23ab80576209001c43-8fec7bc2c9339f6f_input.wav",
+      "reference": [],
+      "predicted_text": "",
+      "stt_time_s": 0.017073707014787942,
+      "predicted_commands": [],
+      "ttc_time_s": 0.005632375017739832,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 0.023178701056167483
+    },
+    {
+      "filename": "2026-03-27-15-44-47_2fdf9e0ae47c292cc7f9c8183abd4a32-9fde629107203b6a_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -40,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç kırk metre güneye gel",
+      "stt_time_s": 0.027424198982771486,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -40,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.5714416929986328,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.5996069959946908
+    },
+    {
+      "filename": "2026-03-27-15-46-09_d059141a40921f650cc75f3899ce3bab-541b5596096cb19c_input.wav",
+      "reference": [],
+      "predicted_text": "",
+      "stt_time_s": 0.029280334012582898,
+      "predicted_commands": [],
+      "ttc_time_s": 0.005655607965309173,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 0.03555675595998764
+    },
+    {
+      "filename": "2026-03-27-15-46-23_e96877dd5d763bd18063c468fab8cc4f-10f19b934d785ac7_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 10,
+            "right": 0,
+            "forward": 20,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç on metre yükselerek yirmi metre ileri git",
+      "stt_time_s": 0.0361265919636935,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 20,
+            "right": 0,
+            "up": 10,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.9750133989728056,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.0119741199887358
+    },
+    {
+      "filename": "2026-03-27-15-48-19_1eefdc30804f3b7d3658555154c721c5-6e47cfd35a769dd3_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "TAKE_PHOTO",
+          "channel": "drone_3"
+        },
+        {
+          "action": "WAIT",
+          "params": 20,
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 20,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "üçüncü drone nmetre doğuya gel sonrasında fotoğraf çek ve saniyebekle ardından metre kuzeye git sonrasında eve dönüş yap",
+      "stt_time_s": 0.15495273401029408,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "TAKE_PHOTO"
+        },
+        {
+          "channel": "drone_3",
+          "action": "WAIT",
+          "params": 1
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 2.46025511395419,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": false,
+        "predicted_count": 5,
+        "reference_count": 5
+      },
+      "total_time_s": 2.6170902239973657
+    },
+    {
+      "filename": "2026-03-27-15-50-19_68faf224b91676210403a5abad63dc20-729f5e130d1a2110_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "TAKE_PHOTO",
+          "channel": "drone_3"
+        },
+        {
+          "action": "WAIT",
+          "params": 20,
+          "channel": "drone_3"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 10,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        },
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_3"
+        },
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 30,
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "tamam üçüncü dron on metre doğuya gel ardından bir fotoğraf çek sonrasında yirmi saniye bekle ve ardından on metre kuzeye git en sonunda eve dönüş yap ve otuz mere irtifaya yüksel",
+      "stt_time_s": 0.10700163501314819,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "TAKE_PHOTO"
+        },
+        {
+          "channel": "drone_3",
+          "action": "WAIT",
+          "params": 20
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "RETURN_TO_HOME"
+        },
+        {
+          "channel": "drone_3",
+          "action": "CHANGE_ALTITUDE",
+          "params": 30
+        }
+      ],
+      "ttc_time_s": 1.8073845959734172,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 6,
+        "reference_count": 6
+      },
+      "total_time_s": 1.9159497519722208
+    },
+    {
+      "filename": "2026-03-27-15-53-26_411563f612de5ad28f660db97d7a11c1-c491d9670d60d10d_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drone_68"
+        }
+      ],
+      "predicted_text": "altmış sekizinci dron kalkış yap",
+      "stt_time_s": 0.024315365008078516,
+      "predicted_commands": [
+        {
+          "channel": "drone_68",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 1.3779371959972195,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.4029538549948484
+    },
+    {
+      "filename": "2026-03-27-15-54-13_e6579390db9478a1c74027f5f81a75c9-8bbb497338374ebc_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "speed": 5,
+            "altitude": 20
+          },
+          "channel": "drone_68",
+          "additionalParams": {
+            "targetId": 43,
+            "instanceId": 35
+          }
+        }
+      ],
+      "predicted_text": "dron altmış sekiz otuz beşinci dronun bulduğu kırk üçüncü hedefe git",
+      "stt_time_s": 0.03500378399621695,
+      "predicted_commands": [
+        {
+          "channel": "drone_68",
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "altitude": 20,
+            "speed": 5
+          },
+          "additionalParams": {
+            "instanceId": 35,
+            "targetId": 43
+          }
+        }
+      ],
+      "ttc_time_s": 0.7026276719989255,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7384541299543343
+    },
+    {
+      "filename": "2026-03-27-15-54-45_ebea8ec4b25ab6d663721a759fe14a9d-3a784c6305aa0dba_input.wav",
+      "reference": [
+        {
+          "action": "START_RTSP_STREAM",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç canlı yayın başlat",
+      "stt_time_s": 0.023263950017280877,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "START_RTSP_STREAM"
+        }
+      ],
+      "ttc_time_s": 0.48957988002803177,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5134940189891495
+    },
+    {
+      "filename": "2026-03-27-15-56-57_805392fb83f9702800deac06688f79d7-d62c619814c1f9fe_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_ON",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç ışıklarını aç",
+      "stt_time_s": 0.0258620849926956,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "AUX_LIGHT_ON"
+        }
+      ],
+      "ttc_time_s": 0.4907048949971795,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5172448509838432
+    },
+    {
+      "filename": "2026-03-27-15-57-08_5b547810903b3c78f025a07643d1d247-6a00988688d27637_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_OFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç alt ışıklarını kapat",
+      "stt_time_s": 0.036725516023579985,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "AUX_LIGHT_OFF"
+        }
+      ],
+      "ttc_time_s": 0.5028134729946032,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.540391359012574
+    },
+    {
+      "filename": "2026-03-27-15-58-04_6fdbfe2b244bfd526cd71a4e87728f9f-ed377c37b772413f_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç kalkış yap",
+      "stt_time_s": 0.023696760006714612,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.5003695479827002,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5246705449535511
+    },
+    {
+      "filename": "2026-03-27-15-58-20_2b0066b2c33a7f6eb3d9aab7dba3b356-39c2d0a06b87c92a_input.wav",
+      "reference": [
+        {
+          "action": "AUTO_LAND",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç iniş yap",
+      "stt_time_s": 0.02486068900907412,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "AUTO_LAND"
+        }
+      ],
+      "ttc_time_s": 0.49472603702452034,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5202120179892518
+    },
+    {
+      "filename": "2026-03-27-16-00-13_b097de736d0eadf9a9b24ae8569b5524-c86308edb1a134a9_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drones"
+        },
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 10,
+          "channel": "drone_1"
+        },
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 20,
+          "channel": "drone_2"
+        },
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 30,
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "tüm dronlar kalkış yapın ardından birinci dron on metreye yüksel ardından ikinci dron yirmi metreye yüksel ardından üçüncü dron otuz metreye yüksel",
+      "stt_time_s": 0.06406379397958517,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "TAKEOFF"
+        },
+        {
+          "channel": "drone_1",
+          "action": "CHANGE_ALTITUDE",
+          "params": 10
+        },
+        {
+          "channel": "drone_2",
+          "action": "CHANGE_ALTITUDE",
+          "params": 20
+        },
+        {
+          "channel": "drone_3",
+          "action": "CHANGE_ALTITUDE",
+          "params": 30
+        }
+      ],
+      "ttc_time_s": 1.49486016103765,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 4,
+        "reference_count": 4
+      },
+      "total_time_s": 1.5605646609910764
+    },
+    {
+      "filename": "2026-03-27-16-00-49_ca16ca2e6cb4a71529df991e5bf8f83d-05a6810e81d1fe50_input.wav",
+      "reference": [
+        {
+          "action": "AUTO_LAND",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tümdür onlar iniş yapın",
+      "stt_time_s": 0.0649974140105769,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "AUTO_LAND"
+        }
+      ],
+      "ttc_time_s": 1.2717011770000681,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.3408283420139924
+    },
+    {
+      "filename": "2026-03-27-16-02-24_540fd717943404baf2572c644b3f105a-136104b0a6820b8f_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm duronlar kalkış yapın",
+      "stt_time_s": 0.02396153297740966,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.40114471898414195,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.42571244202554226
+    },
+    {
+      "filename": "2026-03-27-16-02-42_90fabe5e289c381abd8f8c0bab48527c-a45d7246ee2ed169_input.wav",
+      "reference": [
+        {
+          "action": "GIMBAL_DOWN_90",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tündronlar gimballerinizi doksan derece aşağıya bakın",
+      "stt_time_s": 0.029337519023101777,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "GIMBAL_DOWN_90"
+        }
+      ],
+      "ttc_time_s": 0.4183790379902348,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.44843750103609636
+    },
+    {
+      "filename": "2026-03-27-16-02-53_bde0dc0bb76c91ca9933d127bfba3d23-d0288e7eff708249_input.wav",
+      "reference": [
+        {
+          "action": "GIMBAL_DOWN_90",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dronlar gimballerinizi doksan derece aşağıya indirin",
+      "stt_time_s": 0.034943846985697746,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "GIMBAL_DOWN_90"
+        }
+      ],
+      "ttc_time_s": 0.4204550819704309,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.4561883530113846
+    },
+    {
+      "filename": "2026-03-27-16-03-02_2d555131e6bf9ee87257677313c43b0e-2515d70d506a0b32_input.wav",
+      "reference": [
+        {
+          "action": "SET_GIMBAL_LOCK",
+          "params": "true",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dur onlar gimballerinizi kitleyin",
+      "stt_time_s": 0.02634705597301945,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "SET_GIMBAL_LOCK",
+          "params": "true"
+        }
+      ],
+      "ttc_time_s": 0.4927482670173049,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5203408210072666
+    },
+    {
+      "filename": "2026-03-27-16-03-17_13a5e4118d55ed68a4d3b07433164a35-4c782fe5c18dbd64_input.wav",
+      "reference": [
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 15,
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dr onlar on beş metreye yükselin",
+      "stt_time_s": 0.029658646031748503,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "CHANGE_ALTITUDE",
+          "params": 15
+        }
+      ],
+      "ttc_time_s": 0.4946628990001045,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5258828909718432
+    },
+    {
+      "filename": "2026-03-27-16-03-31_729fc8b2a453e51a16c8278037f15f0a-2fc1ab3dfdbde2ba_input.wav",
+      "reference": [
+        {
+          "action": "START_RTSP_STREAM",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tümdür onlar canlı yayıllarınızı başlatın",
+      "stt_time_s": 0.025053171964827925,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "START_RTSP_STREAM"
+        }
+      ],
+      "ttc_time_s": 0.42004812898812816,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.44577414804371074
+    },
+    {
+      "filename": "2026-03-27-16-04-03_bd7f0c3e9541a11919ea0c631cb9a120-2215b068b6cd7921_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": -10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "bir numaralı dron on metre batıya git",
+      "stt_time_s": 0.026822267042007297,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": -10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7894495049840771,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8170429880265146
+    },
+    {
+      "filename": "2026-03-27-16-04-23_bf470a06dc22f131598e20758d26d411-16cad019fe0c54bc_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 5,
+            "east": -5,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "üç numaralı dron beş metre batıya beş metre yüksel",
+      "stt_time_s": 0.0357013390166685,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": -5,
+            "up": 5,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.8939759460045025,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.9307212500134483
+    },
+    {
+      "filename": "2026-03-27-16-05-52_0bca9a27f5a79682d2a7265952bc4aeb-57d3ba2a02a74d0c_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": -15,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dronlar on beş metre batıya gidin",
+      "stt_time_s": 0.044464492006227374,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": -15,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6954856849624775,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7427427349612117
+    },
+    {
+      "filename": "2026-03-27-16-06-18_824368d53f14faca7f93bf85cd6d931b-7d60b664d6a5ec80_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 10,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -10,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dronlar on metre kuzeye gidin ardından on metre güneye gelin",
+      "stt_time_s": 0.03581506997579709,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.2454711080063134,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 1.2821414329810068
+    },
+    {
+      "filename": "2026-03-27-16-06-29_8ce5694395de68788166af300ee47e34-233d06c5859c14da_input.wav",
+      "reference": [],
+      "predicted_text": "",
+      "stt_time_s": 0.016506824002135545,
+      "predicted_commands": [],
+      "ttc_time_s": 0.005594137997832149,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 0.022554158989805728
+    },
+    {
+      "filename": "2026-03-27-16-06-35_8058c1891ddb4059240b37734cfa68ea-2dc9fa36396e1fbc_input.wav",
+      "reference": [
+        {
+          "action": "STOP_MISSION",
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "duron bir dur",
+      "stt_time_s": 0.019652126007713377,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "WAIT",
+          "params": 5
+        }
+      ],
+      "ttc_time_s": 0.6287611399893649,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6489798739785329
+    },
+    {
+      "filename": "2026-03-27-16-07-00_78fb19ce5948f09b89f91350446d7729-2a0f4278f54e6911_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 20,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -20,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dronlar yirmi metre kuzeye gidin ardından yirmi metre güneye gidin",
+      "stt_time_s": 0.03540868900017813,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.0650904559879564,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 1.1015621190308593
+    },
+    {
+      "filename": "2026-03-27-16-07-21_4e94b1d7a3f8977b806d86da43c2cec0-328e2f9982f78119_input.wav",
+      "reference": [
+        {
+          "action": "STOP_MISSION",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tunduronlar durun",
+      "stt_time_s": 0.038644107000436634,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "STOP_MISSION"
+        }
+      ],
+      "ttc_time_s": 1.2591972689842805,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.3012563179945573
+    },
+    {
+      "filename": "2026-03-27-16-07-33_51753d0b0e8da79b93f0eb983243795e-c9a4e5660b13c89d_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 20,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "birinci dron kuzeye yirmi metre git",
+      "stt_time_s": 0.023720910015981644,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.694374863000121,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7194958130130544
+    },
+    {
+      "filename": "2026-03-27-16-07-42_f114d3b18942cf6fcc3fd1680c7ed692-1dc4423484ad7322_input.wav",
+      "reference": [
+        {
+          "action": "STOP_MISSION",
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "birinci dron dur",
+      "stt_time_s": 0.0224036899744533,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "STOP_MISSION"
+        }
+      ],
+      "ttc_time_s": 0.5938756379764527,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6168390230159275
+    },
+    {
+      "filename": "2026-03-27-16-09-53_424a1ae61a7c3cfc79dc9043796ba235-ad6020924d4fb8d4_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 2,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_4"
+        }
+      ],
+      "predicted_text": "dördüncü dron biraz sağ git",
+      "stt_time_s": 0.024670601007528603,
+      "predicted_commands": [
+        {
+          "channel": "drone_4",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 2,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6773087490000762,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7026529359864071
+    },
+    {
+      "filename": "2026-03-27-16-10-26_ec2ec3c132030c5cf126c85e6d5ec15c-b09ec7d76e4dcf19_input.wav",
+      "reference": [],
+      "predicted_text": "",
+      "stt_time_s": 0.01979494496481493,
+      "predicted_commands": [],
+      "ttc_time_s": 0.0052252960158512,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 0.025570273050107062
+    },
+    {
+      "filename": "2026-03-27-16-10-35_957fd923270a67fac6a6eae93758dbad-f777d6c631de0b95_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 2,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_4"
+        }
+      ],
+      "predicted_text": "dördüncü duron biraz sağ git",
+      "stt_time_s": 0.023887059011030942,
+      "predicted_commands": [
+        {
+          "channel": "drone_4",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 2,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.5796235260204412,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6041506340261549
+    },
+    {
+      "filename": "2026-03-27-16-10-49_2898fd750dc7b095614f9488b9bd4daa-45a772cc470454a3_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": -2,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_4"
+        }
+      ],
+      "predicted_text": "dördüncü dron biraz aşağıyayın",
+      "stt_time_s": 0.0255896010203287,
+      "predicted_commands": [
+        {
+          "channel": "drone_4",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": -2,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6787610680330545,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.705036734987516
+    },
+    {
+      "filename": "2026-03-27-16-11-21_c1ef13d30038f2cd256b31c9015c5448-7fc6cc2ebb4310bd_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": 2,
+            "max_speed": 3
+          },
+          "channel": "drone_4"
+        }
+      ],
+      "predicted_text": "dördüncü dron biraz ileriye git",
+      "stt_time_s": 0.029843605996575207,
+      "predicted_commands": [
+        {
+          "channel": "drone_4",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 2,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6772663010051474,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7078668239992112
+    },
+    {
+      "filename": "2026-03-27-16-11-36_3b0f40b461c807871dab1e8e2bdf56af-4a9041695742b494_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 2,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_4"
+        }
+      ],
+      "predicted_text": "dördüncü dron biraz yüksel",
+      "stt_time_s": 0.024908173945732415,
+      "predicted_commands": [
+        {
+          "channel": "drone_4",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 2,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6827887530089356,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7083616820164025
+    },
+    {
+      "filename": "2026-03-27-16-12-42_def50611a317aa343b5ab68d0e17c72c-04ac5768c004f760_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -10,
+            "max_speed": 3
+          },
+          "channel": "drone_4"
+        }
+      ],
+      "predicted_text": "dördüncü dron on metre güneye gel",
+      "stt_time_s": 0.028505775961093605,
+      "predicted_commands": [
+        {
+          "channel": "drone_4",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7778161960304715,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8077447630348615
+    },
+    {
+      "filename": "2026-03-27-16-12-55_dc50625579c00849e52188811064c719-af0b238e3c5c1624_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_4"
+        }
+      ],
+      "predicted_text": "dördüncü dron on metre doğuya git",
+      "stt_time_s": 0.056722168053966016,
+      "predicted_commands": [
+        {
+          "channel": "drone_4",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.77960810798686,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8400750840082765
+    },
+    {
+      "filename": "2026-03-27-16-14-25_5ed6dd246598d6e09a5cad4250025f5f-68ef5f9af630e307_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "speed": 5,
+            "altitude": 20
+          },
+          "channel": "drone_3",
+          "additionalParams": {
+            "targetId": 2,
+            "instanceId": 4
+          }
+        }
+      ],
+      "predicted_text": "üçüncü dron dördüncü dronun bulduğu ikinci hedefe git",
+      "stt_time_s": 0.05031610501464456,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "altitude": 20,
+            "speed": 5
+          },
+          "additionalParams": {
+            "instanceId": 4,
+            "targetId": 2
+          }
+        }
+      ],
+      "ttc_time_s": 0.7075045499950647,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7597020820248872
+    },
+    {
+      "filename": "2026-03-27-16-16-23_a56d410abff67aa993b1331224aff611-e4836005cd183b64_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -20,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "bir numaralı duron yirmi metre güneye git",
+      "stt_time_s": 0.02633624500595033,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6968775650020689,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.72393194102915
+    },
+    {
+      "filename": "2026-03-27-16-16-48_e585dcb7f8c109825a0e828e12512961-66ec69ab47ddd93f_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -5,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "birinci dron beş metre güneye git",
+      "stt_time_s": 0.028192839003168046,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -5,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7690953849814832,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7981005669571459
+    },
+    {
+      "filename": "2026-03-27-16-26-06_910b83d1b236e04e1df0f07d299e190c-b772a1a19e6b22be_input.wav",
+      "reference": [],
+      "predicted_text": "",
+      "stt_time_s": 0.019739646988455206,
+      "predicted_commands": [],
+      "ttc_time_s": 0.005272881011478603,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 0.025566942989826202
+    },
+    {
+      "filename": "2026-03-27-16-26-21_ec68e5d9f495c571f02453d1094e8c1b-680d65e7a2afcb5e_input.wav",
+      "reference": [
+        {
+          "action": "AUTO_LAND",
+          "channel": "drone_4"
+        }
+      ],
+      "predicted_text": "dördüncü dron iniş yap",
+      "stt_time_s": 0.026482264045625925,
+      "predicted_commands": [
+        {
+          "channel": "drone_4",
+          "action": "AUTO_LAND"
+        }
+      ],
+      "ttc_time_s": 0.4929202679777518,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.520078742003534
+    },
+    {
+      "filename": "2026-03-27-16-26-42_4e1d09f91781255cf07c9353a940109d-b4b8fcc27100220a_input.wav",
+      "reference": [
+        {
+          "action": "FORCE_LAND",
+          "channel": "drone_4"
+        }
+      ],
+      "predicted_text": "dördüncü duron acil iniş yap",
+      "stt_time_s": 0.020013543020468205,
+      "predicted_commands": [
+        {
+          "channel": "drone_4",
+          "action": "FORCE_LAND"
+        }
+      ],
+      "ttc_time_s": 0.49304196395678446,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5136568029993214
+    },
+    {
+      "filename": "2026-03-27-16-27-00_32df4131f3805a13a83878d2247af0ff-8b5151375c8c8114_input.wav",
+      "reference": [
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "i̇çinci duron eve dön",
+      "stt_time_s": 0.023979123041499406,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 0.49512333096936345,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5198322649812326
+    },
+    {
+      "filename": "2026-03-27-16-27-21_55263143dfb35e8b55174bbf8af9c200-b170a486e317454a_input.wav",
+      "reference": [
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "üçüncü dron eve geri dön",
+      "stt_time_s": 0.025679488957393914,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 0.49382393300766125,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5201736800372601
+    },
+    {
+      "filename": "2026-03-27-16-28-19_8a9d8d099919f86f812b8f257f297ace-4c2aebed63b0670c_input.wav",
+      "reference": [
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "birinci drone eve dön",
+      "stt_time_s": 0.024246810004115105,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 0.49154543498298153,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5164094460196793
+    },
+    {
+      "filename": "2026-04-01-10-36-26_4e664bbe6d0cc4f1dcf617ffea4ce6b7-11a73d295e9962f5_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dronlar kaltış yapın",
+      "stt_time_s": 0.02392062498256564,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.39993168599903584,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.42450512800132856
+    },
+    {
+      "filename": "2026-04-01-11-22-27_d46a5e03884e87ca4cd01021b0648ce9-a041c4a05b0f8f82_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "kendi ae kendiestümdür onlar kalkış yapın onu sen deni aynı",
+      "stt_time_s": 0.025469594984315336,
+      "predicted_commands": [],
+      "ttc_time_s": 0.33073538402095437,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 0,
+        "reference_count": 1
+      },
+      "total_time_s": 0.35690256499219686
+    },
+    {
+      "filename": "2026-04-01-11-26-17_e0d18f81ec11c8125a3f5cad636dbbaa-a8de29b38055257d_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tümdir onlar kalkış yapın",
+      "stt_time_s": 0.023675945994909853,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.40119456499814987,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.4254903999972157
+    },
+    {
+      "filename": "2026-04-01-11-26-29_b5f9f035dad388f028c49a8fdd0de45e-17061ec58defac80_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "aolldrons tekofa",
+      "stt_time_s": 0.025303669972345233,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.3987344299675897,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.42470042302738875
+    },
+    {
+      "filename": "2026-04-01-11-27-21_16c486ade22c712dd7be7a463e790c17-b0e4ab3212ebe916_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_ON",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki alt ışıklarını aç",
+      "stt_time_s": 0.02508007996948436,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "AUX_LIGHT_ON"
+        }
+      ],
+      "ttc_time_s": 0.4932553920079954,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5189777619671077
+    },
+    {
+      "filename": "2026-04-01-11-27-30_862e3fca67e4ccd8c5cb7a48534ee1e2-07394a37aca20a45_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_OFF",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki alt ışıklarını kapat",
+      "stt_time_s": 0.026304273982532322,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "AUX_LIGHT_OFF"
+        }
+      ],
+      "ttc_time_s": 0.5824565539951436,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6094651989988051
+    },
+    {
+      "filename": "2026-04-01-11-27-39_331e6526bbd64e43680f8fc1d1820604-664418e7c335efde_input.wav",
+      "reference": [
+        {
+          "action": "START_RTSP_STREAM",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki artisv yayınını başlat",
+      "stt_time_s": 0.027431663998868316,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "START_RTSP_STREAM"
+        }
+      ],
+      "ttc_time_s": 0.49206568900262937,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5202432950027287
+    },
+    {
+      "filename": "2026-04-01-11-28-26_b2336aec15b51f90633ceb89bb65e79b-d3adc8532e89fc97_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_ON",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki ışıklarını aç",
+      "stt_time_s": 0.024955980014055967,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "AUX_LIGHT_ON"
+        }
+      ],
+      "ttc_time_s": 0.49284090602304786,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5184359760023654
+    },
+    {
+      "filename": "2026-04-01-11-28-36_acdff82812bc29cb696addae6006f037-58ff7003dc146321_input.wav",
+      "reference": [
+        {
+          "action": "LED_OFF",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki letlerini kapat",
+      "stt_time_s": 0.025187187013216317,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "LED_OFF"
+        }
+      ],
+      "ttc_time_s": 0.49720566399628296,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5230282290140167
+    },
+    {
+      "filename": "2026-04-01-11-28-46_11e463ae42b1f7329e44c79a4fd4d526-8510c40e2b40a228_input.wav",
+      "reference": [
+        {
+          "action": "LED_ON",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki ledlerini aç",
+      "stt_time_s": 0.034707446990069,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "LED_ON"
+        }
+      ],
+      "ttc_time_s": 0.49250537203624845,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5279811269720085
+    },
+    {
+      "filename": "2026-04-01-11-29-33_9c6c25a48a8b0350a175056f2ce4b80e-bac1bd61b65e6700_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_OFF",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "drone iki ışıklarını kapat",
+      "stt_time_s": 0.02499521302524954,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "AUX_LIGHT_OFF"
+        }
+      ],
+      "ttc_time_s": 0.49251535400981084,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5181566009996459
+    },
+    {
+      "filename": "2026-04-01-11-30-55_f80708dbcde2e02dd4cf67c289b66321-aa41e0d252183229_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki kalkış yap",
+      "stt_time_s": 0.02559302095323801,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.5096055469475687,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5358680579811335
+    },
+    {
+      "filename": "2026-04-01-11-31-05_068da7c08262cf7458b437b813a72992-be6903027d60e1e7_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 20,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "drone iki yir metre yüksel",
+      "stt_time_s": 0.029108956980053335,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 20,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6829824849846773,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7141858040122315
+    },
+    {
+      "filename": "2026-04-01-11-31-22_c05df8b2a8a109f51cc8e8e814e88541-2fe1da195500ef28_input.wav",
+      "reference": [
+        {
+          "action": "GIMBAL_DOWN_90",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki gimbalini doksan derece aşığı ya indir",
+      "stt_time_s": 0.034813720965757966,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "GIMBAL_DOWN_90"
+        }
+      ],
+      "ttc_time_s": 0.5203403949853964,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5559315140126273
+    },
+    {
+      "filename": "2026-04-01-11-31-36_57eb80b6bde451a53d4721ae6d2069db-1e4a75eaa262a518_input.wav",
+      "reference": [
+        {
+          "action": "GIMBAL_DOWN_90",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki gim balini doksan derece aşağı indir",
+      "stt_time_s": 0.03400957101257518,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "GIMBAL_DOWN_90"
+        }
+      ],
+      "ttc_time_s": 0.49514046794502065,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5299042999977246
+    },
+    {
+      "filename": "2026-04-01-11-31-46_51bf282630e4cdee4b2c0c540964f0e5-38e06b3c04fda55d_input.wav",
+      "reference": [
+        {
+          "action": "SET_GIMBAL_LOCK",
+          "params": "true",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki gimbalini kilitle",
+      "stt_time_s": 0.025732287962455302,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "SET_GIMBAL_LOCK",
+          "params": "true"
+        }
+      ],
+      "ttc_time_s": 0.4942253070184961,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5206723029841669
+    },
+    {
+      "filename": "2026-04-01-11-32-03_44f0c9a3255e9e7159d360705ad8d64c-d078aac0d38535ad_input.wav",
+      "reference": [
+        {
+          "action": "AUTO_LAND",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki iniş yap",
+      "stt_time_s": 0.02509294298943132,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "AUTO_LAND"
+        }
+      ],
+      "ttc_time_s": 0.4913710150285624,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5171090320218354
+    },
+    {
+      "filename": "2026-04-01-11-32-46_a2d6c76e14e39c2e6d7aedb688d52fe2-41d9cbf87cc94171_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki kalkış yap",
+      "stt_time_s": 0.023889965028502047,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.49919657403370366,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5237020750064403
+    },
+    {
+      "filename": "2026-04-01-11-33-00_92f47058c96197eb179504980e0263a1-381efef011db1d9a_input.wav",
+      "reference": [
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 20,
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "drone iki yi metreye yüksel",
+      "stt_time_s": 0.028673713037278503,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "CHANGE_ALTITUDE",
+          "params": 1
+        }
+      ],
+      "ttc_time_s": 0.5962559270556085,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6264740659971721
+    },
+    {
+      "filename": "2026-04-01-11-33-18_94a8a41551ed73e0d38a162d6bb205d3-1e9fb94b17cbc1cf_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": 10,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "droneiki on metre ileriye git",
+      "stt_time_s": 0.027336716011632234,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 10,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7717498120036907,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7998388039995916
+    },
+    {
+      "filename": "2026-04-01-11-34-13_8234c871d457ec1cd5e49f07d92f61b1-0487f242669b492b_input.wav",
+      "reference": [
+        {
+          "action": "SET_GIMBAL_LOCK",
+          "params": "true",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "droniki gimbali kilitle",
+      "stt_time_s": 0.025438712036702782,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "SET_GIMBAL_LOCK",
+          "params": "true"
+        }
+      ],
+      "ttc_time_s": 0.49457522004377097,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5206859500030987
+    },
+    {
+      "filename": "2026-04-01-11-34-25_62e3682eea06b533a855a441a0b07bc5-626486951ec27375_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": -10,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "drone iki on metre geri gel",
+      "stt_time_s": 0.028629774984437972,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": -10,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7717948259669356,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.801130250969436
+    },
+    {
+      "filename": "2026-04-01-11-34-38_b9326c2f316e8f0beb5d16c655bf071f-1b97070c47e1a090_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 10,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "drone ik onmetre sağgit",
+      "stt_time_s": 0.02806835202500224,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7741826279670931,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8031933419988491
+    },
+    {
+      "filename": "2026-04-01-11-34-53_76871c8efec3b5a5c0f506914ad896e9-8828bbed0feb7f75_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": -10,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "drone iki on metre sola git",
+      "stt_time_s": 0.03668941801879555,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": -10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7741844789707102,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8133099309634417
+    },
+    {
+      "filename": "2026-04-01-11-35-24_bd58cb2e81561d958485afcfd98ccd29-bf86e421f0be4c4f_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": -60,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki metre batıya git",
+      "stt_time_s": 0.034287272952497005,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": -2,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6797622140147723,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7148520689806901
+    },
+    {
+      "filename": "2026-04-01-11-36-10_5c8153504683890474ba72dd5bef64d3-9deeed56038179d9_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 20,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -20,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki  metre kuzeye git ardından i metre güneye git",
+      "stt_time_s": 0.03775882296031341,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 2,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -1,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 2.066533210047055,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": false,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 2.105174328025896
+    },
+    {
+      "filename": "2026-04-01-11-36-45_6f94b8599f67c3da4031d361ac1de2e6-1029e082655367a1_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 20,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -20,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki yirmi metre kuzeye git ardından yirmi metre güneye git",
+      "stt_time_s": 0.039748829032760113,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.082723775994964,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 1.1234183270134963
+    },
+    {
+      "filename": "2026-04-01-11-37-04_bba02069505eadad791d17258c6f6d4a-e55d5862de487e77_input.wav",
+      "reference": [
+        {
+          "action": "STOP_MISSION",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki dur",
+      "stt_time_s": 0.019198027963284403,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "STOP_MISSION"
+        }
+      ],
+      "ttc_time_s": 0.5355201089987531,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5552750159986317
+    },
+    {
+      "filename": "2026-04-01-11-37-20_ccfb40427b9e703c4ec543f3c9a45ff9-2476dcc274d79a8e_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 30,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "droniki metre kuzeye git",
+      "stt_time_s": 0.042157246032729745,
+      "predicted_commands": [
+        {
+          "channel": "INVALID",
+          "action": "MOVE_TO_CARDINAL"
+        }
+      ],
+      "ttc_time_s": 1.503639260015916,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.548072728968691
+    },
+    {
+      "filename": "2026-04-01-11-37-39_ff8f4a5ac1e95099bd8f2d0716e1bad5-d3ed5c1d2d425727_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 50,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki elli metre kuzeye git",
+      "stt_time_s": 0.026008196990005672,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 50,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7921001760405488,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8188074310310185
+    },
+    {
+      "filename": "2026-04-01-11-38-08_e8d979378d6635e961b3a60866b5cf14-10ab60ac5e9be29b_input.wav",
+      "reference": [
+        {
+          "action": "INVALID",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki taklalar atarak galyumbulaya çakıl",
+      "stt_time_s": 0.03415869001764804,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "INVALID"
+        }
+      ],
+      "ttc_time_s": 0.511070882959757,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.545986489043571
+    },
+    {
+      "filename": "2026-04-01-11-39-43_b6a7a4922d00f14f7cf3e58cd1d9b6ea-4222e701eb91beee_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 20,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 20,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": -20,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "droniki metre yüksel kuzeye git  metre batıya git  metre",
+      "stt_time_s": 0.04894744500052184,
+      "predicted_commands": [],
+      "ttc_time_s": 1.2999390789773315,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 0,
+        "reference_count": 3
+      },
+      "total_time_s": 1.3499777219840325
+    },
+    {
+      "filename": "2026-04-01-11-40-39_b5c5b5e85e0a09569b70e2e1248a4fc3-bf8c043a89fa3d98_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": -20,
+            "north": 20,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "edron iki irmi kuzeye yirmi batıya git",
+      "stt_time_s": 0.026234346034470946,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 20,
+            "east": -20,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.7589451820240356,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.7859096280299127
+    },
+    {
+      "filename": "2026-04-01-11-40-53_4e537ff06557ee7b2ee5120b58113027-db42414273e4ae9f_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 20,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 20,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki yirmi metre yüksel ardından yirmi metre yüksel",
+      "stt_time_s": 0.04650872095953673,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 20,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 20,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.342591235996224,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 1.3912552159745246
+    },
+    {
+      "filename": "2026-04-01-11-41-37_54ae8047a9a1a270fe8f601d50665254-757fd3613199c554_input.wav",
+      "reference": [
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki eve dön",
+      "stt_time_s": 0.07036808901466429,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 0.6567226879997179,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7308181419502944
+    },
+    {
+      "filename": "2026-04-01-11-42-13_9521aecd6cf4d00768a8512268cf50d9-78166cac01992719_input.wav",
+      "reference": [
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki eve dön",
+      "stt_time_s": 0.025213740998879075,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 0.399971031001769,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.42585519095882773
+    },
+    {
+      "filename": "2026-04-01-11-45-47_9da632ee1577b527de3aa8ad3c5199ee-f470147fb8fb52d8_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_ON",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dur onlar ışıklarınızı açın",
+      "stt_time_s": 0.025174637034069747,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "AUX_LIGHT_ON"
+        }
+      ],
+      "ttc_time_s": 0.5071752560324967,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5330226149526425
+    },
+    {
+      "filename": "2026-04-01-11-45-57_65c3185ec340a02dc08aa6ccf05791e7-e75768ed65018c3d_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_OFF",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dur onlar ışıklarınızı kapatın",
+      "stt_time_s": 0.025239309994503856,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "AUX_LIGHT_OFF"
+        }
+      ],
+      "ttc_time_s": 0.39700774702942,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.42290579399559647
+    },
+    {
+      "filename": "2026-04-01-11-46-20_076ccca8276f84c94dce84dbcf77774b-92fea090a8da0a75_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm duronlar kalkış yapın",
+      "stt_time_s": 0.025631288008298725,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.3973396589863114,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.42363179801031947
+    },
+    {
+      "filename": "2026-04-01-11-46-42_591f42a8bad11f69bcaebcbe20e77a4d-b64d36716fdbb98c_input.wav",
+      "reference": [
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 40,
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dur onlar kırk metreye yükselin",
+      "stt_time_s": 0.03557863098103553,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "CHANGE_ALTITUDE",
+          "params": 40
+        }
+      ],
+      "ttc_time_s": 0.5821291229804046,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6196304300101474
+    },
+    {
+      "filename": "2026-04-01-11-47-12_3489a99e45a2029d850935e875200f6b-8ed27b95349e31e7_input.wav",
+      "reference": [
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 40,
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç kırk metreye yüksel",
+      "stt_time_s": 0.0253474090131931,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "CHANGE_ALTITUDE",
+          "params": 40
+        }
+      ],
+      "ttc_time_s": 0.5987758130067959,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6248254159581847
+    },
+    {
+      "filename": "2026-04-01-11-48-10_d06b136687dc92f8e37311691d255af3-3b3e10cdf6c74638_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 10,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm duronlar on metre kuzeye gidin",
+      "stt_time_s": 0.027067007031291723,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6969499299884774,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7249955550068989
+    },
+    {
+      "filename": "2026-04-01-11-49-51_f5aff043bba56975b15eb9fe6576e0df-3696c740319d04d7_input.wav",
+      "reference": [],
+      "predicted_text": "ne midun",
+      "stt_time_s": 0.016287737991660833,
+      "predicted_commands": [],
+      "ttc_time_s": 0.2994682559510693,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 0.31619722198229283
+    },
+    {
+      "filename": "2026-04-01-11-52-19_cdaa2fdeade0fe92481728509e2512f7-1ea646b4ba090140_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm duronlar kalkış yapın",
+      "stt_time_s": 0.025537588982842863,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.40095001802546903,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.4271598169580102
+    },
+    {
+      "filename": "2026-04-01-11-52-29_9bc4c5bb8c42de43b725ff41f9561784-55effcbcd69ea27e_input.wav",
+      "reference": [
+        {
+          "action": "START_RTSP_STREAM",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dur onlar yayınlarınızı başlatın",
+      "stt_time_s": 0.027446184947621077,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "START_RTSP_STREAM"
+        }
+      ],
+      "ttc_time_s": 0.3987829820252955,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.4269496669876389
+    },
+    {
+      "filename": "2026-04-01-11-52-58_2273bec69c34babdb982140f1e83ee76-056d5963f14cba9d_input.wav",
+      "reference": [
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 20,
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dronlar yirmi metreye yükselin",
+      "stt_time_s": 0.02640084398444742,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "CHANGE_ALTITUDE",
+          "params": 20
+        }
+      ],
+      "ttc_time_s": 0.4936686570290476,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5207635360420682
+    },
+    {
+      "filename": "2026-04-01-11-53-21_34719190cb505adabd5b18843570bc86-cfc9d7c7ddb00bc7_input.wav",
+      "reference": [
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 20,
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç yirmi metreye yüksel",
+      "stt_time_s": 0.027171329013071954,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "CHANGE_ALTITUDE",
+          "params": 20
+        }
+      ],
+      "ttc_time_s": 0.6015770550002344,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6294856520253234
+    },
+    {
+      "filename": "2026-04-01-11-53-43_4d6149bdc0cb8cb0af630645ec060307-46f8c2e0b5f87ac5_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": -20,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "bir numaralı dron yirmi metre batıya git",
+      "stt_time_s": 0.026066115009598434,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": -20,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6954810370225459,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7222558750072494
+    },
+    {
+      "filename": "2026-04-01-11-53-55_876783a2ba16fbc86ecadca7f07d4e49-017610f8156cb64a_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 10,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "bir numaralıdur on on metre yüksel",
+      "stt_time_s": 0.02417995099676773,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 10,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.693182696995791,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7180465380079113
+    },
+    {
+      "filename": "2026-04-01-11-54-08_5b975e13d079a6eca6742c91103a56cc-4d4535d1ae4ae835_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 5,
+            "east": -10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "i̇kinci dron on metre batı beş metre yukarı",
+      "stt_time_s": 0.0345513999927789,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": -10,
+            "up": 5,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.9712476680288091,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.0066058409865946
+    },
+    {
+      "filename": "2026-04-01-11-54-37_36413dc6f92b12c5195039ac0d11c5da-2c4310f0d79210c7_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": 5,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dronlar beş metre ileriye gidin",
+      "stt_time_s": 0.026721908012405038,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 5,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6923593349638395,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7198026379919611
+    },
+    {
+      "filename": "2026-04-01-11-54-54_a8dddab0292710a70647b50f80b4375f-09e2d34519d19996_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": -5,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm duronlar beş metre geri gidin",
+      "stt_time_s": 0.029836425033863634,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": -5,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7191049180109985,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7497442759922706
+    },
+    {
+      "filename": "2026-04-01-11-55-16_d96da0d9e5788f0ebf671106c72d533a-4eca3df7c1dc64b7_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 20,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": -20,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm duronlar yirmi metre kuzeye gidin ardından yirmi metre geriye gelin",
+      "stt_time_s": 0.09405467502074316,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 20,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": -20,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.1935545570449904,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 1.2934603970497847
+    },
+    {
+      "filename": "2026-04-01-12-00-55_f2fd85273f47a96a8dc2a8802e8d7f38-644522a88c617d9c_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 30,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -30,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm duronlar otuz metre kuzeye gidin ardından otuz metre güneye gelin",
+      "stt_time_s": 0.07675276504596695,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 30,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -30,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.0953653249889612,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 1.1760971419862472
+    },
+    {
+      "filename": "2026-04-01-12-01-17_ead0193e2829c83fc1b4c8066eab230e-76a2ec4fa364decb_input.wav",
+      "reference": [
+        {
+          "action": "STOP_MISSION",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dur onlar durun",
+      "stt_time_s": 0.026703473995439708,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "STOP_MISSION"
+        }
+      ],
+      "ttc_time_s": 1.4977917810319923,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.5252123620011844
+    },
+    {
+      "filename": "2026-04-01-12-01-58_c598c10fa7d93d44c7e9674b0b219ad6-43a64158ff460641_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 1,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 2,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 3,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "drone bir bir metre yüksel dron iki iki metre yüksel dron üç üç metre yüksel",
+      "stt_time_s": 0.1068961700075306,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 1,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 2,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 3,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 2.6678634370327927,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 3,
+        "reference_count": 3
+      },
+      "total_time_s": 2.7835285490145907
+    },
+    {
+      "filename": "2026-04-01-12-02-51_306adbe24f3aeced1266fada953cd390-f05fa4d89bffcd6a_input.wav",
+      "reference": [
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "dron bir eve dön",
+      "stt_time_s": 0.0642673050169833,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 0.6790940540377051,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7472426790045574
+    },
+    {
+      "filename": "2026-04-01-12-03-36_26bd1efa4903909b73ff7a38de7367c9-76c65108e3b0e73f_input.wav",
+      "reference": [
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki eve dön",
+      "stt_time_s": 0.06572027096990496,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 0.506553390994668,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5760620209621266
+    },
+    {
+      "filename": "2026-04-01-12-04-09_de6b6e93e66c57dc0a640464fc5a8420-29089b71ae8e6e74_input.wav",
+      "reference": [
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç eve dön",
+      "stt_time_s": 0.01998121099313721,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 0.49241278297267854,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5129777859547175
+    },
+    {
+      "filename": "2026-04-01-12-07-21_a1b1214ebb7d0fda560a9c9976c90137-1196ad89bcb31a5f_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drones"
+        },
+        {
+          "action": "START_RTSP_STREAM",
+          "channel": "drones"
+        },
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 20,
+          "channel": "drone_1"
+        },
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 30,
+          "channel": "drone_2"
+        },
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 40,
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "tüm dronlar kalkış yapın ardından yayınlarınızı başlatın ardından birinci dron yirmi metre ikinci dron otuz metre üçüncü dron kırk metreye çık",
+      "stt_time_s": 0.0637463289895095,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "TAKEOFF"
+        },
+        {
+          "channel": "drones",
+          "action": "START_RTSP_STREAM"
+        },
+        {
+          "channel": "drone_1",
+          "action": "CHANGE_ALTITUDE",
+          "params": 20
+        },
+        {
+          "channel": "drone_2",
+          "action": "CHANGE_ALTITUDE",
+          "params": 30
+        },
+        {
+          "channel": "drone_3",
+          "action": "CHANGE_ALTITUDE",
+          "params": 40
+        }
+      ],
+      "ttc_time_s": 1.7404165689949878,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 5,
+        "reference_count": 5
+      },
+      "total_time_s": 1.8059804840013385
+    },
+    {
+      "filename": "2026-04-01-12-07-44_7706905d6c2360f56196c4f552ecdebe-9839313c00dc446d_input.wav",
+      "reference": [],
+      "predicted_text": "aldı için mi ne olduşar",
+      "stt_time_s": 0.031036228989250958,
+      "predicted_commands": [],
+      "ttc_time_s": 1.1697851850185543,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 1.2013763419818133
+    },
+    {
+      "filename": "2026-04-01-12-08-05_364de124bb82249ec7ff8c94cccef761-3f6914b0d8f15410_input.wav",
+      "reference": [
+        {
+          "action": "START_RTSP_STREAM",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tümdür onlar canlı yayınlarınızı başlatın",
+      "stt_time_s": 0.024745755014009774,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "START_RTSP_STREAM"
+        }
+      ],
+      "ttc_time_s": 0.41517068300163373,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.44060570502188057
+    },
+    {
+      "filename": "2026-04-01-12-08-19_5fdf2cbde8b66592ef8404b1bfcf8571-9541397adee05157_input.wav",
+      "reference": [],
+      "predicted_text": "",
+      "stt_time_s": 0.016509532986674458,
+      "predicted_commands": [],
+      "ttc_time_s": 0.006055299018044025,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 0.023020555963739753
+    },
+    {
+      "filename": "2026-04-01-12-08-33_83e3f5437d59a7634f777763029cce61-2bdb7ba67c59efbd_input.wav",
+      "reference": [
+        {
+          "action": "GIMBAL_DOWN_90",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm duronlar imballerinizi doksan derece aşağı inderin",
+      "stt_time_s": 0.028973292966838926,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "GIMBAL_DOWN_90"
+        }
+      ],
+      "ttc_time_s": 0.4182881729793735,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.4479815819649957
+    },
+    {
+      "filename": "2026-04-01-12-08-45_226466df1c18c876ca261c7099e6a8b9-8481284782266459_input.wav",
+      "reference": [
+        {
+          "action": "SET_GIMBAL_LOCK",
+          "params": "true",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dronlar gimballerinizi kitleyin",
+      "stt_time_s": 0.024276910990010947,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "SET_GIMBAL_LOCK",
+          "params": "true"
+        }
+      ],
+      "ttc_time_s": 0.4924618819495663,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5173679619911127
+    },
+    {
+      "filename": "2026-04-01-12-09-28_6abdf7b7362c571f537b5a1f5f990475-20a576c39ac38a1d_input.wav",
+      "reference": [
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 25,
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "i̇kinci dron yirmi beş metreye yüksel",
+      "stt_time_s": 0.03611902199918404,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "CHANGE_ALTITUDE",
+          "params": 25
+        }
+      ],
+      "ttc_time_s": 0.6057571569690481,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6427446830202825
+    },
+    {
+      "filename": "2026-04-01-12-11-17_2c50bebeddf23b1c7442670b786fa7a3-1f993ece18370cde_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 30,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm dronlar otuz metre kuzeye gidin",
+      "stt_time_s": 0.0268732369877398,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 30,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6958304269937798,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7234636840294115
+    },
+    {
+      "filename": "2026-04-01-12-12-34_e4928354a9564444a8599dcb60db60c3-553b6a3d32a1bdfc_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": -30,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "tüm duronlar otuz metre batıya ilerleyin",
+      "stt_time_s": 0.025410477013792843,
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": -30,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6776963350130245,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7038363039609976
+    },
+    {
+      "filename": "2026-04-01-12-14-01_d9a67093b63dd5bf855b27d51e88125b-d715c4d7cfdf980f_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 20,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "birinci dron yirmi metre doğuya gel",
+      "stt_time_s": 0.027521445997990668,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": 20,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7925370549783111,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8208460729802027
+    },
+    {
+      "filename": "2026-04-01-12-14-24_94d769b4a2d32007babfe71992a72515-49ea7918b4533da1_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "dron bir on metre doğuya",
+      "stt_time_s": 0.02491651102900505,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7715969959972426,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7971858779783361
+    },
+    {
+      "filename": "2026-04-01-12-14-34_c37431706a69d3f000be8953064338d9-03ff93934479c149_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "dron bir on metre doğuya",
+      "stt_time_s": 0.025936314021237195,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.6741907200193964,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7008505419944413
+    },
+    {
+      "filename": "2026-04-01-12-14-41_375f4e943d1fd5f9619f3ed7af4827e7-aef809c0087c92a4_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "dron bir on metre doğu",
+      "stt_time_s": 0.024846301006618887,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.8594633169705048,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.884979619004298
+    },
+    {
+      "filename": "2026-04-01-12-14-48_50510fb1a05967c3d5b9f64b55eafe40-defb695601b0549c_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "dron bir on metre doğuya git",
+      "stt_time_s": 0.025273223989643157,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": 10,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7702491980162449,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7962064410094172
+    },
+    {
+      "filename": "2026-04-01-12-16-52_23c7b5f156f7afa3101860ca6d9d0e56-a6550f129834beb8_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 30,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "droniki otuz metre doğu yap",
+      "stt_time_s": 0.02738681697519496,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": 30,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7891896379878744,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.817333884013351
+    },
+    {
+      "filename": "2026-04-01-12-17-01_48ffdad4bdea8b80f0c3fc0b46554616-9ffd179f89b6f63e_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 30,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki otuz metre doğuya gel",
+      "stt_time_s": 0.02492799801984802,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": 30,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7891372460289858,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8147333590313792
+    },
+    {
+      "filename": "2026-04-01-12-22-17_e44afdc1b7d6ba9fa53cefede37921e3-5cba53402be87d3f_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -10,
+            "max_speed": 3
+          },
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron iki on metre güneye gel",
+      "stt_time_s": 0.027563204988837242,
+      "predicted_commands": [
+        {
+          "channel": "drone_2",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.771539326000493,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7998576870304532
+    },
+    {
+      "filename": "2026-04-01-12-23-25_dcee3a86e85761d18e135575e03b1f0c-f44da1953b9a1fa1_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "speed": 5,
+            "altitude": 20
+          },
+          "channel": "drone_3",
+          "additionalParams": {
+            "targetId": 1,
+            "instanceId": 2
+          }
+        }
+      ],
+      "predicted_text": "dron üç dron ikinin bulduğu birinci hedefe git",
+      "stt_time_s": 0.034727300982922316,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "altitude": 20,
+            "speed": 5
+          },
+          "additionalParams": {
+            "instanceId": 2,
+            "targetId": 1
+          }
+        }
+      ],
+      "ttc_time_s": 0.6036793240346014,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6392244070302695
+    },
+    {
+      "filename": "2026-04-01-12-24-06_2201f681f8c1515713821b922330db90-27d1836ce7da6b29_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "speed": 5,
+            "altitude": 20
+          },
+          "channel": "drone_3",
+          "additionalParams": {
+            "targetId": 3,
+            "instanceId": 2
+          }
+        }
+      ],
+      "predicted_text": "dron üç dron ikinin bulduğu üçüncü hedefe git",
+      "stt_time_s": 0.03498055599629879,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "altitude": 20,
+            "speed": 5
+          },
+          "additionalParams": {
+            "instanceId": 2,
+            "targetId": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.5855564979719929,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6214209820027463
+    },
+    {
+      "filename": "2026-04-01-12-24-36_2d060b3b2451361bc25bb79618b305fd-c4078e3dc54a9866_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "speed": 5,
+            "altitude": 20
+          },
+          "channel": "drone_3",
+          "additionalParams": {
+            "targetId": 1,
+            "instanceId": 3
+          }
+        }
+      ],
+      "predicted_text": "dron üç dron üçün bulduğu birinci hedefe git",
+      "stt_time_s": 0.033806859981268644,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "altitude": 20,
+            "speed": 5
+          },
+          "additionalParams": {
+            "instanceId": 3,
+            "targetId": 1
+          }
+        }
+      ],
+      "ttc_time_s": 0.6780212800367735,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.7126035850378685
+    },
+    {
+      "filename": "2026-04-01-12-25-57_7d7e2178376b1a646dddfc4fbed8f5c8-0f8ca5299102478f_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "speed": 5,
+            "altitude": 20
+          },
+          "channel": "drone_3",
+          "additionalParams": {
+            "targetId": 1,
+            "instanceId": 2
+          }
+        }
+      ],
+      "predicted_text": "dron üç dron ikinin bulduğu birinci hedefe git",
+      "stt_time_s": 0.026390629005618393,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "MOVE_TO_COORDINATE",
+          "params": {
+            "altitude": 20,
+            "speed": 5
+          },
+          "additionalParams": {
+            "instanceId": 2,
+            "targetId": 1
+          }
+        }
+      ],
+      "ttc_time_s": 0.5870501620229334,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6141408089897595
+    },
+    {
+      "filename": "2026-04-01-12-26-49_d13dcf1f5f0d74a4bff3ae63c9312e53-50d5497babb0d66b_input.wav",
+      "reference": [
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dron üç eve dön",
+      "stt_time_s": 0.02522237302036956,
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 0.49346979102119803,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5193376860115677
+    },
+    {
+      "filename": "2026-04-01-12-27-12_bf581700a4ef31ffb282c552b29c3441-f684a44f4e34a6c2_input.wav",
+      "reference": [
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_1"
+        },
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_2"
+        }
+      ],
+      "predicted_text": "dron bir ve dron iki eve dönün",
+      "stt_time_s": 0.026342787023168057,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "RETURN_TO_HOME"
+        },
+        {
+          "channel": "drone_2",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 0.49384970200480893,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 2,
+        "reference_count": 2
+      },
+      "total_time_s": 0.5208939479780383
+    },
+    {
+      "filename": "2026-04-01-12-28-32_a73ee663b0becad3824e192bbaabcb10-81dec1f91d1f93dc_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "dron bir kalkış yap",
+      "stt_time_s": 0.023924418026581407,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "TAKEOFF"
+        }
+      ],
+      "ttc_time_s": 0.49507078900933266,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.519600631960202
+    },
+    {
+      "filename": "2026-04-01-12-28-56_be0c4c6cd2ea626c4eb9a044a6398e74-eb1f93278abad1f3_input.wav",
+      "reference": [
+        {
+          "action": "CHANGE_ALTITUDE",
+          "params": 20,
+          "channel": "drone_1"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 2,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": -2,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": 2,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": -2,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "dron bir yirmi metreye yüksel ardından biraz sağa git ardından biraz sola git ardından biraz ileri git ardından biraz geri git",
+      "stt_time_s": 0.06331913900794461,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "CHANGE_ALTITUDE",
+          "params": 20
+        },
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 2,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": -2,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 2,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": -2,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.9642624449916184,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 5,
+        "reference_count": 5
+      },
+      "total_time_s": 2.0290003099944443
+    },
+    {
+      "filename": "2026-04-01-12-29-44_ad093a38a519124173545cf6fbb51c5b-012b360dd5f8e05c_input.wav",
+      "reference": [],
+      "predicted_text": "",
+      "stt_time_s": 0.019563565030694008,
+      "predicted_commands": [],
+      "ttc_time_s": 0.006094242969993502,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 0,
+        "reference_count": 0
+      },
+      "total_time_s": 0.02835874498123303
+    },
+    {
+      "filename": "2026-04-01-12-30-01_d1981a0d1b8f3a70184b83a4694136d5-d961db6580229ea7_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 5,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        },
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 0,
+            "right": 0,
+            "forward": -5,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        },
+        {
+          "action": "INVALID",
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "dron bir beş metre kuzeye git ardından beş metre geriye git ardından rurulurp geri git",
+      "stt_time_s": 0.0449909659801051,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 5,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": -5,
+            "right": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_1",
+          "action": "INVALID"
+        }
+      ],
+      "ttc_time_s": 1.0992766349809244,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 3,
+        "reference_count": 3
+      },
+      "total_time_s": 1.1452205230016261
+    },
+    {
+      "filename": "2026-04-01-12-30-32_ccbee6112cc29e2eca69e454fe4b6831-0357e61435fc5bfb_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": 10,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": -10,
+            "north": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        },
+        {
+          "action": "INVALID",
+          "channel": "drone_1"
+        },
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 0,
+            "north": -10,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "dron bir on metre kuzeye git ardından on metre batıya git ardından central'a git yemek ye ardından on metre güneye git",
+      "stt_time_s": 0.0574721010052599,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": -10,
+            "up": 0,
+            "max_speed": 3
+          }
+        },
+        {
+          "channel": "drone_1",
+          "action": "INVALID"
+        },
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": -10,
+            "east": 0,
+            "up": 0,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 1.5386447770288214,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 4,
+        "reference_count": 4
+      },
+      "total_time_s": 1.5975109309656546
+    },
+    {
+      "filename": "2026-04-01-12-31-09_32e59444fb9b1325999228a1bfff33bb-a95d1092b13b4cb7_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": -200,
+            "north": 0,
+            "max_speed": 10
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "dron bir batıya on hızla iki yüz metre git",
+      "stt_time_s": 0.062324005004484206,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "north": 0,
+            "east": -200,
+            "up": 0,
+            "max_speed": 10
+          }
+        }
+      ],
+      "ttc_time_s": 0.9772587799816392,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.0451880550244823
+    },
+    {
+      "filename": "2026-04-01-12-31-16_34aa0a99e9becad56696bf7701e95b1d-aee05b0acc921b08_input.wav",
+      "reference": [
+        {
+          "action": "STOP_MISSION",
+          "channel": "INVALID"
+        }
+      ],
+      "predicted_text": "n bir dur",
+      "stt_time_s": 0.06172315700678155,
+      "predicted_commands": [
+        {
+          "channel": "INVALID",
+          "action": "STOP_MISSION"
+        }
+      ],
+      "ttc_time_s": 1.2097243839525618,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 1.275005652976688
+    },
+    {
+      "filename": "2026-04-01-12-31-43_001628453ed82f4f606b86bddc422905-968fdaf00da160b2_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_CARDINAL",
+          "params": {
+            "up": 0,
+            "east": 100,
+            "north": 0,
+            "max_speed": 8
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "bir yüz metre doğuya sekiz hızla gel",
+      "stt_time_s": 0.029982241976540536,
+      "predicted_commands": [
+        {
+          "channel": "INVALID",
+          "action": "MOVE_TO_CARDINAL"
+        }
+      ],
+      "ttc_time_s": 0.7895071749808267,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8202527009998448
+    },
+    {
+      "filename": "2026-04-01-12-33-00_5f21cd49ec73387f3869cb1655222902-80171851da76e7cd_input.wav",
+      "reference": [
+        {
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "up": 10,
+            "right": 0,
+            "forward": 0,
+            "max_speed": 3
+          },
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "dron bir on metre yüksel",
+      "stt_time_s": 0.035013673012144864,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "MOVE_TO_RELATIVE",
+          "params": {
+            "forward": 0,
+            "right": 0,
+            "up": 10,
+            "max_speed": 3
+          }
+        }
+      ],
+      "ttc_time_s": 0.7701720590121113,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8061370849609375
+    },
+    {
+      "filename": "2026-04-01-12-34-22_28d7b49a1607bc6a74478408bd78616f-7d9ec37ff09b8f42_input.wav",
+      "reference": [
+        {
+          "action": "RETURN_TO_HOME",
+          "channel": "drone_1"
+        }
+      ],
+      "predicted_text": "drom bir eve dön",
+      "stt_time_s": 0.02566593501251191,
+      "predicted_commands": [
+        {
+          "channel": "drone_1",
+          "action": "RETURN_TO_HOME"
+        }
+      ],
+      "ttc_time_s": 0.49464865401387215,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5209747990011238
+    }
+  ]
+}

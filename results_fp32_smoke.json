@@ -1,0 +1,139 @@
+{
+  "summary": {
+    "total": 5,
+    "errors": 0,
+    "num_correct": 2,
+    "num_correct_loose": 2,
+    "loose_accuracy": 0.4,
+    "strict_accuracy": 0.4,
+    "total_time_s": 8.012219780000123,
+    "stt_time_s": 0.9490897280002173,
+    "ttc_time_s": 7.057505321999997,
+    "avg_total_time_s": 1.6024439560000245,
+    "avg_stt_time_s": 0.18981794560004345,
+    "avg_ttc_time_s": 1.4115010643999994
+  },
+  "results": [
+    {
+      "filename": "2026-03-27-15-23-05_9dbe774da758827f83606173711714aa-9d059d3ce89254cf_input.wav",
+      "reference": [
+        {
+          "action": "TAKEOFF",
+          "channel": "drones"
+        }
+      ],
+      "predicted_text": "duronlar çalışmayedim şuan taan çün duronlar kalkış yapın kapı tabi",
+      "predicted_commands": [],
+      "stt_time_s": 0.4409007730000667,
+      "ttc_time_s": 4.889241435000258,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 0,
+        "reference_count": 1
+      },
+      "total_time_s": 5.333171105000474
+    },
+    {
+      "filename": "2026-03-27-15-24-39_553de7b85387004ca35f174b7cda9518-0f2760d1e9de5fcf_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_ON",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "ron üç ışıklarını aç",
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "AUX_LIGHT_ON"
+        }
+      ],
+      "stt_time_s": 0.13341576700076985,
+      "ttc_time_s": 0.5448453829994833,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6789298679996136
+    },
+    {
+      "filename": "2026-03-27-15-24-47_17bf266f44b79ea30e89e2bbccc6b10d-5e532d84218a8629_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_OFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "dronuç işıklarini kapat",
+      "predicted_commands": [
+        {
+          "channel": "drones",
+          "action": "AUX_LIGHT_OFF"
+        }
+      ],
+      "stt_time_s": 0.126639845999307,
+      "ttc_time_s": 0.40797338300035335,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.5352412109996294
+    },
+    {
+      "filename": "2026-03-27-15-25-28_e67a138872a2bf9fb1f2ee4ad6a3ce2b-2a6c58a167573c63_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_ON",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "durun üç bışıklaraç",
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "WAIT",
+          "params": 2
+        }
+      ],
+      "stt_time_s": 0.1232781740000064,
+      "ttc_time_s": 0.6994283200001519,
+      "comparison": {
+        "loose_match": false,
+        "strict_match": false,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.8233431480002764
+    },
+    {
+      "filename": "2026-03-27-15-25-37_46e9d5f730a16b681092aacdd10917e2-9c9a9cfbbde135e9_input.wav",
+      "reference": [
+        {
+          "action": "AUX_LIGHT_OFF",
+          "channel": "drone_3"
+        }
+      ],
+      "predicted_text": "duronüç ışıkları kapat",
+      "predicted_commands": [
+        {
+          "channel": "drone_3",
+          "action": "AUX_LIGHT_OFF"
+        }
+      ],
+      "stt_time_s": 0.12485516800006735,
+      "ttc_time_s": 0.5160168009997506,
+      "comparison": {
+        "loose_match": true,
+        "strict_match": true,
+        "predicted_count": 1,
+        "reference_count": 1
+      },
+      "total_time_s": 0.6415344480001295
+    }
+  ]
+}
