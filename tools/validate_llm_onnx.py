@@ -36,11 +36,29 @@ def cache_feed(session, token, cache):
     return dict(zip(names, [token, *cache], strict=True))
 
 
-def check_outputs(actual, logits, cache, label, atol=2e-4, rtol=2e-4):
+def relative_l2(actual, expected, label, limit):
+    if actual.shape != expected.shape:
+        raise AssertionError(f"{label}: {actual.shape} != {expected.shape}")
+    error = np.abs(actual - expected)
+    relative = float(np.linalg.norm(error) / max(np.linalg.norm(expected), 1e-12))
+    if relative > limit:
+        raise AssertionError(f"{label}: relative L2 error {relative} exceeds {limit}")
+    return {"max_abs_error": float(error.max()), "relative_l2_error": relative}
+
+
+def check_outputs(actual, logits, cache, label, atol=2e-4, rtol=2e-4, cache_l2=None):
+    """Logits are always compared elementwise. With cache_l2, K/V tensors are gated by
+    relative L2 instead, for end-to-end runs whose inputs differ by encoder noise."""
     expected = [logits.numpy(), *[value.numpy() for value in cache]]
     if len(actual) != len(expected):
         raise AssertionError("Wrong number of cache outputs")
-    errors = [compare(a, b, f"{label}:{i}", atol, rtol) for i, (a, b) in enumerate(zip(actual, expected))]
+    errors = [compare(actual[0], expected[0], f"{label}:0", atol, rtol)]
+    errors += [
+        compare(a, b, f"{label}:{i}", atol, rtol)
+        if cache_l2 is None
+        else relative_l2(a, b, f"{label}:{i}", cache_l2)
+        for i, (a, b) in enumerate(zip(actual[1:], expected[1:]), start=1)
+    ]
     if actual[0].argmax(-1).item() != expected[0].argmax(-1).item():
         raise AssertionError(f"Greedy mismatch: {label}")
     return {
@@ -63,6 +81,11 @@ def main():
     parser.add_argument("--context-scaled-limit", type=float, default=1e-3)
     parser.add_argument("--context-l2-limit", type=float, default=1e-4)
     parser.add_argument("--generation-tolerance", type=float, default=2e-3)
+    parser.add_argument(
+        "--generation-cache-l2",
+        type=float,
+        help="Gate generation K/V caches by relative L2 instead of elementwise",
+    )
     args = parser.parse_args()
     import torch
 
@@ -156,6 +179,7 @@ def main():
                         f"{clip['audio']}:{index}",
                         atol=args.generation_tolerance,
                         rtol=args.generation_tolerance,
+                        cache_l2=args.generation_cache_l2,
                     )
                     token = int(logits.argmax(-1))
                     record.update({"step": index, "token": token})
@@ -193,6 +217,7 @@ def main():
                     "device": args.device,
                     "atol": args.generation_tolerance,
                     "rtol": args.generation_tolerance,
+                    "cache_relative_l2_limit": args.generation_cache_l2,
                     "clips": reports,
                 },
                 indent=2,
