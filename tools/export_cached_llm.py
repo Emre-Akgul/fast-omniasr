@@ -31,10 +31,11 @@ def main():
     from omnilingual_asr.models.wav2vec2_llama.hub import get_wav2vec2_llama_model_hub
 
     from fast_omniasr.audio import load_audio
+    from fast_omniasr.llm.models import LLM_MODEL_CARDS
 
     torch.set_num_threads(int(os.environ.get("FAST_OMNIASR_THREADS", "4")))
     config = json.loads((args.directory / "config.json").read_text())
-    if (config.get("format_version"), config.get("model")) != (1, "omniASR_LLM_300M_v2"):
+    if config.get("format_version") != 1 or config.get("model") not in LLM_MODEL_CARDS:
         raise ValueError("Unsupported LLM artifact format or model")
     reference = json.loads((args.directory / "reference.json").read_text())
     clips = [args.directory / reference["audio"], *args.audio]

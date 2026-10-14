@@ -38,7 +38,7 @@ def main():
             raise FileExistsError("Decoder artifacts already exist")
         model = torch.jit.load(str(args.source / "decoder_cached.pt")).eval()
         if len(list(model.layers.children())) != 12 or model.embedding.weight.shape[1] != 4096:
-            raise ValueError("Only the validated 300M v2 decoder is supported")
+            raise ValueError("Only the 12-layer, 4096-dimensional LLM-ASR decoder is supported")
         export_decoder(model, args.output)
         config = json.loads((args.source / "config.json").read_text())
         config["onnx"] = {

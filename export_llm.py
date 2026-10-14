@@ -6,12 +6,25 @@ import json
 import os
 import shutil
 from pathlib import Path
+from urllib.request import urlretrieve
 
-MODEL = "omniASR_LLM_300M_v2"
+from fast_omniasr.llm.models import LLM_MODEL_CARDS, LLM_MODEL_TOKENIZERS, TOKENIZER_URLS
+
+
+def prepare_llm_tokenizer(model_card, destination, expected_vocab_size):
+    from export_onnx import sentencepiece_vocab_size
+
+    temporary = destination.with_name(f".{destination.name}.download")
+    urlretrieve(TOKENIZER_URLS[LLM_MODEL_TOKENIZERS[model_card]], temporary)
+    if sentencepiece_vocab_size(temporary) != expected_vocab_size:
+        temporary.unlink(missing_ok=True)
+        raise ValueError(f"{model_card} tokenizer does not match {expected_vocab_size} outputs")
+    temporary.replace(destination)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model", choices=LLM_MODEL_CARDS, default="omniASR_LLM_300M_v2")
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
@@ -26,10 +39,10 @@ def main():
     from fairseq2.nn import BatchLayout
     from omnilingual_asr.models.wav2vec2_llama.hub import get_wav2vec2_llama_model_hub
 
-    from export_onnx import prepare_tokenizer
     from fast_omniasr.audio import load_audio
 
     torch.set_num_threads(int(os.environ.get("FAST_OMNIASR_THREADS", "4")))
+    MODEL = args.model
     if args.output.exists():
         raise FileExistsError("Use a new output directory to avoid mixing artifact versions")
     waveform = torch.from_numpy(load_audio(args.audio))
@@ -199,7 +212,7 @@ def main():
         # The upstream 300m_v2 config can report a stale target vocabulary size.
         # Tokenizer compatibility is determined by output logits, while prefix
         # markers must preserve the reference model's actual generation behavior.
-        prepare_tokenizer(MODEL, args.output / "tokenizer.model", model.final_proj.output_dim)
+        prepare_llm_tokenizer(MODEL, args.output / "tokenizer.model", model.final_proj.output_dim)
         config = {
             "format_version": 1,
             "model": MODEL,
@@ -218,7 +231,7 @@ def main():
 
         from fast_omniasr.tokenizer import Tokenizer
 
-        reference_text = load_tokenizer("omniASR_tokenizer_written_v2").create_decoder(
+        reference_text = load_tokenizer(LLM_MODEL_TOKENIZERS[MODEL]).create_decoder(
             skip_special_tokens=True
         )(torch.tensor(reference_ids, dtype=torch.int64))
         standalone_text = Tokenizer(args.output / "tokenizer.model").decode(reference_ids)

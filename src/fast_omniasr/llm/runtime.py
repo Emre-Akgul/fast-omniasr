@@ -1,4 +1,4 @@
-"""Greedy decoding with full-prefix or explicit-cache omniASR_LLM_300M_v2 graphs."""
+"""Greedy decoding with full-prefix or explicit-cache OmniASR LLM-ASR graphs."""
 
 import json
 from dataclasses import dataclass
@@ -8,6 +8,7 @@ import numpy as np
 
 from ..audio import load_audio, prepare_audio
 from ..tokenizer import Tokenizer
+from .models import LLM_MODEL_CARDS
 
 
 @dataclass(frozen=True)
@@ -40,9 +41,9 @@ class OmniASRLLM:
 
         directory = Path(directory)
         self.config = json.loads((directory / "config.json").read_text())
-        if (self.config.get("format_version"), self.config.get("model")) != (
-            1,
-            "omniASR_LLM_300M_v2",
+        if (
+            self.config.get("format_version") != 1
+            or self.config.get("model") not in LLM_MODEL_CARDS
         ):
             raise ValueError("Unsupported LLM artifact format or model")
         if backend == "onnx":
