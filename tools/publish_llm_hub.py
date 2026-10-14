@@ -23,6 +23,8 @@ RUNTIME_FILES = [
     "decoder_step.onnx",
     "decoder_weights.json",
     "tokenizer.model",
+    "lang_embeddings.npy",
+    "languages.json",
 ]
 PARITY_FILES = [
     "encoder_parity.json",
@@ -37,6 +39,8 @@ def prepare_bundle(directory: Path) -> tuple[dict, list[Path], list[Path]]:
     config = json.loads((directory / "config.json").read_text())
     if config.get("format_version") != 1 or config.get("model") not in LLM_MODEL_CARDS:
         raise ValueError("Unsupported LLM artifact format or model")
+    if "languages" not in config:
+        raise ValueError("Run tools/export_llm_languages.py before publishing")
     for name in ["fairseq2_parity_cpu.json", "fairseq2_parity_cuda.json"]:
         report = json.loads((directory / name).read_text())
         if not report["passed"] or report["model"] != config["model"]:
@@ -97,10 +101,14 @@ python -m pip install "fast-omniasr[onnx,hub]"   # or [cuda,hub] for GPU
 from fast_omniasr.llm import OmniASRLLM
 
 model = OmniASRLLM.from_pretrained("{repo_id}", device="cpu")  # or device="cuda"
-result = model.transcribe("speech.wav")
+result = model.transcribe("speech.wav", lang="eng_Latn")
 print(result.text)
 print(result.stop_reason)  # "eos" means complete
 ```
+
+`lang` takes an upstream language code (`eng_Latn`, `tur_Latn`, `ckb_Arab`, ...; see
+`languages.json` for all {config["languages"]["count"]}). Without it the model's learned
+"no language" embedding is used, which upstream warns can degrade transcription quality.
 
 Input must be mono 16 kHz audio of at most 30 seconds. The float32 assets total
 about {sizes:.1f} GiB; CPU or GPU memory must hold the encoder and then the decoder.
@@ -122,9 +130,9 @@ about {sizes:.1f} GiB; CPU or GPU memory must hold the encoder and then the deco
 ## Parity with fairseq2
 
 Every decoding step's logits were compared against fairseq2 {config.get("fairseq2_version", "")}
-incremental greedy decoding (CPU float32) on English, Turkish and Central Kurdish clips,
-with PyTorch and fairseq2 imports blocked in the ONNX process. Greedy tokens and text matched
-at every step through EOS.
+incremental greedy decoding (CPU float32) on English, Turkish and Central Kurdish clips, each
+with and without language conditioning, with PyTorch and fairseq2 imports blocked in the ONNX
+process. Greedy tokens and text matched at every step through EOS.
 
 | Runtime | Clips | Steps incl. EOS | Max abs logit error | Tokens identical |
 |---|---:|---:|---:|---|
@@ -134,8 +142,7 @@ Reports are in `parity/`.
 
 ## Limitations
 
-Batch one, clips up to 30 seconds, greedy decoding, and no explicit language
-conditioning (the model's learned language-zero embedding is used). Output is not
+Batch one, clips up to 30 seconds and greedy decoding. Output is not
 expected to match upstream's default five-beam search. This is a format conversion: it
 does not change the upstream model's capabilities, language coverage or accuracy.
 Consult the [upstream repository](https://github.com/facebookresearch/omnilingual-asr)
@@ -149,6 +156,7 @@ for model details, training data, evaluation results and responsible-use conside
 | `decoder_prefill.onnx`, `decoder_step.onnx` | KV-cache decoder graphs |
 | `decoder.weights`, `decoder_weights.json` | Shared decoder weights and their offsets |
 | `tokenizer.model` | Matching upstream SentencePiece tokenizer |
+| `lang_embeddings.npy`, `languages.json` | Learned language embeddings and code-to-row mapping |
 | `config.json` | Runtime config and asset manifest with sizes and SHA-256 hashes |
 
 ## License and attribution

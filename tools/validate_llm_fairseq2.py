@@ -10,7 +10,7 @@ Two separate processes keep the comparison honest:
              logits, then checks the public transcribe() output end to end.
 
   python tools/validate_llm_fairseq2.py reference --model omniASR_LLM_1B_v2 \\
-      --checkpoint omniASR-LLM-1B-v2.pt --output ref/ a.wav b.wav
+      --checkpoint omniASR-LLM-1B-v2.pt --output ref/ a.wav b.wav --lang eng_Latn --lang none
   python tools/validate_llm_fairseq2.py compare ref/ --repo EmreAkgul/omniASR-LLM-1B-v2-ONNX
 """
 
@@ -59,9 +59,15 @@ def reference(args):
     )
     bos = model.target_vocab_info.bos_idx
     eos = model.target_vocab_info.eos_idx
+    langs = args.lang or ["none"] * len(args.audio)
+    if len(langs) != len(args.audio):
+        raise ValueError("Pass one --lang per clip (use 'none' for no conditioning)")
     clips = []
     with torch.inference_mode():
-        for index, audio in enumerate(args.audio):
+        for index, (audio, lang) in enumerate(zip(args.audio, langs)):
+            lang = None if lang == "none" else lang
+            if lang is not None and lang.lower() not in model.lang_mapping:
+                raise ValueError(f"Unknown language code {lang}")
             waveform = torch.from_numpy(load_audio(audio))
             if waveform.shape[1] > 480000:
                 raise ValueError("Clips must be <=30 seconds")
@@ -70,7 +76,7 @@ def reference(args):
                 source_seq_lens=[waveform.shape[1]],
                 target_seqs=torch.tensor([[bos]]),
                 target_seq_lens=[1],
-                example={},
+                example={} if lang is None else {"lang": [lang]},
             )
             contexts, lengths, _ = model(batch, return_decoder_inputs=True)
             # Upstream prefill: everything before BOS, then BOS is the first step.
@@ -100,10 +106,11 @@ def reference(args):
                 ids.append(token)
             else:
                 raise AssertionError(f"fairseq2 did not reach EOS for {audio}")
-            name = f"{index}.npy"
+            name = f"{index}.npy" if lang is None else f"{index}-{lang}.npy"
             np.save(args.output / name, np.stack(logits))
             clip = {
                 "audio": str(Path(audio).resolve()),
+                "lang": lang,
                 "normalized_audio_sha256": hashlib.sha256(waveform.numpy().tobytes()).hexdigest(),
                 "token_ids": ids[1:],
                 "text": text_decoder(torch.tensor(ids[1:], dtype=torch.int64)),
@@ -111,7 +118,7 @@ def reference(args):
                 "logits": name,
             }
             clips.append(clip)
-            print(json.dumps({k: clip[k] for k in ("audio", "text")}), flush=True)
+            print(json.dumps({k: clip[k] for k in ("audio", "lang", "text")}), flush=True)
     report = {
         "model": args.model,
         "bos_idx": bos,
@@ -149,6 +156,9 @@ def compare(args):
         expected = np.load(args.reference / clip["logits"])
         model.onnx.close()
         context = model.onnx.encode(audio)
+        if clip.get("lang"):
+            context = np.array(context, copy=True)
+            context[:, -1] = model.language_embedding(clip["lang"])
         logits, cache = model.onnx.prefill(context, np.array([[suite["bos_idx"]]], np.int64))
         errors, mismatches = [], []
         for step, wanted in enumerate(expected):
@@ -162,9 +172,10 @@ def compare(args):
                 token = np.array([[clip["token_ids"][step]]], np.int64)
                 logits, cache = model.onnx.decode_step(token, cache)
         model.onnx.close()
-        result = model.transcribe(audio, max_new_tokens=512)
+        result = model.transcribe(audio, max_new_tokens=512, lang=clip.get("lang"))
         report = {
             "audio": Path(clip["audio"]).name,
+            "lang": clip.get("lang"),
             "decode_steps_including_eos": len(expected),
             "max_logit_abs_error": max(errors),
             "first_step_logit_abs_error": errors[0],
@@ -208,6 +219,9 @@ def main():
     ref.add_argument("--checkpoint", type=Path)
     ref.add_argument("--output", type=Path, required=True)
     ref.add_argument("--max-new-tokens", type=int, default=512)
+    ref.add_argument(
+        "--lang", action="append", help="Per-clip language code, in clip order; 'none' to omit"
+    )
     ref.add_argument("audio", type=Path, nargs="+")
     cmp = commands.add_parser("compare")
     cmp.add_argument("reference", type=Path)
