@@ -65,10 +65,10 @@ def session(path, device="cpu", opts=None):
     return result
 
 
-def _decoder_options(directory):
+def _decoder_options(directory, threads=4):
     directory = Path(directory)
     metadata = json.loads((directory / "decoder_weights.json").read_text())
-    opts = options()
+    opts = options(threads)
     keepalive = []
     for name, entry in metadata.items():
         array = np.memmap(
@@ -91,12 +91,12 @@ def decoder_session(directory, graph):
     return session(directory / graph, "cpu", opts), keepalive
 
 
-def decoder_sessions(directory, device="cpu"):
+def decoder_sessions(directory, device="cpu", threads=4):
     directory = Path(directory)
     providers(device)
     if device != "cpu":
         raise ValueError("Shared decoder sessions are CPU-only; phase CUDA sessions instead")
-    opts, keepalive = _decoder_options(directory)
+    opts, keepalive = _decoder_options(directory, threads)
     prefill = session(directory / "decoder_prefill.onnx", device, opts)
     step = session(directory / "decoder_step.onnx", device, opts)
     return prefill, step, keepalive
@@ -110,9 +110,10 @@ class ONNXLLMBackend:
     between prefill and step; cache transfers remain explicit CPU copies.
     """
 
-    def __init__(self, directory, device="cpu"):
+    def __init__(self, directory, device="cpu", threads=4):
         self.directory = Path(directory)
         self.device = device
+        self.threads = threads
         providers(device)
         self.prefill_session = self.step_session = None
         self.keepalive = []
@@ -134,7 +135,7 @@ class ONNXLLMBackend:
 
     def encode(self, audio):
         self.close()
-        encoder = session(self.directory / "encoder.onnx", self.device)
+        encoder = session(self.directory / "encoder.onnx", self.device, options(self.threads))
         context = encoder.run(
             ["context"], {"audio": np.ascontiguousarray(audio)}, self.run_options
         )[0]
@@ -146,11 +147,11 @@ class ONNXLLMBackend:
         if self.prefill_session is None:
             if self.device == "cpu":
                 self.prefill_session, self.step_session, self.keepalive = decoder_sessions(
-                    self.directory, self.device
+                    self.directory, self.device, self.threads
                 )
             else:
                 self.prefill_session = session(
-                    self.directory / "decoder_prefill.onnx", self.device
+                    self.directory / "decoder_prefill.onnx", self.device, options(self.threads)
                 )
             expected_prefill = ["context", "bos"]
             expected_step = ["token"] + [
@@ -174,7 +175,9 @@ class ONNXLLMBackend:
             outputs = [np.array(value, copy=True) for value in outputs]
             self.prefill_session = None
             gc.collect()
-            self.step_session = session(self.directory / "decoder_step.onnx", self.device)
+            self.step_session = session(
+                self.directory / "decoder_step.onnx", self.device, options(self.threads)
+            )
             expected = ["token"] + [
                 f"past_{kind}_{i}" for i in range(12) for kind in ("key", "value")
             ]

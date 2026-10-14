@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -28,7 +29,7 @@ def main():
     from export_onnx import prepare_tokenizer
     from fast_omniasr.audio import load_audio
 
-    torch.set_num_threads(4)
+    torch.set_num_threads(int(os.environ.get("FAST_OMNIASR_THREADS", "4")))
     if args.output.exists():
         raise FileExistsError("Use a new output directory to avoid mixing artifact versions")
     waveform = torch.from_numpy(load_audio(args.audio))

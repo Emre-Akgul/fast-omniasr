@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -19,7 +20,7 @@ def main():
 
     from fast_omniasr.audio import load_audio
 
-    torch.set_num_threads(4)
+    torch.set_num_threads(int(os.environ.get("FAST_OMNIASR_THREADS", "4")))
     config = json.loads((args.directory / "config.json").read_text())
     encoder = torch.jit.load(str(args.directory / "encoder.pt")).eval()
     with torch.inference_mode():

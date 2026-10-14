@@ -4,6 +4,7 @@ import argparse
 import gc
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -12,8 +13,11 @@ from fast_omniasr.llm.onnx_backend import (
     ONNXLLMBackend,
     decoder_session,
     decoder_sessions,
+    options,
     session,
 )
+
+THREADS = int(os.environ.get("FAST_OMNIASR_THREADS", "4"))
 
 
 def compare(actual, expected, label, atol=2e-4, rtol=2e-4):
@@ -57,13 +61,13 @@ def main():
     args = parser.parse_args()
     import torch
 
-    torch.set_num_threads(4)
+    torch.set_num_threads(THREADS)
     suite = json.loads((args.source / "cached_reference.json").read_text())
     if args.stage == "contexts":
         from fast_omniasr.audio import load_audio
 
         model = torch.jit.load(str(args.source / "encoder.pt")).eval()
-        encoder = session(args.directory / "encoder.onnx", args.device)
+        encoder = session(args.directory / "encoder.onnx", args.device, options(THREADS))
         arrays, reports = {}, []
         with torch.inference_mode():
             for i, clip in enumerate(suite["clips"]):
@@ -101,7 +105,7 @@ def main():
         return
     model = torch.jit.load(str(args.source / "decoder_cached.pt")).eval()
     if args.device == "cpu" and args.stage != "generation":
-        prefill, step, keepalive = decoder_sessions(args.directory, args.device)
+        prefill, step, keepalive = decoder_sessions(args.directory, args.device, THREADS)
         backend = None
     elif args.device == "cpu":
         prefill = step = None
@@ -110,7 +114,7 @@ def main():
     else:
         prefill = step = None
         keepalive = []
-        backend = ONNXLLMBackend(args.directory, args.device)
+        backend = ONNXLLMBackend(args.directory, args.device, THREADS)
     rng = np.random.default_rng(19)
     bos = torch.tensor([[0]], dtype=torch.int64)
     if args.stage == "generation":

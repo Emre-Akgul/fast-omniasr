@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -17,7 +18,8 @@ def main():
     import onnxruntime as ort
     import torch
 
-    torch.set_num_threads(4)
+    threads = int(os.environ.get("FAST_OMNIASR_THREADS", "4"))
+    torch.set_num_threads(threads)
     args.output.mkdir(parents=True, exist_ok=True)
     if args.source.resolve() == args.output.resolve():
         raise ValueError("Use a separate output directory to preserve Day-2 artifacts")
@@ -102,7 +104,7 @@ def main():
                 dynamic_axes={"audio": {1: "samples"}, "context": {1: "audio_positions"}},
             )
         options = ort.SessionOptions()
-        options.intra_op_num_threads = 4
+        options.intra_op_num_threads = threads
         session = ort.InferenceSession(
             str(target), sess_options=options, providers=["CPUExecutionProvider"]
         )

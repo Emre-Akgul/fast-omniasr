@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -31,7 +32,7 @@ def main():
 
     from fast_omniasr.audio import load_audio
 
-    torch.set_num_threads(4)
+    torch.set_num_threads(int(os.environ.get("FAST_OMNIASR_THREADS", "4")))
     config = json.loads((args.directory / "config.json").read_text())
     if (config.get("format_version"), config.get("model")) != (1, "omniASR_LLM_300M_v2"):
         raise ValueError("Unsupported LLM artifact format or model")

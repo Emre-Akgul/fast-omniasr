@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import importlib.abc
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -29,11 +30,12 @@ def main():
     parser.add_argument("--backend", choices=["torch", "onnx"], default="torch")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     args = parser.parse_args()
+    threads = int(os.environ.get("FAST_OMNIASR_THREADS", "4"))
     sys.meta_path.insert(0, BlockReferenceImports(forbid_torch=args.backend == "onnx"))
     if args.backend == "torch":
         import torch
 
-        torch.set_num_threads(4)
+        torch.set_num_threads(threads)
 
     from fast_omniasr.audio import load_audio
     from fast_omniasr.llm import OmniASRLLM
@@ -43,7 +45,13 @@ def main():
     if args.cached or args.backend == "onnx":
         suite = json.loads((args.directory / "cached_reference.json").read_text())
         references.extend(suite["clips"][1:])
-    model = OmniASRLLM(args.directory, cached=args.cached, backend=args.backend, device=args.device)
+    model = OmniASRLLM(
+        args.directory,
+        cached=args.cached,
+        backend=args.backend,
+        device=args.device,
+        threads=threads,
+    )
     results = []
     for index, expected in enumerate(references):
         audio = (

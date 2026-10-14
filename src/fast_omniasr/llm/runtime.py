@@ -32,6 +32,7 @@ class OmniASRLLM:
         device: str = "cpu",
         cached: bool = False,
         backend: str = "torch",
+        threads: int = 4,
     ):
         if backend not in {"torch", "onnx"}:
             raise ValueError("backend must be torch or onnx")
@@ -47,7 +48,7 @@ class OmniASRLLM:
         if backend == "onnx":
             from .onnx_backend import ONNXLLMBackend
 
-            self.onnx = ONNXLLMBackend(directory, device)
+            self.onnx = ONNXLLMBackend(directory, device, threads)
             self.device = device
             self.cached = True
             self.tokenizer = Tokenizer(directory / "tokenizer.model")
