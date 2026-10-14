@@ -194,7 +194,10 @@ def main():
     from huggingface_hub import CommitOperationAdd, HfApi
 
     api = HfApi()
-    api.create_repo(repo_id, repo_type="model", private=args.private, exist_ok=True)
+    # Fine-grained tokens may write to existing repos without being allowed to create them,
+    # and repo creation then fails with 401 even when the repo exists.
+    if not api.repo_exists(repo_id, repo_type="model"):
+        api.create_repo(repo_id, repo_type="model", private=args.private)
     operations = [
         CommitOperationAdd(path_in_repo=str(path.relative_to(args.directory)), path_or_fileobj=path)
         for path in [args.directory / "config.json", *assets]
