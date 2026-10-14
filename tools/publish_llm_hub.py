@@ -28,6 +28,7 @@ RUNTIME_FILES = [
 ]
 PARITY_FILES = [
     "encoder_parity.json",
+    "encoder_fp64.json",
     "decoder_probes_cpu.json",
     "decoder_probes_cuda.json",
     "fairseq2_parity_cpu.json",
@@ -41,7 +42,7 @@ def prepare_bundle(directory: Path) -> tuple[dict, list[Path], list[Path]]:
         raise ValueError("Unsupported LLM artifact format or model")
     if "languages" not in config:
         raise ValueError("Run tools/export_llm_languages.py before publishing")
-    for name in ["fairseq2_parity_cpu.json", "fairseq2_parity_cuda.json"]:
+    for name in ["encoder_fp64.json", "fairseq2_parity_cpu.json", "fairseq2_parity_cuda.json"]:
         report = json.loads((directory / name).read_text())
         if not report["passed"] or report["model"] != config["model"]:
             raise ValueError(f"{name} does not record a passing {config['model']} comparison")
