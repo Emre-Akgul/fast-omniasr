@@ -1,6 +1,6 @@
 # fast-omniasr
 
-A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr). Its CTC runtime runs all eight released CTC models (`300M`, `1B`, `3B`, and `7B`, both original and v2) on ONNX Runtime or TensorRT without PyTorch, fairseq2 or Transformers on the CTC inference path. A separate experimental LLM-ASR runtime uses PyTorch/TorchScript as a correctness baseline or ONNX Runtime for cached greedy decoding.
+A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr). Its CTC runtime runs all eight released CTC models (`300M`, `1B`, `3B`, and `7B`, both original and v2) on ONNX Runtime or TensorRT without PyTorch, fairseq2 or Transformers on the CTC inference path. A separate LLM-ASR runtime runs the eight standard LLM models (`300M`, `1B`, `3B`, and `7B`, original and v2) with KV-cached greedy decoding on ONNX Runtime, loaded with `OmniASRLLM.from_pretrained()`; PyTorch/TorchScript graphs remain available as a correctness baseline.
 
 ## Benchmark
 
@@ -152,7 +152,81 @@ python -m pytest tests/unit
 
 Integration tests need real assets via env vars and skip otherwise: `OMNIASR_ONNX`/`OMNIASR_TOKENIZER`/`OMNIASR_TEST_WAV` for ONNX, `OMNIASR_TRT_FP32_ENGINE` (+ same tokenizer/WAV) and `OMNIASR_TRT_FP16_ENGINE`/`OMNIASR_TRT_FP16_TEST_WAV` for TensorRT. `tests/integration/test_hub.py` needs only `OMNIASR_TEST_WAV` but hits the real Hub repo over the network.
 
-## Experimental LLM-ASR: 300M v2 greedy decoding
+## LLM-ASR models
+
+`fast_omniasr.llm.OmniASRLLM` runs the wav2vec2 encoder + LLaMA decoder LLM-ASR models with
+KV-cached greedy decoding on ONNX Runtime (CPU or CUDA). Inference imports only NumPy, ONNX
+Runtime and SentencePiece.
+
+```python
+from fast_omniasr.llm import OmniASRLLM
+
+model = OmniASRLLM.from_pretrained("EmreAkgul/omniASR-LLM-1B-v2-ONNX", device="cuda")
+result = model.transcribe("speech.wav", lang="eng_Latn")
+print(result.text, result.stop_reason)  # "eos" means complete
+```
+
+`from_pretrained` downloads every file listed in the repo's `config.json` and verifies its
+SHA-256. `lang` takes an upstream code such as `eng_Latn`, `tur_Latn` or `ckb_Arab` (see the
+repo's `languages.json`). Omitting it uses the model's learned "no language" embedding, as
+upstream does, and warns: upstream notes quality can degrade, and in our tests the original
+(v1) models transcribed English as looping Arabic text without a language code.
+
+| Model | Repository | Steps checked | Max logit error vs fairseq2 (CPU / CUDA) |
+|---|---|---:|---:|
+| `omniASR_LLM_300M` | `EmreAkgul/omniASR-LLM-300M-ONNX` | 885 | 4.2e-5 / 9.2e-5 |
+| `omniASR_LLM_1B` | `EmreAkgul/omniASR-LLM-1B-ONNX` | 756 | 9.9e-5 / 9.8e-5 |
+| `omniASR_LLM_3B` | `EmreAkgul/omniASR-LLM-3B-ONNX` | 848 | 5.9e-5 / 2.1e-4 |
+| `omniASR_LLM_7B` | `EmreAkgul/omniASR-LLM-7B-ONNX` | 665 | 5.1e-4 / 1.5e-3 |
+| `omniASR_LLM_300M_v2` | `EmreAkgul/omniASR-LLM-300M-v2-ONNX` | 772 | 4.6e-5 / 7.5e-5 |
+| `omniASR_LLM_1B_v2` | `EmreAkgul/omniASR-LLM-1B-v2-ONNX` | 774 | 2.1e-3 / 4.4e-4 |
+| `omniASR_LLM_3B_v2` | `EmreAkgul/omniASR-LLM-3B-v2-ONNX` | 772 | 3.8e-5 / 9.5e-5 |
+| `omniASR_LLM_7B_v2` | `EmreAkgul/omniASR-LLM-7B-v2-ONNX` | 770 | 1.1e-4 / 1.4e-4 |
+
+Each model was decoded on English, Turkish and Central Kurdish clips with and without
+language conditioning (7B v1 never reaches EOS on English without a language code, in
+fairseq2 as well, so that run is omitted). Every step's logits were compared with fairseq2 0.6
+incremental greedy decoding on CPU float32, with PyTorch and fairseq2 imports blocked in the
+ONNX process: greedy tokens and text matched at every step through EOS on CPU and CUDA. The
+ONNX encoder is additionally checked against a float64 fairseq2 reference; its error must
+stay within 3x PyTorch float32's own error. Reports are published under each repo's
+`parity/`.
+
+The exported encoder folds the positional convolution's weight normalization into a single
+float64-computed weight. Recomputing it at runtime in float32 made ORT's encoder 12-37x less
+accurate than PyTorch against float64 on the 3B model.
+
+Scope: batch one, clips up to 30 seconds, greedy decoding (upstream defaults to five-beam
+search, so outputs can differ). The zero-shot (`7B_ZS`) and streaming `Unlimited` models use
+other prompt formats and are not supported. Load only trusted model assets.
+
+### Exporting and validating an LLM model
+
+Export requires a working upstream `omnilingual_asr` / fairseq2 installation (tested with
+fairseq2 0.6, omnilingual-asr 0.2.0 and PyTorch 2.8):
+
+```bash
+M=omniASR_LLM_1B_v2; CKPT=omniASR-LLM-1B-v2.pt; D=artifacts/1b-v2
+python export_llm.py --model $M --checkpoint $CKPT --output $D/ts --audio english.wav
+python tools/export_cached_llm.py $D/ts --audio turkish.wav --audio kurdish.wav
+python export_llm_onnx.py $D/ts $D/onnx --stage encoder
+python export_llm_onnx.py $D/ts $D/onnx --stage decoder
+python tools/validate_llm_encoder_fp64.py $D/ts $D/onnx english.wav turkish.wav --checkpoint $CKPT
+python tools/export_llm_languages.py $D/onnx --checkpoint $CKPT
+python tools/validate_llm_fairseq2.py reference --model $M --checkpoint $CKPT --output $D/ref \
+  english.wav english.wav --lang none --lang eng_Latn
+python tools/validate_llm_fairseq2.py compare $D/ref --directory $D/onnx --device cpu \
+  --report $D/onnx/fairseq2_parity_cpu.json   # repeat with --device cuda
+python tools/publish_llm_hub.py $D/onnx --license LICENSE   # add --upload to publish
+```
+
+`FAST_OMNIASR_THREADS` sets the thread count for these tools. After publishing,
+`validate_llm_fairseq2.py compare --repo <repo id>` repeats the comparison through
+`from_pretrained`. `tools/validate_llm_onnx.py` compares raw ONNX tensors with the TorchScript
+graphs stage by stage; both sides are float32, so it is a diagnostic rather than an accuracy
+gate on long or noisy input.
+
+## LLM-ASR export details: 300M v2 baseline
 
 `fast_omniasr.llm.OmniASRLLM` is a separate runtime for
 `omniASR_LLM_300M_v2`. It runs exported speech-encoder and decoder TorchScript graphs using PyTorch,
@@ -193,12 +267,9 @@ print(result.text)
 print(result.stop_reason)  # "eos" means complete; limits are reported explicitly.
 ```
 
-Scope: batch one, CPU float32 parity, clips up to 30 seconds, unspecified
-language (the reference's learned language-zero embedding is retained).
+Scope of the TorchScript baseline: batch one, CPU float32, clips up to 30 seconds.
 An opt-in explicit KV-cache decoder is available alongside the full-prefix baseline.
-No beam search, repetition/compression stopping, explicit language conditioning,
-TensorRT, or Unlimited support yet. Greedy output is not expected
-to match the upstream default five-beam output. Load only trusted model assets.
+No beam search, repetition/compression stopping, TensorRT, or Unlimited support yet.
 
 The export syntax follows the upstream
 [model implementation](https://github.com/facebookresearch/omnilingual-asr/blob/main/src/omnilingual_asr/models/wav2vec2_llama/model.py)
