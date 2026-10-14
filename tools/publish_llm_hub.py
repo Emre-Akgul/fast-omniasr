@@ -93,8 +93,12 @@ NumPy, ONNX Runtime and SentencePiece; PyTorch and fairseq2 are not required.
 
 ## Usage
 
+LLM `from_pretrained` support is newer than the latest PyPI release; until the next
+release, install from GitHub:
+
 ```bash
-python -m pip install "fast-omniasr[onnx,hub]"   # or [cuda,hub] for GPU
+python -m pip install "fast-omniasr[onnx,hub] @ git+https://github.com/Emre-Akgul/fast-omniasr"
+# GPU: replace [onnx,hub] with [cuda,hub]
 ```
 
 ```python
