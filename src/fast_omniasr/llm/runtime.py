@@ -67,6 +67,43 @@ class OmniASRLLM:
         self.decoder.eval()
         self.tokenizer = Tokenizer(directory / "tokenizer.model")
 
+    @classmethod
+    def from_pretrained(
+        cls,
+        repo_id: str,
+        *,
+        device: str = "cpu",
+        threads: int = 4,
+        revision: str | None = None,
+        cache_dir: str | Path | None = None,
+    ) -> "OmniASRLLM":
+        """Download, verify and load published ONNX assets (no PyTorch needed).
+
+        The repo's config.json is the runtime config plus a `files` map of
+        sha256 checksums covering every graph, weight file and the tokenizer
+        (see EmreAkgul/omniASR-LLM-300M-v2-ONNX). Encoder external data, when
+        present, is listed in the same map and lands beside encoder.onnx.
+        """
+        if device not in {"cpu", "cuda"}:
+            raise ValueError("device must be cpu or cuda")
+        from ..hub import download_verified
+
+        required = {
+            "encoder.onnx",
+            "decoder_prefill.onnx",
+            "decoder_step.onnx",
+            "decoder.weights",
+            "decoder_weights.json",
+            "tokenizer.model",
+        }
+        _, verified = download_verified(
+            repo_id, required, revision=revision, cache_dir=cache_dir
+        )
+        directory = verified["encoder.onnx"].parent
+        if any(verified[name].parent != directory for name in required):
+            raise RuntimeError("Downloaded assets are not co-located in one snapshot")
+        return cls(directory, backend="onnx", device=device, threads=threads)
+
     def transcribe(
         self, audio: str | Path | np.ndarray, *, sample_rate: int = 16000, max_new_tokens: int = 512
     ) -> LLMTranscription:
