@@ -172,7 +172,7 @@ def compare(args):
                 token = np.array([[clip["token_ids"][step]]], np.int64)
                 logits, cache = model.onnx.decode_step(token, cache)
         model.onnx.close()
-        result = model.transcribe(audio, max_new_tokens=512, lang=clip.get("lang"))
+        result = model.transcribe(audio[0], max_new_tokens=512, lang=clip.get("lang"))
         report = {
             "audio": Path(clip["audio"]).name,
             "lang": clip.get("lang"),
