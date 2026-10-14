@@ -69,6 +69,11 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--stage", choices=["encoder", "decoder"], default="encoder")
     parser.add_argument("--validate-only", action="store_true")
+    # Random-noise probes compare with PyTorch float32, which is itself up to ~2e-4
+    # (relative L2) off on noise through deep encoders; accuracy against float64 is
+    # gated separately by tools/validate_llm_encoder_fp64.py.
+    parser.add_argument("--probe-scaled-limit", type=float, default=1e-3)
+    parser.add_argument("--probe-l2-limit", type=float, default=1e-4)
     args = parser.parse_args()
     import numpy as np
     import onnxruntime as ort
@@ -197,7 +202,7 @@ def main():
             channel_scale = np.maximum(np.max(np.abs(expected), axis=1, keepdims=True), 1.0)
             scaled_max = float((difference / channel_scale).max())
             relative_l2 = float(np.linalg.norm(difference) / np.linalg.norm(expected))
-            if scaled_max > 1e-3 or relative_l2 > 1e-4:
+            if scaled_max > args.probe_scaled_limit or relative_l2 > args.probe_l2_limit:
                 raise AssertionError(f"Encoder error exceeds gate: {scaled_max=}, {relative_l2=}")
             report = {
                 "samples": samples,
@@ -215,8 +220,8 @@ def main():
     (args.output / "encoder_parity.json").write_text(
         json.dumps(
             {
-                "max_channel_scaled_error_limit": 1e-3,
-                "relative_l2_error_limit": 1e-4,
+                "max_channel_scaled_error_limit": args.probe_scaled_limit,
+                "relative_l2_error_limit": args.probe_l2_limit,
                 "channel_scale": "max over sequence of abs(reference), floored at 1",
                 "probes": probes,
             },
