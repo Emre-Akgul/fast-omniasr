@@ -143,6 +143,14 @@ class OmniASRLLM:
         )
         if waveform.shape[1] > 30 * 16000:
             raise ValueError("This runtime supports clips of at most 30 seconds")
+        if lang is None:
+            import warnings
+
+            warnings.warn(
+                "Transcribing without a `lang` code can degrade quality, as upstream warns; "
+                "pass e.g. lang='eng_Latn'",
+                stacklevel=2,
+            )
         language = None if lang is None else self.language_embedding(lang)
         if getattr(self, "backend", "torch") == "onnx":
             return self._transcribe_onnx(waveform, max_new_tokens, language)

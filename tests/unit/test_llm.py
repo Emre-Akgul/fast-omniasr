@@ -174,3 +174,9 @@ def test_language_conditioning_requires_assets():
     model, _ = runtime([])
     with pytest.raises(ValueError, match="do not include language conditioning"):
         model.transcribe(np.zeros(1600, dtype=np.float32), lang="eng_Latn")
+
+
+def test_missing_language_warns_like_upstream():
+    model, _ = runtime([2])
+    with pytest.warns(UserWarning, match="without a `lang` code"):
+        model.transcribe(np.zeros(1600, dtype=np.float32))
