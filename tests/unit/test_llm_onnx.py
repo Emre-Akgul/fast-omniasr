@@ -57,3 +57,34 @@ def test_onnx_prefill_step_dynamic_lengths_and_weights(tmp_path):
                 ref_logits, ref_cache = traced.decode_step(token, ref_cache)
                 names = [value.name for value in step.get_inputs()]
                 actual = step.run(None, dict(zip(names, [token.numpy(), *actual[1:]], strict=True)))
+
+
+def test_weight_norm_folding_matches_float64_and_removes_runtime_norm(tmp_path):
+    import onnx
+    import onnxruntime as ort
+
+    exporter = load("export_llm_onnx", ROOT / "export_llm_onnx.py")
+    torch.manual_seed(3)
+    conv = torch.nn.utils.weight_norm(
+        torch.nn.Conv1d(32, 32, kernel_size=16, padding=8, groups=4), dim=2
+    )
+    conv.weight_v.data *= 50.0
+    path = tmp_path / "conv.onnx"
+    with torch.inference_mode():
+        torch.onnx.export(
+            conv, (torch.randn(1, 32, 40),), str(path), opset_version=18, dynamo=False,
+            input_names=["x"], output_names=["y"], dynamic_axes={"x": {2: "t"}},
+        )
+    model = onnx.load(str(path))
+    assert "ReduceL2" in {node.op_type for node in model.graph.node}
+    assert exporter.fold_weight_norm(model) == 1
+    assert "ReduceL2" not in {node.op_type for node in model.graph.node}
+    assert not {"weight_g", "weight_v"} & {t.name.split(".")[-1] for t in model.graph.initializer}
+    x = np.random.default_rng(1).normal(size=(1, 32, 77)).astype(np.float32)
+    actual = ort.InferenceSession(model.SerializeToString()).run(None, {"x": x})[0]
+    g, v = conv.weight_g.detach().double(), conv.weight_v.detach().double()
+    weight = g * v / torch.linalg.vector_norm(v, dim=(0, 1), keepdim=True)
+    expected = torch.nn.functional.conv1d(
+        torch.from_numpy(x).double(), weight, conv.bias.detach().double(), padding=8, groups=4
+    ).numpy()
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)

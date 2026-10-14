@@ -8,6 +8,61 @@ import tempfile
 from pathlib import Path
 
 
+def fold_weight_norm(model):
+    """Replace runtime weight normalization of constant weights with one float64-folded weight.
+
+    The exported positional convolution recomputes g * v / ||v|| on every call, and ORT's
+    float32 ReduceL2 over each 65,536-element norm puts ~6e-6 relative error into the
+    convolution weights, about 10x PyTorch's encoder error. Returns the folded count.
+    """
+    import numpy as np
+    from onnx import numpy_helper
+
+    graph = model.graph
+    initializers = {tensor.name: tensor for tensor in graph.initializer}
+    constants = {
+        node.output[0]: numpy_helper.to_array(node.attribute[0].t)
+        for node in graph.node
+        if node.op_type == "Constant" and node.attribute and node.attribute[0].name == "value"
+    }
+    producers = {output: node for node in graph.node for output in node.output}
+
+    def constant(name):
+        if name in initializers:
+            return numpy_helper.to_array(initializers[name])
+        return constants.get(name)
+
+    folded, removed = 0, set()
+    for mul in [node for node in graph.node if node.op_type == "Mul"]:
+        div = producers.get(mul.input[0])
+        g = constant(mul.input[1])
+        if div is None or div.op_type != "Div" or g is None:
+            continue
+        norm = producers.get(div.input[1])
+        v = constant(div.input[0])
+        if norm is None or norm.op_type != "ReduceL2" or v is None or norm.input[0] != div.input[0]:
+            continue
+        axes = tuple(int(axis) for axis in constant(norm.input[1]))
+        v64 = v.astype(np.float64)
+        weight = g.astype(np.float64) * v64 / np.sqrt((v64 * v64).sum(axis=axes, keepdims=True))
+        name = mul.output[0] + "_folded"
+        graph.initializer.append(numpy_helper.from_array(weight.astype(np.float32), name))
+        for node in graph.node:
+            for i, value in enumerate(node.input):
+                if value == mul.output[0]:
+                    node.input[i] = name
+        removed.update(id(node) for node in (mul, div, norm))
+        folded += 1
+    kept = [node for node in graph.node if id(node) not in removed]
+    del graph.node[:]
+    graph.node.extend(kept)
+    used = {value for node in graph.node for value in node.input}
+    unused = [tensor for tensor in graph.initializer if tensor.name not in used]
+    for tensor in unused:
+        graph.initializer.remove(tensor)
+    return folded
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
@@ -111,8 +166,11 @@ def main():
                     dynamo=False,
                     dynamic_axes={"audio": {1: "samples"}, "context": {1: "audio_positions"}},
                 )
+                exported = onnx.load(str(staged))
+                if fold_weight_norm(exported) != 1:
+                    raise ValueError("Expected exactly one weight-normalized positional conv")
                 onnx.save_model(
-                    onnx.load(str(staged)),
+                    exported,
                     str(target),
                     save_as_external_data=True,
                     all_tensors_to_one_file=True,
