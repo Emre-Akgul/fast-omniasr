@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 
@@ -93,16 +94,32 @@ def main():
     torch.onnx.register_custom_op_symbolic("aten::unflatten", unflatten_last, 18)
     with torch.inference_mode():
         if not args.validate_only:
-            torch.onnx.export(
-                model,
-                (torch.randn(1, 48000),),
-                str(target),
-                input_names=["audio"],
-                output_names=["context"],
-                opset_version=18,
-                dynamo=False,
-                dynamic_axes={"audio": {1: "samples"}, "context": {1: "audio_positions"}},
-            )
+            import onnx
+
+            # Encoders above 2 GiB exceed the protobuf limit, and the exporter
+            # then writes one file per tensor. Always store weights in a single
+            # encoder.onnx.data file beside the graph for a uniform layout.
+            with tempfile.TemporaryDirectory(dir=args.output) as staging:
+                staged = Path(staging) / "encoder.onnx"
+                torch.onnx.export(
+                    model,
+                    (torch.randn(1, 48000),),
+                    str(staged),
+                    input_names=["audio"],
+                    output_names=["context"],
+                    opset_version=18,
+                    dynamo=False,
+                    dynamic_axes={"audio": {1: "samples"}, "context": {1: "audio_positions"}},
+                )
+                onnx.save_model(
+                    onnx.load(str(staged)),
+                    str(target),
+                    save_as_external_data=True,
+                    all_tensors_to_one_file=True,
+                    location="encoder.onnx.data",
+                    size_threshold=0,
+                )
+            onnx.checker.check_model(str(target))
         options = ort.SessionOptions()
         options.intra_op_num_threads = threads
         session = ort.InferenceSession(
