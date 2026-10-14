@@ -40,6 +40,7 @@ class OmniASRLLM:
         self.backend = backend
 
         directory = Path(directory)
+        self.directory = directory
         self.config = json.loads((directory / "config.json").read_text())
         if (
             self.config.get("format_version") != 1
@@ -104,9 +105,31 @@ class OmniASRLLM:
             raise RuntimeError("Downloaded assets are not co-located in one snapshot")
         return cls(directory, backend="onnx", device=device, threads=threads)
 
+    def language_embedding(self, lang: str) -> np.ndarray:
+        """Return the learned embedding row for an upstream code such as eng_Latn."""
+        languages = self.config.get("languages")
+        if not languages:
+            raise ValueError("These model assets do not include language conditioning")
+        if not hasattr(self, "_languages"):
+            self._languages = json.loads((self.directory / languages["mapping"]).read_text())
+            self._lang_embeddings = np.load(
+                self.directory / languages["embeddings"], mmap_mode="r"
+            )
+        index = self._languages.get(lang.lower())
+        if index is None:
+            raise ValueError(f"Unknown language code {lang!r}; expected e.g. 'eng_Latn'")
+        return np.array(self._lang_embeddings[index], dtype=np.float32)
+
     def transcribe(
-        self, audio: str | Path | np.ndarray, *, sample_rate: int = 16000, max_new_tokens: int = 512
+        self,
+        audio: str | Path | np.ndarray,
+        *,
+        sample_rate: int = 16000,
+        max_new_tokens: int = 512,
+        lang: str | None = None,
     ) -> LLMTranscription:
+        """Greedy-decode one clip. `lang` conditions on an upstream language code
+        (e.g. "eng_Latn"); without it the model's learned no-language row is used."""
         if (
             not isinstance(max_new_tokens, int)
             or isinstance(max_new_tokens, bool)
@@ -120,12 +143,17 @@ class OmniASRLLM:
         )
         if waveform.shape[1] > 30 * 16000:
             raise ValueError("This runtime supports clips of at most 30 seconds")
+        language = None if lang is None else self.language_embedding(lang)
         if getattr(self, "backend", "torch") == "onnx":
-            return self._transcribe_onnx(waveform, max_new_tokens)
+            return self._transcribe_onnx(waveform, max_new_tokens, language)
         import torch
 
         with torch.inference_mode():
             context = self.encoder(torch.from_numpy(waveform).to(self.device))
+            if language is not None:
+                # The encoder output ends with [LID marker, language]; replace the language.
+                row = torch.from_numpy(language).to(context)
+                context = torch.cat([context[:, :-1], row[None, None]], dim=1)
             tokens = [self.config["bos_idx"]]
             generated = []
             # Upstream stops at absolute position max_generation_length - 4.
@@ -154,8 +182,11 @@ class OmniASRLLM:
                 tokens.append(token)
         return LLMTranscription(self.tokenizer.decode(generated), generated, reason)
 
-    def _transcribe_onnx(self, waveform, max_new_tokens):
+    def _transcribe_onnx(self, waveform, max_new_tokens, language=None):
         context = self.onnx.encode(waveform)
+        if language is not None:
+            context = np.array(context, copy=True)
+            context[:, -1] = language
         budget = min(max_new_tokens, self.config["max_seq_len"] - context.shape[1] - 3)
         if budget < 1:
             raise ValueError("Audio prefix exceeds decoder context capacity")

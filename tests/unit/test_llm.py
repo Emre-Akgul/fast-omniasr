@@ -140,3 +140,37 @@ def test_onnx_runtime_prefills_once_and_only_steps_one_token():
         ("step", [[5]], 5),
         ("step", [[5]], 6),
     ]
+
+
+def test_language_conditioning_replaces_only_the_final_context_row(tmp_path):
+    model, _ = runtime([])
+    model.backend = "onnx"
+    model.directory = tmp_path
+    table = np.arange(3 * 8, dtype=np.float32).reshape(3, 8)
+    np.save(tmp_path / "lang_embeddings.npy", table)
+    (tmp_path / "languages.json").write_text(json.dumps({"eng_latn": 2, "tur_latn": 1}))
+    model.config["languages"] = {"embeddings": "lang_embeddings.npy", "mapping": "languages.json"}
+    contexts = []
+
+    class Backend:
+        def encode(self, waveform):
+            return np.ones((1, 4, 8), dtype=np.float32)
+
+        def prefill(self, context, token):
+            contexts.append(context)
+            logits = np.full((1, 10), -10.0, dtype=np.float32)
+            logits[0, 2] = 10.0
+            return logits, []
+
+    model.onnx = Backend()
+    model.transcribe(np.zeros(1600, dtype=np.float32), lang="ENG_Latn")
+    np.testing.assert_array_equal(contexts[0][0, :-1], np.ones((3, 8)))
+    np.testing.assert_array_equal(contexts[0][0, -1], table[2])
+    with pytest.raises(ValueError, match="Unknown language code"):
+        model.transcribe(np.zeros(1600, dtype=np.float32), lang="xxx_Latn")
+
+
+def test_language_conditioning_requires_assets():
+    model, _ = runtime([])
+    with pytest.raises(ValueError, match="do not include language conditioning"):
+        model.transcribe(np.zeros(1600, dtype=np.float32), lang="eng_Latn")
