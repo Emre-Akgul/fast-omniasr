@@ -120,7 +120,8 @@ def main():
         results[precision] = {
             **(error_rates([row["ref"] for row in rows], hypotheses) if args.dataset else {}),
             "inputs": len(rows),
-            "identical_to_fp32": sum(a == b for a, b in zip(baseline, hypotheses)),
+            # Word-level: CTC can emit whitespace-only output that differs in length only.
+            "identical_to_fp32": sum(a.split() == b.split() for a, b in zip(baseline, hypotheses)),
             "seconds": seconds,
             "gpu_mib": gpu_mib(),
             "hypotheses": dict(zip((row["id"] for row in rows), hypotheses)),
