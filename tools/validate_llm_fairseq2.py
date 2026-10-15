@@ -161,7 +161,6 @@ def compare(args):
         if not normalized_match and source != clip.get("source_sha256"):
             raise AssertionError(f"Audio differs from the reference: {clip['audio']}")
         expected = np.load(args.reference / clip["logits"])
-        model.onnx.close()
         context = model.onnx.encode(audio)
         if clip.get("lang"):
             context = np.array(context, copy=True)
@@ -178,7 +177,6 @@ def compare(args):
             if step + 1 < len(expected):
                 token = np.array([[clip["token_ids"][step]]], np.int64)
                 logits, cache = model.onnx.decode_step(token, cache)
-        model.onnx.close()
         result = model.transcribe(audio[0], max_new_tokens=512, lang=clip.get("lang"))
         report = {
             "audio": Path(clip["audio"]).name,

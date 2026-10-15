@@ -46,10 +46,16 @@ def relative_l2(actual, expected, label, limit):
     return {"max_abs_error": float(error.max()), "relative_l2_error": relative}
 
 
+def host(value):
+    """Resident CUDA backends return K/V caches as device OrtValues."""
+    return value if isinstance(value, np.ndarray) else value.numpy()
+
+
 def check_outputs(actual, logits, cache, label, atol=2e-4, rtol=2e-4, cache_l2=None):
     """Logits are always compared elementwise. With cache_l2, K/V tensors are gated by
     relative L2 instead, for end-to-end runs whose inputs differ by encoder noise."""
     expected = [logits.numpy(), *[value.numpy() for value in cache]]
+    actual = [host(value) for value in actual]
     if len(actual) != len(expected):
         raise AssertionError("Wrong number of cache outputs")
     errors = [compare(actual[0], expected[0], f"{label}:0", atol, rtol)]
@@ -167,7 +173,6 @@ def main():
                         args.directory, "decoder_step.onnx"
                     )
                 else:
-                    backend.close()
                     actual_logits, actual_cache = backend.prefill(context_ort, bos.numpy())
                     actual = [actual_logits, *actual_cache]
                 records, tokens = [], []
@@ -233,7 +238,6 @@ def main():
             if backend is None:
                 actual = prefill.run(None, {"context": context.numpy(), "bos": bos.numpy()})
             else:
-                backend.close()
                 actual_logits, actual_cache = backend.prefill(context.numpy(), bos.numpy())
                 actual = [actual_logits, *actual_cache]
             prefill_report = check_outputs(actual, logits, cache, f"prefill-{length}")
