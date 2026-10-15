@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fast-omniasr"
-version = "0.2.1"
+version = "0.2.2"
 description = "Standalone OmniASR inference with reproducible runtime comparisons"
 readme = "README.md"
 license = {file = "LICENSE"}
