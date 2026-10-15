@@ -112,18 +112,31 @@ def main():
 
     from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi, hf_hub_download
 
-    config_path = args.directory / "config.json"
-    config = json.loads(config_path.read_text())
-    previous = config.get("files", {})
+    # Compare against the files the Hub actually stores, not any config.json: an earlier
+    # partial run can leave a manifest that lists files which were never uploaded.
+    api = HfApi()
+    published = json.loads(Path(hf_hub_download(args.repo_id, "config.json")).read_text())
+    previous = published.get("files", {})
+    stored = {
+        item.path: getattr(item, "lfs", None)
+        for item in api.list_repo_tree(args.repo_id, recursive=True, expand=True)
+        if hasattr(item, "size")
+    }
+    config = json.loads((args.directory / "config.json").read_text())
     llm, files = manifest_files(args.directory)
     manifest = {
         str(path.relative_to(args.directory)): {"sha256": sha256(path), "size": path.stat().st_size}
         for path in files
     }
-    changed = [name for name, entry in manifest.items() if previous.get(name) != entry]
-    removed = sorted(previous.keys() - manifest.keys())
+    def uploaded(name, entry):
+        lfs = stored.get(name)
+        return lfs is not None and lfs.sha256 == entry["sha256"]
+
+    changed = [name for name, entry in manifest.items() if not uploaded(name, entry)]
+    removed = sorted((previous.keys() - manifest.keys()) & stored.keys())
     config["files"] = manifest
     config["precisions"] = ["fp32", *PRECISIONS]
+    config_path = args.directory / "config.precision.json"
     config_path.write_text(json.dumps(config, indent=2) + "\n")
 
     report = json.loads(args.report.read_text())
@@ -142,7 +155,7 @@ def main():
         CommitOperationAdd(path_in_repo="README.md", path_or_fileobj=readme),
         CommitOperationAdd(path_in_repo="parity/precision_agreement.json", path_or_fileobj=args.report),
     ]
-    HfApi().create_commit(
+    api.create_commit(
         repo_id=args.repo_id, repo_type="model", operations=operations,
         commit_message="Add fp16 and bf16 variants",
     )
