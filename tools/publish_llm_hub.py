@@ -19,6 +19,7 @@ from fast_omniasr.llm.models import LLM_MODEL_CARDS, LLM_MODEL_TOKENIZERS, repo_
 
 RUNTIME_FILES = [
     "encoder.onnx",
+    "decoder.onnx",
     "decoder_prefill.onnx",
     "decoder_step.onnx",
     "decoder_weights.json",
@@ -47,7 +48,7 @@ def prepare_bundle(directory: Path) -> tuple[dict, list[Path], list[Path]]:
         if not report["passed"] or report["model"] != config["model"]:
             raise ValueError(f"{name} does not record a passing {config['model']} comparison")
     assets = [directory / name for name in RUNTIME_FILES]
-    for graph in ["encoder.onnx", "decoder_prefill.onnx", "decoder_step.onnx"]:
+    for graph in ["encoder.onnx", "decoder.onnx", "decoder_prefill.onnx", "decoder_step.onnx"]:
         assets.extend(external_data_files(directory / graph))
     assets = sorted(set(assets))
     for path in assets:
@@ -129,8 +130,11 @@ about {sizes:.1f} GiB; CPU or GPU memory must hold the encoder and then the deco
 - **Tokenizer:** upstream `{tokenizer}`, included unmodified as `tokenizer.model`
 - **Graphs:**
   - `encoder.onnx`: `audio [1, samples]` -> `context [1, audio_positions, 4096]`
-  - `decoder_prefill.onnx`: `context` + BOS -> logits + 24 K/V tensors
-  - `decoder_step.onnx`: one token + 24 K/V tensors -> logits + 24 updated K/V tensors
+  - `decoder.onnx`: `context` + `tokens` + 24 K/V tensors -> logits + 24 updated K/V tensors;
+    one graph serves prefill (empty cache) and each decoding step (empty context), so the
+    runtime holds a single copy of the decoder weights
+  - `decoder_prefill.onnx`, `decoder_step.onnx`: the same decoder split into two graphs, kept
+    for fast-omniasr 0.2.0 and 0.2.1
 
 ## Parity with fairseq2
 
@@ -158,7 +162,8 @@ for model details, training data, evaluation results and responsible-use conside
 | File | Description |
 |---|---|
 | `encoder.onnx`, `encoder.onnx.data` | Speech encoder graph and its tensor data |
-| `decoder_prefill.onnx`, `decoder_step.onnx` | KV-cache decoder graphs |
+| `decoder.onnx` | KV-cache decoder graph used by fast-omniasr 0.2.2+ |
+| `decoder_prefill.onnx`, `decoder_step.onnx` | Split decoder graphs used by 0.2.0 and 0.2.1 |
 | `decoder.weights`, `decoder_weights.json` | Shared decoder weights and their offsets |
 | `tokenizer.model` | Matching upstream SentencePiece tokenizer |
 | `lang_embeddings.npy`, `languages.json` | Learned language embeddings and code-to-row mapping |
