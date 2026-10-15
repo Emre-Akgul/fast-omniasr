@@ -174,14 +174,14 @@ upstream does, and warns: upstream notes quality can degrade, and in our tests t
 
 | Model | Repository | Steps checked | Max logit error vs fairseq2 (CPU / CUDA) |
 |---|---|---:|---:|
-| `omniASR_LLM_300M` | `EmreAkgul/omniASR-LLM-300M-ONNX` | 885 | 4.2e-5 / 9.2e-5 |
-| `omniASR_LLM_1B` | `EmreAkgul/omniASR-LLM-1B-ONNX` | 756 | 9.9e-5 / 9.8e-5 |
-| `omniASR_LLM_3B` | `EmreAkgul/omniASR-LLM-3B-ONNX` | 848 | 5.9e-5 / 2.1e-4 |
+| `omniASR_LLM_300M` | `EmreAkgul/omniASR-LLM-300M-ONNX` | 885 | 4.4e-5 / 9.2e-5 |
+| `omniASR_LLM_1B` | `EmreAkgul/omniASR-LLM-1B-ONNX` | 756 | 1.2e-4 / 8.5e-5 |
+| `omniASR_LLM_3B` | `EmreAkgul/omniASR-LLM-3B-ONNX` | 848 | 7.8e-5 / 1.7e-4 |
 | `omniASR_LLM_7B` | `EmreAkgul/omniASR-LLM-7B-ONNX` | 665 | 5.1e-4 / 1.5e-3 |
-| `omniASR_LLM_300M_v2` | `EmreAkgul/omniASR-LLM-300M-v2-ONNX` | 772 | 4.6e-5 / 7.5e-5 |
-| `omniASR_LLM_1B_v2` | `EmreAkgul/omniASR-LLM-1B-v2-ONNX` | 774 | 2.1e-3 / 4.4e-4 |
-| `omniASR_LLM_3B_v2` | `EmreAkgul/omniASR-LLM-3B-v2-ONNX` | 772 | 3.8e-5 / 9.5e-5 |
-| `omniASR_LLM_7B_v2` | `EmreAkgul/omniASR-LLM-7B-v2-ONNX` | 770 | 1.1e-4 / 1.4e-4 |
+| `omniASR_LLM_300M_v2` | `EmreAkgul/omniASR-LLM-300M-v2-ONNX` | 772 | 5.1e-5 / 7.5e-5 |
+| `omniASR_LLM_1B_v2` | `EmreAkgul/omniASR-LLM-1B-v2-ONNX` | 774 | 2.6e-3 / 4.4e-4 |
+| `omniASR_LLM_3B_v2` | `EmreAkgul/omniASR-LLM-3B-v2-ONNX` | 772 | 1.2e-4 / 1.3e-4 |
+| `omniASR_LLM_7B_v2` | `EmreAkgul/omniASR-LLM-7B-v2-ONNX` | 770 | 9.3e-5 / 1.4e-4 |
 
 Each model was decoded on English, Turkish and Central Kurdish clips with and without
 language conditioning (7B v1 never reaches EOS on English without a language code, in
@@ -199,8 +199,9 @@ accurate than PyTorch against float64 on the 3B model.
 Sessions stay loaded across `transcribe()` calls and, on CUDA, the K/V cache stays on the
 GPU between decoding steps (I/O binding); only token ids and logits cross to the host. On an
 L40S this decodes a 10-20 s clip in about 1.5-2 s (11-16 ms per token) with the 300M and 7B v2
-models after the first call, which loads the weights. Resident CUDA sessions need the encoder
-plus two decoder copies: about 16 GiB for 300M and 41 GiB for 7B. On smaller GPUs pass
+models after the first call, which loads the weights. One `decoder.onnx` session serves the
+prefill and every decoding step, so the GPU holds the encoder and a single copy of the decoder:
+about 10 GiB for 300M (12 GiB for 30 s inputs) and 34 GiB for 7B v2. On smaller GPUs pass
 `low_memory=True` to `from_pretrained` to load one session at a time (300M peaks at ~5.4 GiB),
 at the cost of reloading weights for every clip.
 
