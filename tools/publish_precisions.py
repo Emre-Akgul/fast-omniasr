@@ -12,6 +12,7 @@ graphs no longer reference, publishes the agreement report under parity/, and ad
 """
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -118,7 +119,7 @@ def main():
     published = json.loads(Path(hf_hub_download(args.repo_id, "config.json")).read_text())
     previous = published.get("files", {})
     stored = {
-        item.path: getattr(item, "lfs", None)
+        item.path: item
         for item in api.list_repo_tree(args.repo_id, recursive=True, expand=True)
         if hasattr(item, "size")
     }
@@ -129,8 +130,14 @@ def main():
         for path in files
     }
     def uploaded(name, entry):
-        lfs = stored.get(name)
-        return lfs is not None and lfs.sha256 == entry["sha256"]
+        item = stored.get(name)
+        if item is None:
+            return False
+        if item.lfs is not None:
+            return item.lfs.sha256 == entry["sha256"]
+        # Small files are plain git blobs (e.g. per-tensor CTC weights): compare git hashes.
+        data = (args.directory / name).read_bytes()
+        return item.blob_id == hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
     changed = [name for name, entry in manifest.items() if not uploaded(name, entry)]
     removed = sorted((previous.keys() - manifest.keys()) & stored.keys())
