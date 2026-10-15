@@ -95,19 +95,16 @@ class OmniASRLLM:
             raise ValueError("device must be cpu or cuda")
         from ..hub import download_verified
 
-        required = {
-            "encoder.onnx",
-            "decoder_prefill.onnx",
-            "decoder_step.onnx",
-            "decoder.weights",
-            "decoder_weights.json",
-            "tokenizer.model",
-        }
+        required = {"encoder.onnx", "decoder.weights", "decoder_weights.json", "tokenizer.model"}
         _, verified = download_verified(
             repo_id, required, revision=revision, cache_dir=cache_dir
         )
+        # decoder.onnx (one session) is preferred; older repos ship only prefill/step graphs.
+        graphs = {"decoder.onnx"} & verified.keys() or {"decoder_prefill.onnx", "decoder_step.onnx"}
+        if not graphs <= verified.keys():
+            raise ValueError("config.json lists no decoder graph")
         directory = verified["encoder.onnx"].parent
-        if any(verified[name].parent != directory for name in required):
+        if any(verified[name].parent != directory for name in required | graphs):
             raise RuntimeError("Downloaded assets are not co-located in one snapshot")
         return cls(
             directory, backend="onnx", device=device, threads=threads, low_memory=low_memory

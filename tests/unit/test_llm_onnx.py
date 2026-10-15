@@ -183,8 +183,23 @@ def fake_backend(monkeypatch, tmp_path):
         prefill = Graph(["context", "bos"], step_outputs)
         return prefill, Graph(onnx_backend.STEP_INPUTS, step_outputs), []
 
+    def decoder_session(directory, graph, device="cpu", threads=4, arena=None):
+        loads.append(graph)
+        inputs = [
+            SimpleNamespace(name="context", shape=[1, "context_len", 8]),
+            SimpleNamespace(name="tokens", shape=[1, "new_tokens"]),
+            *[
+                SimpleNamespace(name=name, shape=[1, "cached_positions", 1, 1])
+                for name in onnx_backend.STEP_INPUTS[1:]
+            ],
+        ]
+        graph = Graph([], step_outputs)
+        graph.get_inputs = lambda: inputs
+        return graph, []
+
     monkeypatch.setattr(onnx_backend, "session", session)
     monkeypatch.setattr(onnx_backend, "decoder_sessions", decoder_sessions)
+    monkeypatch.setattr(onnx_backend, "decoder_session", decoder_session)
     return onnx_backend.ONNXLLMBackend, loads
 
 
@@ -205,3 +220,12 @@ def test_low_memory_backend_phases_sessions_per_clip(monkeypatch, tmp_path):
     backend_class, loads = fake_backend(monkeypatch, tmp_path)
     run_clips(backend_class(tmp_path, "cpu", low_memory=True))
     assert loads == ["encoder.onnx", "decoder"] * 3
+
+
+def test_unified_backend_uses_one_decoder_session(monkeypatch, tmp_path):
+    backend_class, loads = fake_backend(monkeypatch, tmp_path)
+    (tmp_path / "decoder.onnx").write_bytes(b"")
+    backend = backend_class(tmp_path, "cpu")
+    assert backend.unified
+    run_clips(backend)
+    assert loads == ["encoder.onnx", "decoder.onnx"]

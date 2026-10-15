@@ -87,13 +87,6 @@ def _decoder_options(directory, threads=4):
     return opts, keepalive
 
 
-def decoder_session(directory, graph):
-    """Load one CPU decoder phase with memory-mapped shared initializers."""
-    directory = Path(directory)
-    opts, keepalive = _decoder_options(directory)
-    return session(directory / graph, "cpu", opts), keepalive
-
-
 def decoder_sessions(directory, device="cpu", threads=4):
     directory = Path(directory)
     providers(device)
@@ -106,17 +99,29 @@ def decoder_sessions(directory, device="cpu", threads=4):
 
 
 STEP_INPUTS = ["token"] + [f"past_{kind}_{i}" for i in range(12) for kind in ("key", "value")]
+UNIFIED_INPUTS = ["context", "tokens", *STEP_INPUTS[1:]]
+
+
+def decoder_session(directory, graph, device="cpu", threads=4, arena="kSameAsRequested"):
+    """One decoder graph. On CPU its weights are memory-mapped shared initializers."""
+    directory = Path(directory)
+    if device == "cpu":
+        opts, keepalive = _decoder_options(directory, threads)
+        return session(directory / graph, "cpu", opts), keepalive
+    return session(directory / graph, device, options(threads), arena), []
 
 
 class ONNXLLMBackend:
     """Batch-one float32 graphs; K/V caches are opaque values passed back to decode_step.
 
+    With decoder.onnx (the unified graph) one decoder session serves prefill and every
+    step, so CUDA holds a single copy of the decoder weights. Older exports fall back to
+    separate prefill and step graphs, whose CUDA sessions each hold a copy.
+
     By default every session stays loaded across calls, and on CUDA the K/V cache stays on
     the GPU between steps through I/O binding: only token ids go in and logits come out.
-    CUDA prefill and step sessions each hold a copy of the decoder weights (~5 GiB each).
-
-    low_memory=True keeps one session resident at a time and returns caches as NumPy arrays,
-    so the 300M model fits a 6 GiB GPU, at the cost of reloading weights for every clip.
+    low_memory=True keeps one session resident at a time and returns caches as NumPy arrays
+    so small GPUs fit, at the cost of reloading weights for every clip.
     """
 
     def __init__(self, directory, device="cpu", threads=4, low_memory=False):
@@ -126,17 +131,14 @@ class ONNXLLMBackend:
         self.low_memory = low_memory
         self.arena = "kSameAsRequested" if low_memory else "kNextPowerOfTwo"
         providers(device)
+        self.unified = (self.directory / "decoder.onnx").is_file()
         self.encoder_session = self.prefill_session = self.step_session = None
+        self.decoder = None
         self.keepalive = []
         # Shrinking returns arena memory after every run; only phased sessions need it.
         self.run_options = run_options(device) if low_memory else None
-        for name in [
-            "encoder.onnx",
-            "decoder_prefill.onnx",
-            "decoder_step.onnx",
-            "decoder.weights",
-            "decoder_weights.json",
-        ]:
+        graphs = ["decoder.onnx"] if self.unified else ["decoder_prefill.onnx", "decoder_step.onnx"]
+        for name in ["encoder.onnx", *graphs, "decoder.weights", "decoder_weights.json"]:
             if not (self.directory / name).is_file():
                 raise FileNotFoundError(self.directory / name)
 
@@ -146,6 +148,7 @@ class ONNXLLMBackend:
 
     def close(self):
         self.encoder_session = self.prefill_session = self.step_session = None
+        self.decoder = None
         self.keepalive = []
         gc.collect()
 
@@ -164,7 +167,22 @@ class ONNXLLMBackend:
             gc.collect()
         return context
 
+    def _initialize_unified(self):
+        if self.decoder is None:
+            self.decoder, self.keepalive = decoder_session(
+                self.directory, "decoder.onnx", self.device, self.threads, self.arena
+            )
+            inputs = self.decoder.get_inputs()
+            if [value.name for value in inputs] != UNIFIED_INPUTS:
+                raise ValueError("Invalid ONNX unified decoder input contract")
+            hidden, (heads, dim) = inputs[0].shape[2], inputs[2].shape[2:]
+            self.empty_context = np.zeros((1, 0, hidden), np.float32)
+            self.empty_cache = [np.zeros((1, 0, heads, dim), np.float32)] * 24
+
     def initialize_decoder(self):
+        if self.unified:
+            self._initialize_unified()
+            return
         if self.prefill_session is None:
             if self.device == "cpu":
                 self.prefill_session, self.step_session, self.keepalive = decoder_sessions(
@@ -209,7 +227,26 @@ class ONNXLLMBackend:
         outputs = binding.get_outputs()
         return outputs[0].numpy(), outputs[1:]
 
+    def _run_unified(self, context, tokens, cache):
+        self._initialize_unified()
+        if self.bound:
+            if cache is None:
+                host = dict(zip(UNIFIED_INPUTS, [context, tokens, *self.empty_cache]))
+                return self._run_bound(self.decoder, host)
+            return self._run_bound(
+                self.decoder,
+                {"context": context, "tokens": tokens},
+                zip(UNIFIED_INPUTS[2:], cache, strict=True),
+            )
+        feeds = [context, tokens, *(self.empty_cache if cache is None else cache)]
+        outputs = self.decoder.run(
+            None, dict(zip(UNIFIED_INPUTS, feeds, strict=True)), self.run_options
+        )
+        return outputs[0], outputs[1:]
+
     def prefill(self, context, bos):
+        if self.unified:
+            return self._run_unified(context, bos, None)
         self.initialize_decoder()
         if self.bound:
             return self._run_bound(self.prefill_session, {"context": context, "bos": bos})
@@ -228,6 +265,9 @@ class ONNXLLMBackend:
     def decode_step(self, token, cache):
         if token.shape != (1, 1) or token.dtype != np.int64 or len(cache) != 24:
             raise ValueError("Expected one int64 token and 24 K/V tensors")
+        if self.unified:
+            self._initialize_unified()
+            return self._run_unified(self.empty_context, token, cache)
         if self.step_session is None:
             if self.device == "cuda":
                 raise RuntimeError("prefill() must initialize the CUDA step session")
