@@ -16,7 +16,7 @@ llm = ["torch>=2.8,<3"]
 onnx = ["onnxruntime>=1.23,<2"]
 cuda = ["onnxruntime-gpu>=1.23,<2"]
 tensorrt = ["cuda-python>=12"]
-hub = ["huggingface_hub>=0.20"]
+hub = ["huggingface_hub>=0.23"]
 dev = ["pytest>=8", "ruff>=0.9"]
 
 [tool.setuptools.packages.find]

@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
+DEFAULT_CACHE = Path.home() / ".cache" / "fast-omniasr" / "hub"
+
 
 def download_verified(repo_id: str, required: set[str], *, revision: str | None = None,
                       cache_dir: str | Path | None = None) -> tuple[dict, dict[str, Path]]:
@@ -11,14 +13,21 @@ def download_verified(repo_id: str, required: set[str], *, revision: str | None 
 
     config.json must contain a `files` map of {filename: {"sha256", "size"}} that
     includes every name in `required`.
+
+    Files are materialized as regular files in one directory per repo and revision
+    (under `cache_dir`, default ~/.cache/fast-omniasr/hub) rather than read through the
+    Hugging Face cache's symlinks: ONNX Runtime 1.31+ rejects external tensor data whose
+    resolved path leaves the model's directory, which every symlinked blob does.
     """
     try:
         from huggingface_hub import hf_hub_download
     except ImportError as exc:
         raise ImportError("Install fast-omniasr[hub] for huggingface_hub") from exc
 
+    local_dir = Path(cache_dir or DEFAULT_CACHE) / repo_id.replace("/", "--") / (revision or "main")
+
     def fetch(filename: str) -> Path:
-        return Path(hf_hub_download(repo_id, filename, revision=revision, cache_dir=cache_dir))
+        return Path(hf_hub_download(repo_id, filename, revision=revision, local_dir=local_dir))
 
     def fetch_and_verify(filename: str, config: dict) -> Path:
         path = fetch(filename)

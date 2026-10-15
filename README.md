@@ -42,7 +42,7 @@ model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="o
 print(model.transcribe("speech.wav").text)
 ```
 
-`from_pretrained` downloads `model.onnx`/`tokenizer.model` via `huggingface_hub` (requires the `hub` extra), verifies each against the sha256 in the repo's `config.json`, and caches them locally — later calls (even fully offline, e.g. `HF_HUB_OFFLINE=1`) reuse the cache.
+`from_pretrained` downloads `model.onnx`/`tokenizer.model` via `huggingface_hub` (requires the `hub` extra), verifies each against the sha256 in the repo's `config.json`, and stores them as regular files under `~/.cache/fast-omniasr/hub` (or `cache_dir`) — later calls (even fully offline, e.g. `HF_HUB_OFFLINE=1`) reuse them. Regular files are required because ONNX Runtime 1.31+ rejects external tensor data reached through the Hugging Face cache's symlinks.
 
 For the fast path with no manual export or `build_tensorrt.py` call, pass `backend="tensorrt"` and an explicit `precision` (no "auto" — see [Performance and accuracy](#performance-and-accuracy) before choosing `"fp16"`):
 
