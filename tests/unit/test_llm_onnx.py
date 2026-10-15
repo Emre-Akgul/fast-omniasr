@@ -118,7 +118,7 @@ def test_weight_norm_folding_matches_float64_and_removes_runtime_norm(tmp_path):
     import onnx
     import onnxruntime as ort
 
-    exporter = load("export_llm_onnx", ROOT / "export_llm_onnx.py")
+    exporter = load("onnx_fold", ROOT / "tools/onnx_fold.py")
     torch.manual_seed(3)
     conv = torch.nn.utils.weight_norm(
         torch.nn.Conv1d(32, 32, kernel_size=16, padding=8, groups=4), dim=2
@@ -294,3 +294,43 @@ def test_convert_precision_halves_matmul_and_keeps_conv_float32(tmp_path):
     # ONNX Runtime's CPU provider runs fp16 MatMul (bf16 has no CPU kernel).
     actual = ort.InferenceSession(str(tmp_path / "fp16" / "model.onnx")).run(None, {"x": x})[0]
     np.testing.assert_allclose(actual, expected, rtol=2e-2, atol=2e-2)
+
+
+def test_fold_file_rewrites_per_tensor_external_model_in_place(tmp_path):
+    import onnx
+    import onnxruntime as ort
+
+    folding = load("onnx_fold", ROOT / "tools/onnx_fold.py")
+    torch.manual_seed(4)
+    conv = torch.nn.utils.weight_norm(
+        torch.nn.Conv1d(32, 32, kernel_size=16, padding=8, groups=4), dim=2
+    )
+    staged = tmp_path / "staged.onnx"
+    with torch.inference_mode():
+        torch.onnx.export(
+            conv, (torch.randn(1, 32, 40),), str(staged), opset_version=18, dynamo=False,
+            input_names=["x"], output_names=["y"], dynamic_axes={"x": {2: "t"}},
+        )
+    export = tmp_path / "export"
+    export.mkdir()
+    # Like the large CTC exports: one external file per tensor.
+    onnx.save_model(
+        onnx.load(str(staged)), str(export / "model.onnx"), save_as_external_data=True,
+        all_tensors_to_one_file=False, size_threshold=0,
+    )
+    before = {path.name: path.read_bytes() for path in export.iterdir() if path.name != "model.onnx"}
+    assert folding.fold_file(export / "model.onnx") == 1
+    after = {path.name for path in export.iterdir() if path.name != "model.onnx"}
+    added = after - before.keys()
+    assert len(added) == 1 and next(iter(added)).endswith("_folded")
+    assert all((export / name).read_bytes() == data for name, data in before.items())
+    model = onnx.load(str(export / "model.onnx"), load_external_data=False)
+    assert "ReduceL2" not in {node.op_type for node in model.graph.node}
+    x = np.random.default_rng(2).normal(size=(1, 32, 50)).astype(np.float32)
+    actual = ort.InferenceSession(str(export / "model.onnx")).run(None, {"x": x})[0]
+    g, v = conv.weight_g.detach().double(), conv.weight_v.detach().double()
+    weight = g * v / torch.linalg.vector_norm(v, dim=(0, 1), keepdim=True)
+    expected = torch.nn.functional.conv1d(
+        torch.from_numpy(x).double(), weight, conv.bias.detach().double(), padding=8, groups=4
+    ).numpy()
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
