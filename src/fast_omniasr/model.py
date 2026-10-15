@@ -20,10 +20,15 @@ class OmniASR:
     """Load explicitly supplied ONNX/tokenizer assets; no implicit downloads."""
 
     def __init__(self, model_path: str | Path, tokenizer_path: str | Path,
-                 *, backend: str = "onnx", device: str = "cpu", threads: int = 4):
+                 *, backend: str = "onnx", device: str = "cpu", threads: int = 4,
+                 precision: str = "fp32"):
+        """`precision` describes an ONNX graph at `model_path` (an fp16/bf16 variant from
+        tools/convert_precision.py); TensorRT engines carry their precision themselves."""
         if backend == "onnx":
             from .backends.onnx import ONNXBackend
-            self.backend = ONNXBackend(model_path, device=device, threads=threads)
+            self.backend = ONNXBackend(
+                model_path, device=device, threads=threads, precision=precision
+            )
         elif backend == "tensorrt":
             from .backends.tensorrt import TensorRTBackend
             self.backend = TensorRTBackend(model_path)
@@ -76,11 +81,16 @@ class OmniASR:
         `engine_cache_dir` (default
         `~/.cache/fast-omniasr/tensorrt`) keyed by the ONNX content, precision, profile and
         local TensorRT/GPU identity. A later call with the same key reuses the cached engine.
+
+        `backend="onnx"` accepts precision "fp32" (default), "fp16" or "bf16": the half
+        variants keep MatMul weights in half precision and download only their own
+        subdirectory plus the tokenizer. bf16 needs device="cuda" and an Ampere+ GPU.
         """
         if backend not in ("onnx", "tensorrt"):
             raise ValueError("backend must be 'onnx' or 'tensorrt'")
-        if backend == "onnx" and precision is not None:
-            raise ValueError("precision is only used with backend='tensorrt'")
+        from .precision import asset_selector, check_precision
+        if backend == "onnx":
+            precision = check_precision(precision or "fp32", device)
         if backend == "onnx" and any(
             value is not None for value in (min_samples, opt_samples, max_samples)
         ):
@@ -92,13 +102,18 @@ class OmniASR:
             raise ValueError("backend='tensorrt' requires precision='fp32' or precision='fp16'")
         from .hub import download_verified
 
+        # TensorRT builds its engine from the float32 graph whatever the engine precision.
+        graph_precision = precision if backend == "onnx" else "fp32"
+        graph = "model.onnx" if graph_precision == "fp32" else f"{graph_precision}/model.onnx"
         _, verified = download_verified(
-            repo_id, {"model.onnx", "tokenizer.model"}, revision=revision, cache_dir=cache_dir
+            repo_id, {graph, "tokenizer.model"}, revision=revision, cache_dir=cache_dir,
+            select=asset_selector(graph_precision, {"tokenizer.model"}),
         )
         tokenizer_path = verified["tokenizer.model"]
-        model_path = verified["model.onnx"]
+        model_path = verified[graph]
         if backend == "onnx":
-            return cls(model_path, tokenizer_path, backend="onnx", device=device, threads=threads)
+            return cls(model_path, tokenizer_path, backend="onnx", device=device,
+                       threads=threads, precision=precision)
 
         if precision == "fp16":
             import warnings

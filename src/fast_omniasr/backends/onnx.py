@@ -4,9 +4,12 @@ import numpy as np
 
 
 class ONNXBackend:
-    def __init__(self, path: str | Path, device: str = "cpu", threads: int = 4):
+    def __init__(self, path: str | Path, device: str = "cpu", threads: int = 4,
+                 precision: str = "fp32"):
         if device not in {"cpu", "cuda"}:
             raise ValueError("device must be 'cpu' or 'cuda'")
+        from ..precision import check_precision
+        check_precision(precision, device)
         if threads < 1:
             raise ValueError("threads must be positive")
         try:
@@ -20,6 +23,9 @@ class ONNXBackend:
             raise RuntimeError(f"{provider} is unavailable in this ONNX Runtime installation")
         options = ort.SessionOptions()
         options.intra_op_num_threads = threads
+        # With half-precision graphs the memory pattern planner grows the CUDA arena by
+        # ~1 GiB once an input length repeats; without it fp16 300M stays at ~1.5 GiB.
+        options.enable_mem_pattern = precision == "fp32"
         providers = [(provider, {"use_tf32": "0"})] if device == "cuda" else [provider]
         self.session = ort.InferenceSession(str(path), sess_options=options, providers=providers)
         self.session.disable_fallback()
