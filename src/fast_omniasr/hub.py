@@ -2,17 +2,21 @@
 
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 DEFAULT_CACHE = Path.home() / ".cache" / "fast-omniasr" / "hub"
 
 
 def download_verified(repo_id: str, required: set[str], *, revision: str | None = None,
-                      cache_dir: str | Path | None = None) -> tuple[dict, dict[str, Path]]:
-    """Return the repo's config.json and a {filename: local path} map of every listed file.
+                      cache_dir: str | Path | None = None,
+                      select: Callable[[str], bool] | None = None
+                      ) -> tuple[dict, dict[str, Path]]:
+    """Return the repo's config.json and a {filename: local path} map of the listed files.
 
     config.json must contain a `files` map of {filename: {"sha256", "size"}} that
-    includes every name in `required`.
+    includes every name in `required`. `select`, when given, limits downloads to the
+    listed files it accepts (e.g. one precision's subdirectory).
 
     Files are materialized as regular files in one directory per repo and revision
     (under `cache_dir`, default ~/.cache/fast-omniasr/hub) rather than read through the
@@ -58,8 +62,12 @@ def download_verified(repo_id: str, required: set[str], *, revision: str | None 
         if path.is_absolute() or ".." in path.parts:
             raise ValueError(f"config.json contains an unsafe filename: {filename}")
 
+    wanted = [name for name in files if select is None or select(name)]
+    if not required.issubset(wanted):
+        missing = ", ".join(sorted(required - set(wanted)))
+        raise ValueError(f"required files are not selected for download: {missing}")
     # Smallest file first so corruption is caught before larger downloads when possible.
     verified = {}
-    for filename in sorted(files, key=lambda name: files[name].get("size", 0)):
+    for filename in sorted(wanted, key=lambda name: files[name].get("size", 0)):
         verified[filename] = fetch_and_verify(filename, config)
     return config, verified
