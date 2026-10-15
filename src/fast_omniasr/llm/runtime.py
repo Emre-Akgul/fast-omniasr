@@ -35,9 +35,12 @@ class OmniASRLLM:
         backend: str = "torch",
         threads: int = 4,
         low_memory: bool = False,
+        precision: str = "fp32",
     ):
         if backend not in {"torch", "onnx"}:
             raise ValueError("backend must be torch or onnx")
+        if backend == "torch" and precision != "fp32":
+            raise ValueError("The TorchScript baseline supports precision='fp32' only")
         self.backend = backend
 
         directory = Path(directory)
@@ -51,7 +54,7 @@ class OmniASRLLM:
         if backend == "onnx":
             from .onnx_backend import ONNXLLMBackend
 
-            self.onnx = ONNXLLMBackend(directory, device, threads, low_memory)
+            self.onnx = ONNXLLMBackend(directory, device, threads, low_memory, precision)
             self.device = device
             self.cached = True
             self.tokenizer = Tokenizer(directory / "tokenizer.model")
@@ -77,6 +80,7 @@ class OmniASRLLM:
         device: str = "cpu",
         threads: int = 4,
         low_memory: bool = False,
+        precision: str = "fp32",
         revision: str | None = None,
         cache_dir: str | Path | None = None,
     ) -> "OmniASRLLM":
@@ -87,17 +91,36 @@ class OmniASRLLM:
         (see EmreAkgul/omniASR-LLM-300M-v2-ONNX). Encoder external data, when
         present, is listed in the same map and lands beside encoder.onnx.
 
-        Sessions stay loaded across transcribe() calls. On CUDA that needs GPU memory for
-        the encoder plus two decoder copies (~10.4 GiB); low_memory=True loads one session
+        Sessions stay loaded across transcribe() calls; on CUDA the encoder and one decoder
+        copy stay resident (~10 GiB for 300M in float32). low_memory=True loads one session
         at a time instead, fitting smaller GPUs but reloading weights for every clip.
+
+        precision="fp16" or "bf16" downloads only that variant (MatMul weights in half
+        precision, about half the size) plus the shared tokenizer and language tables.
+        bf16 needs device="cuda" and an Ampere or newer GPU.
         """
         if device not in {"cpu", "cuda"}:
             raise ValueError("device must be cpu or cuda")
         from ..hub import download_verified
+        from ..precision import asset_selector, check_precision
 
+        check_precision(precision, device)
+        select = asset_selector(precision, {"tokenizer.model", "languages.json", "lang_embeddings.npy"})
+        if precision != "fp32":
+            required = {f"{precision}/encoder.onnx", f"{precision}/decoder.onnx", "tokenizer.model"}
+            _, verified = download_verified(
+                repo_id, required, revision=revision, cache_dir=cache_dir, select=select
+            )
+            directory = verified["tokenizer.model"].parent
+            if any(verified[name].parent != directory / precision for name in required - {"tokenizer.model"}):
+                raise RuntimeError("Downloaded assets are not co-located in one snapshot")
+            return cls(
+                directory, backend="onnx", device=device, threads=threads,
+                low_memory=low_memory, precision=precision,
+            )
         required = {"encoder.onnx", "decoder.weights", "decoder_weights.json", "tokenizer.model"}
         _, verified = download_verified(
-            repo_id, required, revision=revision, cache_dir=cache_dir
+            repo_id, required, revision=revision, cache_dir=cache_dir, select=select
         )
         # decoder.onnx (one session) is preferred; older repos ship only prefill/step graphs.
         graphs = {"decoder.onnx"} & verified.keys() or {"decoder_prefill.onnx", "decoder_step.onnx"}

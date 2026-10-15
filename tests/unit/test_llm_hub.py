@@ -19,12 +19,13 @@ FILES = [
 ]
 
 
-def fake_hub(monkeypatch, tmp_path, corrupt=None):
+def fake_hub(monkeypatch, tmp_path, corrupt=None, files=FILES):
     """Remote repo in tmp_path/remote; downloads land as regular files in local_dir."""
     snapshot = tmp_path / "remote"
     snapshot.mkdir()
     entries = {}
-    for name in FILES:
+    for name in files:
+        (snapshot / name).parent.mkdir(parents=True, exist_ok=True)
         (snapshot / name).write_bytes(name.encode())
         entries[name] = {"sha256": hashlib.sha256(name.encode()).hexdigest(), "size": len(name)}
     if corrupt:
@@ -81,3 +82,34 @@ def test_from_pretrained_rejects_checksum_mismatch(monkeypatch, tmp_path):
 def test_from_pretrained_rejects_unknown_device_before_download():
     with pytest.raises(ValueError, match="device must be cpu or cuda"):
         OmniASRLLM.from_pretrained("EmreAkgul/omniASR-LLM-1B-v2-ONNX", device="tpu")
+
+
+def test_from_pretrained_fp16_downloads_only_its_variant(monkeypatch, tmp_path):
+    variant = [
+        "fp16/encoder.onnx",
+        "fp16/encoder.onnx.data",
+        "fp16/decoder.onnx",
+        "fp16/decoder.onnx.data",
+    ]
+    shared = ["tokenizer.model", "languages.json", "lang_embeddings.npy"]
+    _, fetched = fake_hub(
+        monkeypatch, tmp_path, files=[*FILES, "decoder.onnx", *shared[1:], *variant]
+    )
+    loaded = {}
+
+    def init(self, directory, **kwargs):
+        loaded.update(directory=directory, **kwargs)
+
+    monkeypatch.setattr(OmniASRLLM, "__init__", init)
+    OmniASRLLM.from_pretrained(
+        "EmreAkgul/omniASR-LLM-1B-v2-ONNX", device="cuda", precision="fp16",
+        cache_dir=tmp_path / "cache",
+    )
+    assert sorted(fetched) == sorted(["config.json", *shared, *variant])
+    assert loaded["precision"] == "fp16"
+    assert loaded["directory"] == tmp_path / "cache" / "EmreAkgul--omniASR-LLM-1B-v2-ONNX" / "main"
+
+
+def test_from_pretrained_rejects_bf16_on_cpu_before_download():
+    with pytest.raises(ValueError, match="needs device='cuda'"):
+        OmniASRLLM.from_pretrained("EmreAkgul/omniASR-LLM-1B-v2-ONNX", precision="bf16")

@@ -174,17 +174,7 @@ def fake_backend(monkeypatch, tmp_path):
     def step_outputs():
         return [np.zeros((1, 10), np.float32), *[np.zeros((1, 2, 1, 1), np.float32)] * 24]
 
-    def session(path, device="cpu", opts=None, arena=None):
-        loads.append(Path(path).name)
-        return Graph(["audio"], lambda: [np.zeros((1, 4, 8), np.float32)])
-
-    def decoder_sessions(directory, device="cpu", threads=4):
-        loads.append("decoder")
-        prefill = Graph(["context", "bos"], step_outputs)
-        return prefill, Graph(onnx_backend.STEP_INPUTS, step_outputs), []
-
-    def decoder_session(directory, graph, device="cpu", threads=4, arena=None):
-        loads.append(graph)
+    def unified_graph():
         inputs = [
             SimpleNamespace(name="context", shape=[1, "context_len", 8]),
             SimpleNamespace(name="tokens", shape=[1, "new_tokens"]),
@@ -195,7 +185,23 @@ def fake_backend(monkeypatch, tmp_path):
         ]
         graph = Graph([], step_outputs)
         graph.get_inputs = lambda: inputs
-        return graph, []
+        return graph
+
+    def session(path, device="cpu", opts=None, arena=None):
+        path = Path(path)
+        loads.append(path.name if path.parent == tmp_path else f"{path.parent.name}/{path.name}")
+        if path.name == "decoder.onnx":  # half-precision decoders load directly
+            return unified_graph()
+        return Graph(["audio"], lambda: [np.zeros((1, 4, 8), np.float32)])
+
+    def decoder_sessions(directory, device="cpu", threads=4):
+        loads.append("decoder")
+        prefill = Graph(["context", "bos"], step_outputs)
+        return prefill, Graph(onnx_backend.STEP_INPUTS, step_outputs), []
+
+    def decoder_session(directory, graph, device="cpu", threads=4, arena=None):
+        loads.append(graph)
+        return unified_graph(), []
 
     monkeypatch.setattr(onnx_backend, "session", session)
     monkeypatch.setattr(onnx_backend, "decoder_sessions", decoder_sessions)
@@ -229,3 +235,62 @@ def test_unified_backend_uses_one_decoder_session(monkeypatch, tmp_path):
     assert backend.unified
     run_clips(backend)
     assert loads == ["encoder.onnx", "decoder.onnx"]
+
+
+def test_half_precision_backend_loads_its_subdirectory(monkeypatch, tmp_path):
+    backend_class, loads = fake_backend(monkeypatch, tmp_path)
+    (tmp_path / "fp16").mkdir()
+    for name in ["encoder.onnx", "decoder.onnx"]:
+        (tmp_path / "fp16" / name).write_bytes(b"")
+    run_clips(backend_class(tmp_path, "cpu", precision="fp16"))
+    assert loads == ["fp16/encoder.onnx", "fp16/decoder.onnx"]
+    with pytest.raises(ValueError, match="needs device='cuda'"):
+        backend_class(tmp_path, "cpu", precision="bf16")
+    (tmp_path / "empty").mkdir()
+    with pytest.raises(FileNotFoundError):
+        backend_class(tmp_path / "empty", "cpu", precision="fp16")
+
+
+def small_matmul_conv_model(path):
+    """x [1, 8, 20] -> Conv(8->8, k3) -> Transpose -> MatMul(8x6) -> y [1, 20, 6]."""
+    import onnx
+    from onnx import TensorProto, helper, numpy_helper
+
+    rng = np.random.default_rng(5)
+    nodes = [
+        helper.make_node("Conv", ["x", "conv_w"], ["c"], pads=[1, 1]),
+        helper.make_node("Transpose", ["c"], ["t"], perm=[0, 2, 1]),
+        helper.make_node("MatMul", ["t", "proj_w"], ["y"]),
+    ]
+    initializers = [
+        numpy_helper.from_array(rng.normal(size=(8, 8, 3)).astype(np.float32), "conv_w"),
+        numpy_helper.from_array(rng.normal(size=(8, 6)).astype(np.float32), "proj_w"),
+    ]
+    graph = helper.make_graph(
+        nodes, "small",
+        [helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 8, "t"])],
+        [helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, "t", 6])],
+        initializers,
+    )
+    onnx.save(helper.make_model(graph, opset_imports=[helper.make_opsetid("", 18)], ir_version=9), path)
+
+
+def test_convert_precision_halves_matmul_and_keeps_conv_float32(tmp_path):
+    import onnx
+    import onnxruntime as ort
+    from onnx import TensorProto
+
+    converter = load("convert_precision", ROOT / "tools/convert_precision.py")
+    small_matmul_conv_model(tmp_path / "model.onnx")
+    x = np.random.default_rng(6).normal(size=(1, 8, 20)).astype(np.float32)
+    expected = ort.InferenceSession(str(tmp_path / "model.onnx")).run(None, {"x": x})[0]
+    for precision, dtype in [("fp16", TensorProto.FLOAT16), ("bf16", TensorProto.BFLOAT16)]:
+        destination = tmp_path / precision / "model.onnx"
+        assert converter.convert_graph(tmp_path / "model.onnx", destination, precision) == 1
+        model = onnx.load(str(destination))
+        types = {tensor.name: tensor.data_type for tensor in model.graph.initializer}
+        assert types == {"conv_w": TensorProto.FLOAT, f"proj_w/{precision}": dtype}
+        assert [value.type.tensor_type.elem_type for value in model.graph.output] == [TensorProto.FLOAT]
+    # ONNX Runtime's CPU provider runs fp16 MatMul (bf16 has no CPU kernel).
+    actual = ort.InferenceSession(str(tmp_path / "fp16" / "model.onnx")).run(None, {"x": x})[0]
+    np.testing.assert_allclose(actual, expected, rtol=2e-2, atol=2e-2)

@@ -122,25 +122,37 @@ class ONNXLLMBackend:
     the GPU between steps through I/O binding: only token ids go in and logits come out.
     low_memory=True keeps one session resident at a time and returns caches as NumPy arrays
     so small GPUs fit, at the cost of reloading weights for every clip.
+
+    precision="fp16"/"bf16" loads the graphs in that subdirectory, whose MatMul weights are
+    half precision (see fast_omniasr.precision); inputs, outputs and caches stay float32.
     """
 
-    def __init__(self, directory, device="cpu", threads=4, low_memory=False):
+    def __init__(self, directory, device="cpu", threads=4, low_memory=False, precision="fp32"):
+        from ..precision import check_precision
+
         self.directory = Path(directory)
         self.device = device
         self.threads = threads
         self.low_memory = low_memory
+        self.precision = check_precision(precision, device)
+        self.graphs = self.directory if precision == "fp32" else self.directory / precision
         self.arena = "kSameAsRequested" if low_memory else "kNextPowerOfTwo"
         providers(device)
-        self.unified = (self.directory / "decoder.onnx").is_file()
+        self.unified = (self.graphs / "decoder.onnx").is_file()
         self.encoder_session = self.prefill_session = self.step_session = None
         self.decoder = None
         self.keepalive = []
         # Shrinking returns arena memory after every run; only phased sessions need it.
         self.run_options = run_options(device) if low_memory else None
-        graphs = ["decoder.onnx"] if self.unified else ["decoder_prefill.onnx", "decoder_step.onnx"]
-        for name in ["encoder.onnx", *graphs, "decoder.weights", "decoder_weights.json"]:
-            if not (self.directory / name).is_file():
-                raise FileNotFoundError(self.directory / name)
+        if precision == "fp32":
+            graphs = ["decoder.onnx"] if self.unified else ["decoder_prefill.onnx", "decoder_step.onnx"]
+            names = ["encoder.onnx", *graphs, "decoder.weights", "decoder_weights.json"]
+        else:
+            # Half-precision variants ship only the unified decoder, with weights beside it.
+            names = ["encoder.onnx", "decoder.onnx"]
+        for name in names:
+            if not (self.graphs / name).is_file():
+                raise FileNotFoundError(self.graphs / name)
 
     @property
     def bound(self):
@@ -157,7 +169,7 @@ class ONNXLLMBackend:
             self.close()
         if self.encoder_session is None:
             self.encoder_session = session(
-                self.directory / "encoder.onnx", self.device, options(self.threads), self.arena
+                self.graphs / "encoder.onnx", self.device, options(self.threads), self.arena
             )
         context = self.encoder_session.run(
             ["context"], {"audio": np.ascontiguousarray(audio)}, self.run_options
@@ -169,9 +181,14 @@ class ONNXLLMBackend:
 
     def _initialize_unified(self):
         if self.decoder is None:
-            self.decoder, self.keepalive = decoder_session(
-                self.directory, "decoder.onnx", self.device, self.threads, self.arena
-            )
+            if self.precision == "fp32":
+                self.decoder, self.keepalive = decoder_session(
+                    self.directory, "decoder.onnx", self.device, self.threads, self.arena
+                )
+            else:
+                self.decoder = session(
+                    self.graphs / "decoder.onnx", self.device, options(self.threads), self.arena
+                )
             inputs = self.decoder.get_inputs()
             if [value.name for value in inputs] != UNIFIED_INPUTS:
                 raise ValueError("Invalid ONNX unified decoder input contract")
