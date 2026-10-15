@@ -59,7 +59,13 @@ def test_from_pretrained_verifies_every_listed_file(monkeypatch, tmp_path):
     )
     assert sorted(fetched) == sorted(["config.json", *FILES])
     local = tmp_path / "cache" / "EmreAkgul--omniASR-LLM-1B-v2-ONNX" / "main"
-    assert loaded == {"directory": local, "backend": "onnx", "device": "cuda", "threads": 8}
+    assert loaded == {
+        "directory": local,
+        "backend": "onnx",
+        "device": "cuda",
+        "threads": 8,
+        "low_memory": False,
+    }
     # ONNX Runtime 1.31+ rejects external data whose resolved path leaves the model directory.
     assert not any((local / name).is_symlink() for name in FILES)
 

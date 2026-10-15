@@ -34,6 +34,7 @@ class OmniASRLLM:
         cached: bool = False,
         backend: str = "torch",
         threads: int = 4,
+        low_memory: bool = False,
     ):
         if backend not in {"torch", "onnx"}:
             raise ValueError("backend must be torch or onnx")
@@ -50,7 +51,7 @@ class OmniASRLLM:
         if backend == "onnx":
             from .onnx_backend import ONNXLLMBackend
 
-            self.onnx = ONNXLLMBackend(directory, device, threads)
+            self.onnx = ONNXLLMBackend(directory, device, threads, low_memory)
             self.device = device
             self.cached = True
             self.tokenizer = Tokenizer(directory / "tokenizer.model")
@@ -75,6 +76,7 @@ class OmniASRLLM:
         *,
         device: str = "cpu",
         threads: int = 4,
+        low_memory: bool = False,
         revision: str | None = None,
         cache_dir: str | Path | None = None,
     ) -> "OmniASRLLM":
@@ -84,6 +86,10 @@ class OmniASRLLM:
         sha256 checksums covering every graph, weight file and the tokenizer
         (see EmreAkgul/omniASR-LLM-300M-v2-ONNX). Encoder external data, when
         present, is listed in the same map and lands beside encoder.onnx.
+
+        Sessions stay loaded across transcribe() calls. On CUDA that needs GPU memory for
+        the encoder plus two decoder copies (~10.4 GiB); low_memory=True loads one session
+        at a time instead, fitting smaller GPUs but reloading weights for every clip.
         """
         if device not in {"cpu", "cuda"}:
             raise ValueError("device must be cpu or cuda")
@@ -103,7 +109,9 @@ class OmniASRLLM:
         directory = verified["encoder.onnx"].parent
         if any(verified[name].parent != directory for name in required):
             raise RuntimeError("Downloaded assets are not co-located in one snapshot")
-        return cls(directory, backend="onnx", device=device, threads=threads)
+        return cls(
+            directory, backend="onnx", device=device, threads=threads, low_memory=low_memory
+        )
 
     def language_embedding(self, lang: str) -> np.ndarray:
         """Return the learned embedding row for an upstream code such as eng_Latn."""

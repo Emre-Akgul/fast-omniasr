@@ -88,3 +88,65 @@ def test_weight_norm_folding_matches_float64_and_removes_runtime_norm(tmp_path):
         torch.from_numpy(x).double(), weight, conv.bias.detach().double(), padding=8, groups=4
     ).numpy()
     np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+
+
+def fake_backend(monkeypatch, tmp_path):
+    """ONNXLLMBackend with recorded session loads and NumPy stand-in graphs."""
+    from types import SimpleNamespace
+
+    from fast_omniasr.llm import onnx_backend
+
+    for name in [
+        "encoder.onnx",
+        "decoder_prefill.onnx",
+        "decoder_step.onnx",
+        "decoder.weights",
+        "decoder_weights.json",
+    ]:
+        (tmp_path / name).write_bytes(b"")
+    loads = []
+
+    class Graph:
+        def __init__(self, inputs, outputs):
+            self.inputs, self.outputs = inputs, outputs
+
+        def get_inputs(self):
+            return [SimpleNamespace(name=name) for name in self.inputs]
+
+        def run(self, names, feeds, run_options=None):
+            return self.outputs()
+
+    def step_outputs():
+        return [np.zeros((1, 10), np.float32), *[np.zeros((1, 2, 1, 1), np.float32)] * 24]
+
+    def session(path, device="cpu", opts=None, arena=None):
+        loads.append(Path(path).name)
+        return Graph(["audio"], lambda: [np.zeros((1, 4, 8), np.float32)])
+
+    def decoder_sessions(directory, device="cpu", threads=4):
+        loads.append("decoder")
+        prefill = Graph(["context", "bos"], step_outputs)
+        return prefill, Graph(onnx_backend.STEP_INPUTS, step_outputs), []
+
+    monkeypatch.setattr(onnx_backend, "session", session)
+    monkeypatch.setattr(onnx_backend, "decoder_sessions", decoder_sessions)
+    return onnx_backend.ONNXLLMBackend, loads
+
+
+def run_clips(backend, clips=3):
+    for _ in range(clips):
+        context = backend.encode(np.zeros((1, 1600), np.float32))
+        _, cache = backend.prefill(context, np.zeros((1, 1), np.int64))
+        backend.decode_step(np.zeros((1, 1), np.int64), cache)
+
+
+def test_resident_backend_loads_each_session_once(monkeypatch, tmp_path):
+    backend_class, loads = fake_backend(monkeypatch, tmp_path)
+    run_clips(backend_class(tmp_path, "cpu"))
+    assert loads == ["encoder.onnx", "decoder"]
+
+
+def test_low_memory_backend_phases_sessions_per_clip(monkeypatch, tmp_path):
+    backend_class, loads = fake_backend(monkeypatch, tmp_path)
+    run_clips(backend_class(tmp_path, "cpu", low_memory=True))
+    assert loads == ["encoder.onnx", "decoder"] * 3
