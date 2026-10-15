@@ -130,6 +130,12 @@ def main():
         torch.onnx.export(wrapper, (torch.zeros(1, 80000),), str(args.output),
                           input_names=["audio"], output_names=["logits"], opset_version=18,
                           dynamo=False, dynamic_axes={"audio": {1: "samples"}, "logits": {1: "frames"}})
+    # Compute the positional convolution's weight norm once in float64 instead of on every
+    # call in float32 (see tools/onnx_fold.py).
+    from tools.onnx_fold import fold_file
+
+    if fold_file(args.output) != 1:
+        raise ValueError("Expected exactly one weight-normalized positional convolution")
     print(args.output)
     print(tokenizer_path)
 
