@@ -111,6 +111,7 @@ def reference(args):
             clip = {
                 "audio": str(Path(audio).resolve()),
                 "lang": lang,
+                "source_sha256": hashlib.sha256(Path(audio).read_bytes()).hexdigest(),
                 "normalized_audio_sha256": hashlib.sha256(waveform.numpy().tobytes()).hexdigest(),
                 "token_ids": ids[1:],
                 "text": text_decoder(torch.tensor(ids[1:], dtype=torch.int64)),
@@ -151,7 +152,13 @@ def compare(args):
     reports = []
     for clip in suite["clips"]:
         audio = load_audio(clip["audio"])
-        if hashlib.sha256(audio.tobytes()).hexdigest() != clip["normalized_audio_sha256"]:
+        # NumPy 2 reduces float32 in a different order than NumPy 1, so normalization can
+        # differ in the last bit; the source file's hash still identifies the same input.
+        normalized_match = (
+            hashlib.sha256(audio.tobytes()).hexdigest() == clip["normalized_audio_sha256"]
+        )
+        source = hashlib.sha256(Path(clip["audio"]).read_bytes()).hexdigest()
+        if not normalized_match and source != clip.get("source_sha256"):
             raise AssertionError(f"Audio differs from the reference: {clip['audio']}")
         expected = np.load(args.reference / clip["logits"])
         model.onnx.close()
@@ -176,6 +183,7 @@ def compare(args):
         report = {
             "audio": Path(clip["audio"]).name,
             "lang": clip.get("lang"),
+            "normalized_audio_identical": normalized_match,
             "decode_steps_including_eos": len(expected),
             "max_logit_abs_error": max(errors),
             "first_step_logit_abs_error": errors[0],
