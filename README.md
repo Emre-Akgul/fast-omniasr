@@ -44,6 +44,36 @@ print(model.transcribe("speech.wav").text)
 
 `from_pretrained` downloads `model.onnx`/`tokenizer.model` via `huggingface_hub` (requires the `hub` extra), verifies each against the sha256 in the repo's `config.json`, and stores them as regular files under `~/.cache/fast-omniasr/hub` (or `cache_dir`) — later calls (even fully offline, e.g. `HF_HUB_OFFLINE=1`) reuse them. Regular files are required because ONNX Runtime 1.31+ rejects external tensor data reached through the Hugging Face cache's symlinks.
 
+### Precision (fp32, fp16, bf16)
+
+Every published model — CTC and LLM — ships float32 graphs plus `fp16/` and `bf16/`
+variants. Pass `precision=` to `from_pretrained`; only that variant (and the shared
+tokenizer) is downloaded:
+
+```python
+model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-1B-v2-ONNX", device="cuda", precision="fp16")
+```
+
+| `precision` | Devices | What changes |
+|---|---|---|
+| `fp32` (default) | CPU, CUDA | Reference; matches fairseq2 |
+| `fp16` | CPU, CUDA | MatMul weights in half precision: roughly half the download and weight memory, ~1.5-2.5x faster on GPU; no speedup on CPU |
+| `bf16` | CUDA on Ampere or newer GPUs | Same as fp16 with bfloat16; ONNX Runtime has no CPU bf16 kernels |
+
+Only the MatMul weights are converted (`tools/convert_precision.py`): convolutions,
+normalization, softmax, the LLM K/V cache and all inputs/outputs stay float32, because a
+fully fp16 graph overflowed in the LLM decoder. On English, Turkish and Central Kurdish test
+clips, fp16 transcripts matched fp32 for every model; bf16 changed one word in a few runs
+(e.g. "count" -> "county"), the kind of drift upstream's own bf16 default shows. Each repo's
+model card has its numbers and `parity/precision_agreement.json`.
+
+| On an L40S (warm, per clip) | fp32 | fp16 |
+|---|---:|---:|
+| CTC 1B v2 | 5.4 GiB, ~90 ms | 3.4 GiB, ~48 ms |
+| CTC 7B v2 | 26.5 GiB, ~368 ms | 13.4 GiB, ~141 ms |
+| LLM 300M v2 | 9.5 GiB | 6.5 GiB, ~1.5x faster |
+| LLM 7B v2 | 33.5 GiB | 19.5 GiB, ~1.5x faster |
+
 For the fast path with no manual export or `build_tensorrt.py` call, pass `backend="tensorrt"` and an explicit `precision` (no "auto" — see [Performance and accuracy](#performance-and-accuracy) before choosing `"fp16"`):
 
 ```python
@@ -167,7 +197,8 @@ print(result.text, result.stop_reason)  # "eos" means complete
 ```
 
 `from_pretrained` downloads every file listed in the repo's `config.json` and verifies its
-SHA-256. `lang` takes an upstream code such as `eng_Latn`, `tur_Latn` or `ckb_Arab` (see the
+SHA-256. `precision="fp16"` or `"bf16"` loads the half-precision variant (see
+[Precision](#precision-fp32-fp16-bf16)). `lang` takes an upstream code such as `eng_Latn`, `tur_Latn` or `ckb_Arab` (see the
 repo's `languages.json`). Omitting it uses the model's learned "no language" embedding, as
 upstream does, and warns: upstream notes quality can degrade, and in our tests the original
 (v1) models transcribed English as looping Arabic text without a language code.
