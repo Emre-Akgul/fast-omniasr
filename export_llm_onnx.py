@@ -67,7 +67,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--stage", choices=["encoder", "decoder"], default="encoder")
+    parser.add_argument("--stage", choices=["encoder", "decoder", "unified"], default="encoder")
     parser.add_argument("--validate-only", action="store_true")
     # Random-noise probes compare with PyTorch float32, which is itself up to ~2e-4
     # (relative L2) off on noise through deep encoders; accuracy against float64 is
@@ -84,6 +84,19 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     if args.source.resolve() == args.output.resolve():
         raise ValueError("Use a separate output directory to preserve Day-2 artifacts")
+    if args.stage == "unified":
+        # Add the single-session decoder.onnx to an existing export; decoder.weights is
+        # reused unchanged (each referenced tensor is checked against the source).
+        from tools.llm_onnx_graphs import export_unified_decoder
+
+        if (args.output / "decoder.onnx").exists():
+            raise FileExistsError(args.output / "decoder.onnx")
+        model = torch.jit.load(str(args.source / "decoder_cached.pt")).eval()
+        export_unified_decoder(model, args.output)
+        config = json.loads((args.output / "config.json").read_text())
+        config["onnx"]["decoder"] = "decoder.onnx"
+        (args.output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+        return
     if args.stage == "decoder":
         if not (args.output / "encoder_parity.json").exists():
             raise ValueError("Encoder parity must pass before decoder export")
@@ -109,6 +122,7 @@ def main():
             "cache_layout": "batch, sequence, kv_heads, head_dim",
             "weight_file": "decoder.weights",
             "initializer_manifest": "decoder_weights.json",
+            "decoder": "decoder.onnx",
         }
         (args.output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
         for name in ["tokenizer.model", "reference.json", "cached_reference.json"]:

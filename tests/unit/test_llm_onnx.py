@@ -19,12 +19,10 @@ def load(name, path):
     return module
 
 
-def test_onnx_prefill_step_dynamic_lengths_and_weights(tmp_path):
-    from fast_omniasr.llm.onnx_backend import decoder_sessions
-
+def traced_decoder(tmp_path, seed=17):
+    """A small traced cached decoder (4 K/V heads, head dim 8, hidden 32) as the oracle."""
     fixtures = load("cache_fixtures", ROOT / "tests/unit/test_llm_cache.py")
-    lowering = load("onnx_lowering", ROOT / "tools/llm_onnx_graphs.py")
-    torch.manual_seed(17)
+    torch.manual_seed(seed)
     model = fixtures.synthetic_decoder(4)
     for layer in model.layers:
         layer.ffn.gate_proj = layer.ffn.gate
@@ -40,8 +38,17 @@ def test_onnx_prefill_step_dynamic_lengths_and_weights(tmp_path):
             strict=False,
             check_trace=False,
         )
-        traced.save(str(tmp_path / "oracle.pt"))
-        traced = torch.jit.load(str(tmp_path / "oracle.pt"))
+    traced.save(str(tmp_path / f"oracle_{seed}.pt"))
+    return torch.jit.load(str(tmp_path / f"oracle_{seed}.pt"))
+
+
+def test_onnx_prefill_step_dynamic_lengths_and_weights(tmp_path):
+    from fast_omniasr.llm.onnx_backend import decoder_sessions
+
+    lowering = load("onnx_lowering", ROOT / "tools/llm_onnx_graphs.py")
+    traced = traced_decoder(tmp_path)
+    bos = torch.tensor([[0]])
+    with torch.inference_mode():
         lowering.export_decoder(traced, tmp_path)
         prefill, step, keepalive = decoder_sessions(tmp_path)
         assert len(keepalive) > 0
@@ -57,6 +64,54 @@ def test_onnx_prefill_step_dynamic_lengths_and_weights(tmp_path):
                 ref_logits, ref_cache = traced.decode_step(token, ref_cache)
                 names = [value.name for value in step.get_inputs()]
                 actual = step.run(None, dict(zip(names, [token.numpy(), *actual[1:]], strict=True)))
+
+
+def test_unified_decoder_matches_reference_with_empty_context_and_cache(tmp_path):
+    from fast_omniasr.llm.onnx_backend import decoder_session
+
+    lowering = load("onnx_lowering", ROOT / "tools/llm_onnx_graphs.py")
+    traced = traced_decoder(tmp_path)
+    bos = torch.tensor([[0]])
+    with torch.inference_mode():
+        lowering.export_decoder(traced, tmp_path)
+        decoder, _keepalive = decoder_session(tmp_path, "decoder.onnx")
+        names = [value.name for value in decoder.get_inputs()]
+        assert names[:3] == ["context", "tokens", "past_key_0"]
+        empty_cache = [np.zeros((1, 0, 4, 8), np.float32)] * (len(names) - 2)
+        for length in [1, 9, 49, 149]:
+            context = torch.randn(1, length, 32)
+            ref_logits, ref_cache = traced.prefill(context, bos)
+            feeds = [context.numpy(), bos.numpy(), *empty_cache]
+            actual = decoder.run(None, dict(zip(names, feeds, strict=True)))
+            for offset in range(3):
+                for a, b in zip(actual, [ref_logits, *ref_cache], strict=True):
+                    np.testing.assert_allclose(a, b.numpy(), atol=3e-6, rtol=2e-5)
+                assert all(x.shape == (1, length + offset + 1, 4, 8) for x in actual[1:])
+                token = ref_logits.argmax(-1).reshape(1, 1)
+                ref_logits, ref_cache = traced.decode_step(token, ref_cache)
+                feeds = [np.zeros((1, 0, 32), np.float32), token.numpy(), *actual[1:]]
+                actual = decoder.run(None, dict(zip(names, feeds, strict=True)))
+
+
+def test_unified_decoder_reuses_existing_weights_and_rejects_mismatch(tmp_path):
+    import onnx
+    import onnxruntime as ort
+
+    lowering = load("onnx_lowering", ROOT / "tools/llm_onnx_graphs.py")
+    traced = traced_decoder(tmp_path)
+    with torch.inference_mode():
+        lowering.export_decoder(traced, tmp_path)
+        written = (tmp_path / "decoder.weights").read_bytes()
+        (tmp_path / "decoder.onnx").rename(tmp_path / "fresh.onnx")
+        lowering.export_unified_decoder(traced, tmp_path)
+        assert (tmp_path / "decoder.weights").read_bytes() == written
+        fresh = onnx.load(str(tmp_path / "fresh.onnx"), load_external_data=False)
+        added = onnx.load(str(tmp_path / "decoder.onnx"), load_external_data=False)
+        assert fresh.graph == added.graph
+        assert ort.InferenceSession(str(tmp_path / "decoder.onnx")).get_inputs()[1].name == "tokens"
+        (tmp_path / "decoder.onnx").unlink()
+        with pytest.raises(ValueError, match="differs from the source"):
+            lowering.export_unified_decoder(traced_decoder(tmp_path, seed=18), tmp_path)
 
 
 def test_weight_norm_folding_matches_float64_and_removes_runtime_norm(tmp_path):

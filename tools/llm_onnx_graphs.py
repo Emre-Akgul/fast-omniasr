@@ -36,21 +36,54 @@ class Weights:
                 "length": array.nbytes,
                 "dtype": "float32",
             }
-        entry = self.entries[name]
-        tensor = T(name=name, data_type=T.FLOAT, dims=entry["shape"], data_location=T.EXTERNAL)
-        for key, value in {
-            "location": "decoder.weights",
-            "offset": entry["offset"],
-            "length": entry["length"],
-        }.items():
-            tensor.external_data.add(key=key, value=str(value))
-        return tensor
+        return external(name, self.entries[name])
+
+    def flush(self):
+        self.file.flush()
 
     def close(self):
         self.file.close()
         (self.directory / "decoder_weights.json").write_text(
             json.dumps(self.entries, indent=2) + "\n"
         )
+
+
+class ExistingWeights:
+    """Reference an already exported decoder.weights; every tensor must match exactly."""
+
+    def __init__(self, directory):
+        self.directory = Path(directory)
+        self.entries = json.loads((self.directory / "decoder_weights.json").read_text())
+
+    def add(self, name, tensor, transpose=False):
+        entry = self.entries[name]
+        array = tensor.detach().cpu().numpy()
+        if transpose:
+            array = array.T
+        stored = np.memmap(
+            self.directory / "decoder.weights",
+            dtype=entry["dtype"],
+            mode="r",
+            offset=entry["offset"],
+            shape=tuple(entry["shape"]),
+        )
+        if not np.array_equal(stored, np.asarray(array, dtype=np.float32)):
+            raise ValueError(f"decoder.weights differs from the source for {name}")
+        return external(name, entry)
+
+    def flush(self):
+        pass
+
+
+def external(name, entry):
+    tensor = T(name=name, data_type=T.FLOAT, dims=entry["shape"], data_location=T.EXTERNAL)
+    for key, value in {
+        "location": "decoder.weights",
+        "offset": entry["offset"],
+        "length": entry["length"],
+    }.items():
+        tensor.external_data.add(key=key, value=str(value))
+    return tensor
 
 
 class Graph:
@@ -131,7 +164,14 @@ def cache_names(prefix, layers=12):
     return [f"{prefix}_{kind}_{i}" for i in range(layers) for kind in ("key", "value")]
 
 
-def export_decoder(model, directory):
+def _decoder_graph(model, weights, mode):
+    """Build one decoder graph.
+
+    prefill: context + bos -> logits + past K/V.
+    step:    token + past K/V -> logits + present K/V.
+    unified: context (may be empty) + tokens + past K/V (may be empty) -> logits + present K/V;
+             one graph and one copy of the weights serve both phases.
+    """
     layers = list(model.layers.children())
     hidden = model.embedding.weight.shape[1]
     dim = layers[0].freqs.shape[1] * 2
@@ -141,120 +181,133 @@ def export_decoder(model, directory):
         for layer in layers
     ):
         raise ValueError("This ONNX lowering supports multi-head attention only")
-    directory = Path(directory)
+    g = Graph(weights)
+    past = mode != "prefill"
+    past_inputs = [
+        h.make_tensor_value_info(n, T.FLOAT, [1, "cached_positions", heads, dim])
+        for n in cache_names("past", len(layers))
+    ]
+    context = h.make_tensor_value_info("context", T.FLOAT, [1, "context_len", hidden])
+    embedding = g.weight("embedding.weight", model.embedding.weight)
+    if mode == "prefill":
+        inputs = [context, h.make_tensor_value_info("bos", T.INT64, [1, 1])]
+        x = g.op("Concat", "context", g.op("Gather", embedding, "bos", axis=0), axis=1)
+        offset = g.constant(0)
+    elif mode == "step":
+        inputs = [h.make_tensor_value_info("token", T.INT64, [1, 1]), *past_inputs]
+        x = g.op("Gather", embedding, "token", axis=0)
+    else:
+        inputs = [
+            context,
+            h.make_tensor_value_info("tokens", T.INT64, [1, "new_tokens"]),
+            *past_inputs,
+        ]
+        x = g.op("Concat", "context", g.op("Gather", embedding, "tokens", axis=0), axis=1)
+    if past:
+        offset = g.op("Gather", g.op("Shape", "past_key_0"), g.constant(1), axis=0)
+    length = g.op("Gather", g.op("Shape", x), g.constant(1), axis=0)
+    end = g.op("Add", offset, length)
+    positions = g.op("Range", offset, end, g.constant(1))
+    # Keys span the cache and the new positions; a step (one query) needs no mask.
+    key_positions = {
+        "prefill": positions,
+        "step": None,
+        "unified": g.op("Range", g.constant(0), end, g.constant(1)),
+    }[mode]
+    head_shape = g.constant([1, -1, heads, dim])
+    outputs = []
+    output_names = cache_names("present" if past else "past", len(layers))
+    for i, layer in enumerate(layers):
+        name = f"layers.{i}"
+        frequencies = layer.freqs
+        if not np.array_equal(frequencies.numpy(), layers[0].freqs.numpy()):
+            raise ValueError("Decoder layers must share RoPE frequencies")
+        residual = x
+        normalized = g.norm(x, layer.norm, name + ".norm")
+        q = g.rope(
+            g.op("Reshape", g.linear(normalized, layer.q, name + ".q"), head_shape),
+            positions,
+            frequencies,
+        )
+        k = g.rope(
+            g.op("Reshape", g.linear(normalized, layer.k, name + ".k"), head_shape),
+            positions,
+            frequencies,
+        )
+        v = g.op("Reshape", g.linear(normalized, layer.v, name + ".v"), head_shape)
+        if past:
+            k = g.op("Concat", f"past_key_{i}", k, axis=1)
+            v = g.op("Concat", f"past_value_{i}", v, axis=1)
+        for value, out_name in zip((k, v), output_names[2 * i : 2 * i + 2]):
+            g.nodes.append(h.make_node("Identity", [value], [out_name]))
+            outputs.append(
+                h.make_tensor_value_info(
+                    out_name,
+                    T.FLOAT,
+                    [1, "present_positions" if past else "prefill_positions", heads, dim],
+                )
+            )
+        q = g.op("Transpose", q, perm=[0, 2, 1, 3])
+        k = g.op("Transpose", k, perm=[0, 2, 3, 1])
+        v = g.op("Transpose", v, perm=[0, 2, 1, 3])
+        scores = g.op("Mul", g.op("MatMul", q, k), g.constant(dim**-0.5, np.float32))
+        if key_positions is not None:
+            # True for a future key; all queries see their diagonal.
+            future = g.op(
+                "Greater",
+                g.op("Unsqueeze", key_positions, g.constant([0])),
+                g.op("Unsqueeze", positions, g.constant([1])),
+            )
+            scores = g.op("Where", future, g.constant(float("-inf"), np.float32), scores)
+        attention = g.op("MatMul", g.op("Softmax", scores, axis=-1), v)
+        attention = g.op(
+            "Reshape",
+            g.op("Transpose", attention, perm=[0, 2, 1, 3]),
+            g.constant([1, -1, hidden]),
+        )
+        x = g.op("Add", residual, g.linear(attention, layer.out, name + ".out"))
+        ffn_input = g.norm(x, layer.ffn_norm, name + ".ffn_norm")
+        gate = g.linear(ffn_input, layer.ffn.gate_proj, name + ".ffn.gate_proj")
+        activated = g.op("Mul", gate, g.op("Sigmoid", gate))
+        inner = g.linear(ffn_input, layer.ffn.inner_proj, name + ".ffn.inner_proj")
+        x = g.op(
+            "Add",
+            x,
+            g.linear(
+                g.op("Mul", inner, activated),
+                layer.ffn.output_proj,
+                name + ".ffn.output_proj",
+            ),
+        )
+    x = g.norm(x, model.norm, "norm")
+    x = g.op("Gather", x, g.constant(-1), axis=1)
+    logits = g.linear(x, model.proj, "proj")
+    g.nodes.append(h.make_node("Identity", [logits], ["logits"]))
+    outputs.insert(0, h.make_tensor_value_info("logits", T.FLOAT, [1, model.proj.weight.shape[0]]))
+    name = {"prefill": "decoder_prefill", "step": "decoder_step", "unified": "decoder"}[mode]
+    return h.make_graph(g.nodes, name, inputs, outputs, list(g.initializers.values()))
+
+
+def _save(graph, directory, weights):
+    artifact = h.make_model(graph, opset_imports=[h.make_opsetid("", 18)], ir_version=9)
+    path = Path(directory) / f"{graph.name}.onnx"
+    onnx.save_model(artifact, path)
+    weights.flush()
+    onnx.checker.check_model(str(path))
+    print(f"Exported {path}", flush=True)
+
+
+def export_decoder(model, directory):
+    """Write decoder.weights plus the prefill/step graphs and the unified graph."""
     weights = Weights(directory)
     try:
-        for prefill in (True, False):
-            g = Graph(weights)
-            token = "bos" if prefill else "token"
-            inputs = [h.make_tensor_value_info(token, T.INT64, [1, 1])]
-            embedded = g.op(
-                "Gather", g.weight("embedding.weight", model.embedding.weight), token, axis=0
-            )
-            if prefill:
-                inputs.insert(
-                    0, h.make_tensor_value_info("context", T.FLOAT, [1, "context_len", hidden])
-                )
-                x = g.op("Concat", "context", embedded, axis=1)
-                offset = g.constant(0)
-            else:
-                x = embedded
-                inputs.extend(
-                    h.make_tensor_value_info(n, T.FLOAT, [1, "cached_positions", heads, dim])
-                    for n in cache_names("past", len(layers))
-                )
-                offset = g.op("Gather", g.op("Shape", "past_key_0"), g.constant(1), axis=0)
-            length = g.op("Gather", g.op("Shape", x), g.constant(1), axis=0)
-            positions = g.op("Range", offset, g.op("Add", offset, length), g.constant(1))
-            head_shape = g.constant([1, -1, heads, dim])
-            outputs = []
-            output_names = cache_names("past" if prefill else "present", len(layers))
-            for i, layer in enumerate(layers):
-                name = f"layers.{i}"
-                frequencies = layer.freqs
-                if not np.array_equal(frequencies.numpy(), layers[0].freqs.numpy()):
-                    raise ValueError("Decoder layers must share RoPE frequencies")
-                residual = x
-                normalized = g.norm(x, layer.norm, name + ".norm")
-                q = g.rope(
-                    g.op("Reshape", g.linear(normalized, layer.q, name + ".q"), head_shape),
-                    positions,
-                    frequencies,
-                )
-                k = g.rope(
-                    g.op("Reshape", g.linear(normalized, layer.k, name + ".k"), head_shape),
-                    positions,
-                    frequencies,
-                )
-                v = g.op("Reshape", g.linear(normalized, layer.v, name + ".v"), head_shape)
-                if not prefill:
-                    k = g.op("Concat", f"past_key_{i}", k, axis=1)
-                    v = g.op("Concat", f"past_value_{i}", v, axis=1)
-                for value, out_name in zip((k, v), output_names[2 * i : 2 * i + 2]):
-                    g.nodes.append(h.make_node("Identity", [value], [out_name]))
-                    outputs.append(
-                        h.make_tensor_value_info(
-                            out_name,
-                            T.FLOAT,
-                            [
-                                1,
-                                "prefill_positions" if prefill else "present_positions",
-                                heads,
-                                dim,
-                            ],
-                        )
-                    )
-                q = g.op("Transpose", q, perm=[0, 2, 1, 3])
-                k = g.op("Transpose", k, perm=[0, 2, 3, 1])
-                v = g.op("Transpose", v, perm=[0, 2, 1, 3])
-                scores = g.op("Mul", g.op("MatMul", q, k), g.constant(dim**-0.5, np.float32))
-                if prefill:
-                    # True for a future key; all queries see their diagonal.
-                    future = g.op(
-                        "Greater",
-                        g.op("Unsqueeze", positions, g.constant([0])),
-                        g.op("Unsqueeze", positions, g.constant([1])),
-                    )
-                    scores = g.op("Where", future, g.constant(float("-inf"), np.float32), scores)
-                attention = g.op("MatMul", g.op("Softmax", scores, axis=-1), v)
-                attention = g.op(
-                    "Reshape",
-                    g.op("Transpose", attention, perm=[0, 2, 1, 3]),
-                    g.constant([1, -1, hidden]),
-                )
-                x = g.op("Add", residual, g.linear(attention, layer.out, name + ".out"))
-                ffn_input = g.norm(x, layer.ffn_norm, name + ".ffn_norm")
-                gate = g.linear(ffn_input, layer.ffn.gate_proj, name + ".ffn.gate_proj")
-                activated = g.op("Mul", gate, g.op("Sigmoid", gate))
-                inner = g.linear(ffn_input, layer.ffn.inner_proj, name + ".ffn.inner_proj")
-                x = g.op(
-                    "Add",
-                    x,
-                    g.linear(
-                        g.op("Mul", inner, activated),
-                        layer.ffn.output_proj,
-                        name + ".ffn.output_proj",
-                    ),
-                )
-            x = g.norm(x, model.norm, "norm")
-            x = g.op("Gather", x, g.constant(-1), axis=1)
-            logits = g.linear(x, model.proj, "proj")
-            g.nodes.append(h.make_node("Identity", [logits], ["logits"]))
-            outputs.insert(
-                0, h.make_tensor_value_info("logits", T.FLOAT, [1, model.proj.weight.shape[0]])
-            )
-            graph = h.make_graph(
-                g.nodes,
-                "decoder_prefill" if prefill else "decoder_step",
-                inputs,
-                outputs,
-                list(g.initializers.values()),
-            )
-            artifact = h.make_model(graph, opset_imports=[h.make_opsetid("", 18)], ir_version=9)
-            path = directory / f"{graph.name}.onnx"
-            onnx.save_model(artifact, path)
-            weights.file.flush()
-            onnx.checker.check_model(str(path))
-            print(f"Exported {path}", flush=True)
+        for mode in ("prefill", "step", "unified"):
+            _save(_decoder_graph(model, weights, mode), directory, weights)
     finally:
         weights.close()
+
+
+def export_unified_decoder(model, directory):
+    """Add decoder.onnx to an existing export, reusing its decoder.weights unchanged."""
+    weights = ExistingWeights(directory)
+    _save(_decoder_graph(model, weights, "unified"), directory, weights)
