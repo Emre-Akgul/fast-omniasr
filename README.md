@@ -196,6 +196,14 @@ The exported encoder folds the positional convolution's weight normalization int
 float64-computed weight. Recomputing it at runtime in float32 made ORT's encoder 12-37x less
 accurate than PyTorch against float64 on the 3B model.
 
+Sessions stay loaded across `transcribe()` calls and, on CUDA, the K/V cache stays on the
+GPU between decoding steps (I/O binding); only token ids and logits cross to the host. On an
+L40S this decodes a 10-20 s clip in about 1.5-2 s (11-16 ms per token) with the 300M and 7B v2
+models after the first call, which loads the weights. Resident CUDA sessions need the encoder
+plus two decoder copies: about 16 GiB for 300M and 41 GiB for 7B. On smaller GPUs pass
+`low_memory=True` to `from_pretrained` to load one session at a time (300M peaks at ~5.4 GiB),
+at the cost of reloading weights for every clip.
+
 Scope: batch one, clips up to 30 seconds, greedy decoding (upstream defaults to five-beam
 search, so outputs can differ). The zero-shot (`7B_ZS`) and streaming `Unlimited` models use
 other prompt formats and are not supported. Load only trusted model assets.
