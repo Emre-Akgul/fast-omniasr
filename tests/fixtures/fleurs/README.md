@@ -6,9 +6,11 @@ Three short clips from the **test** split of [FLEURS](https://huggingface.co/dat
 
 - Source: `google/fleurs` at commit `70bb2e84b976b7e960aa89f1c648e09c59f894dd`; the exact
   tarball member, reference transcript and sha256 of each clip are listed in `manifest.json`.
-- Conversion: the original 16 kHz mono WAV, re-encoded losslessly as 16-bit FLAC. No other changes.
-- License: FLEURS is released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-  These clips are redistributed under the same license.
+- Modifications: the original 32-bit float, 16 kHz mono WAV was quantized to 16-bit PCM
+  (round to nearest) and FLAC-encoded. Nothing else was changed (no trimming, resampling or
+  normalization). Both models produce the same transcripts on the original and quantized audio.
+- License: FLEURS © Google, released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+  These modified clips are redistributed under the same license, without warranties of any kind.
 
 ```bibtex
 @article{fleurs2022arxiv,

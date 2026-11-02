@@ -1,7 +1,8 @@
 name: Real-model CPU validation
 # Downloads the pinned published CTC and LLM 300M v2 models (~8 GB) and runs them end to
 # end on CPU against the committed FLEURS fixtures (tests/fixtures/fleurs). Too heavy for
-# every push: runs weekly, on releases, on demand, and on PRs that change this validation.
+# every push: runs weekly, after each release is published (a report, not a gate), on
+# demand, and on PRs that change this validation or the runtime code it exercises.
 on:
   workflow_dispatch:
   schedule:
@@ -13,12 +14,21 @@ on:
       - .github/workflows/real-models.yml
       - tests/integration/test_real_models_cpu.py
       - tests/fixtures/fleurs/**
+      # Runtime code these tests exercise end to end
+      - src/fast_omniasr/llm/**
+      - src/fast_omniasr/hub.py
+      - src/fast_omniasr/model.py
+      - src/fast_omniasr/backends/onnx.py
+      - src/fast_omniasr/audio.py
+      - src/fast_omniasr/tokenizer.py
+      - src/fast_omniasr/decoder.py
+      - tools/evaluate_precisions.py
 
 permissions:
   contents: read
 
 concurrency:
-  group: real-models-${{ github.ref }}
+  group: real-models-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -83,15 +83,7 @@ def test_ctc_transcribes_fleurs_clip(ctc, clip):
     assert cer <= clip["max_cer"]["ctc"], f"CTC CER {cer:.1f} on {clip['file']}: {first.text!r}"
 
 
-@pytest.mark.parametrize("clip", MANIFEST["clips"], ids=lambda c: c["fleurs_language"])
-def test_llm_transcribes_fleurs_clip(llm, clip):
-    waveform, sample_rate = _audio(clip)
-    result = llm.transcribe(waveform, sample_rate=sample_rate, lang=clip["lang"])
-    assert result.stop_reason == "eos"
-    cer = _cer(clip["reference"], result.text)
-    assert cer <= clip["max_cer"]["llm"], f"LLM CER {cer:.1f} on {clip['file']}: {result.text!r}"
-
-
+# Runs before the LLM tests (file order), so the LLM is not resident alongside two CTC models.
 def test_ctc_handles_silence_and_rejects_use_after_close():
     from fast_omniasr import OmniASR
 
@@ -102,6 +94,15 @@ def test_ctc_handles_silence_and_rejects_use_after_close():
     model.close()
     with pytest.raises(RuntimeError, match="closed"):
         model.transcribe_numpy(np.zeros(16000, np.float32))
+
+
+@pytest.mark.parametrize("clip", MANIFEST["clips"], ids=lambda c: c["fleurs_language"])
+def test_llm_transcribes_fleurs_clip(llm, clip):
+    waveform, sample_rate = _audio(clip)
+    result = llm.transcribe(waveform, sample_rate=sample_rate, lang=clip["lang"])
+    assert result.stop_reason == "eos"
+    cer = _cer(clip["reference"], result.text)
+    assert cer <= clip["max_cer"]["llm"], f"LLM CER {cer:.1f} on {clip['file']}: {result.text!r}"
 
 
 def test_llm_warns_without_language_but_still_transcribes(llm):
