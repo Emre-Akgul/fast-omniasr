@@ -36,7 +36,7 @@ def _sha256_file(path: Path) -> str:
 # Protobuf field numbers from onnx.proto3 that can (transitively) hold a TensorProto.
 _MODEL_GRAPH, _MODEL_FUNCTIONS = 7, 25
 _GRAPH_NODE, _GRAPH_INITIALIZER, _GRAPH_SPARSE_INITIALIZER = 1, 5, 15
-_FUNCTION_NODE = 7
+_FUNCTION_NODE, _FUNCTION_ATTRIBUTE_PROTO = 7, 11
 _NODE_ATTRIBUTE = 5
 _ATTR_T, _ATTR_G, _ATTR_TENSORS, _ATTR_GRAPHS = 5, 6, 10, 11
 _ATTR_SPARSE_TENSOR, _ATTR_SPARSE_TENSORS = 22, 23
@@ -103,17 +103,31 @@ def _sparse_locations(buf, sparse, out: set) -> None:
         _tensor_locations(buf, tensor, out)
 
 
-def _node_locations(buf, node, out: set) -> None:
+def _attribute_locations(buf, attribute, out: set) -> None:
     wanted = frozenset({_ATTR_T, _ATTR_G, _ATTR_TENSORS, _ATTR_GRAPHS,
                         _ATTR_SPARSE_TENSOR, _ATTR_SPARSE_TENSORS})
+    for field, value in _length_delimited_fields(buf, attribute, wanted):
+        if field in (_ATTR_T, _ATTR_TENSORS):
+            _tensor_locations(buf, value, out)
+        elif field in (_ATTR_G, _ATTR_GRAPHS):
+            _graph_locations(buf, value, out)
+        else:
+            _sparse_locations(buf, value, out)
+
+
+def _node_locations(buf, node, out: set) -> None:
     for _, attribute in _length_delimited_fields(buf, node, frozenset({_NODE_ATTRIBUTE})):
-        for field, value in _length_delimited_fields(buf, attribute, wanted):
-            if field in (_ATTR_T, _ATTR_TENSORS):
-                _tensor_locations(buf, value, out)
-            elif field in (_ATTR_G, _ATTR_GRAPHS):
-                _graph_locations(buf, value, out)
-            else:
-                _sparse_locations(buf, value, out)
+        _attribute_locations(buf, attribute, out)
+
+
+def _function_locations(buf, function, out: set) -> None:
+    # Nodes, plus default attribute values (FunctionProto.attribute_proto).
+    wanted = frozenset({_FUNCTION_NODE, _FUNCTION_ATTRIBUTE_PROTO})
+    for field, value in _length_delimited_fields(buf, function, wanted):
+        if field == _FUNCTION_NODE:
+            _node_locations(buf, value, out)
+        else:
+            _attribute_locations(buf, value, out)
 
 
 def _graph_locations(buf, graph, out: set) -> None:
@@ -140,9 +154,9 @@ def _external_data_locations(onnx_path: Path) -> list[str]:
                 if field == _MODEL_GRAPH:
                     _graph_locations(mm, value, locations)
                 else:
-                    for _, node in _length_delimited_fields(mm, value, frozenset({_FUNCTION_NODE})):
-                        _node_locations(mm, node, locations)
-        except (ValueError, UnicodeDecodeError) as exc:
+                    _function_locations(mm, value, locations)
+        except (ValueError, UnicodeDecodeError, RecursionError) as exc:
+            # RecursionError: pathologically nested subgraphs (protobuf/onnx cap at 100).
             raise ValueError(f"{onnx_path} is not a valid ONNX model: {exc}") from exc
     return sorted(locations)
 

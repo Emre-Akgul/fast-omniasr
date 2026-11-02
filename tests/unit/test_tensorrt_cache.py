@@ -62,7 +62,7 @@ def _external_tensor(name, location):
 
 
 def _model(*, doc="", initializers=(), sparse=(), node_tensors=(), subgraph_tensors=(),
-           function_tensors=()):
+           function_tensors=(), function_default_tensors=()):
     graph = b"".join(_field(5, t) for t in initializers)
     graph += b"".join(_field(15, _field(1, t) + _field(2, idx)) for t, idx in sparse)
     for tensor in node_tensors:  # Constant node: attribute { name: "value", t: tensor }
@@ -74,6 +74,8 @@ def _model(*, doc="", initializers=(), sparse=(), node_tensors=(), subgraph_tens
     for tensor in function_tensors:
         node = _field(4, "Constant") + _field(5, _field(1, "value") + _field(5, tensor))
         model += _field(25, _field(1, "fn") + _field(7, node))
+    for tensor in function_default_tensors:  # FunctionProto.attribute_proto default value
+        model += _field(25, _field(1, "fn") + _field(11, _field(1, "value") + _field(5, tensor)))
     return model
 
 
@@ -291,11 +293,22 @@ def test_external_locations_found_in_every_tensor_container(tmp_path):
         node_tensors=[_external_tensor("c", "constant.bin")],
         subgraph_tensors=[_external_tensor("s", "subgraph.bin")],
         function_tensors=[_external_tensor("f", "function.bin")],
+        function_default_tensors=[_external_tensor("d", "function_default.bin")],
     ))
     assert tensorrt_cache._external_data_locations(path) == sorted([
         "init.bin", "sparse_values.bin", "sparse_indices.bin", "constant.bin",
-        "subgraph.bin", "function.bin",
+        "subgraph.bin", "function.bin", "function_default.bin",
     ])
+
+
+def test_pathologically_nested_graph_raises_value_error(tmp_path):
+    graph = b""
+    for _ in range(2000):  # If -> then_branch -> If -> ... far beyond any real model
+        graph = _field(1, _field(4, "If") + _field(5, _field(1, "then_branch") + _field(6, graph)))
+    path = tmp_path / "deep.onnx"
+    path.write_bytes(_field(1, 8) + _field(7, graph))
+    with pytest.raises(ValueError, match="deep.onnx"):
+        tensorrt_cache._external_data_locations(path)
 
 
 def test_inline_weights_have_no_external_locations(onnx_a):
