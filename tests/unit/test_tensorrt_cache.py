@@ -10,6 +10,7 @@ from fast_omniasr.tensorrt_cache import get_or_build_engine
 
 FAKE_ENV = {
     "tensorrt_version": "10.16.1.11",
+    "tensorrt_cuda": "cu12",
     "compute_capability": "8.6",
     "device_name": "NVIDIA GeForce RTX 3060 Laptop GPU",
 }
@@ -363,3 +364,134 @@ def test_external_locations_match_onnx_package(tmp_path):
     collect(reloaded.graph)
     assert expected  # the fixture really uses external data
     assert tensorrt_cache._external_data_locations(path) == sorted(expected)
+
+
+# --- the fingerprint describes the device actually in use, plus CUDA (issue #11) ---
+
+class _Prop:
+    def __init__(self, name, major, minor):
+        self.name, self.major, self.minor = name, major, minor
+
+
+def _fake_cuda(monkeypatch, *, current=1, runtime=12080, fail=None,
+               wheels=("tensorrt_cu12", "tensorrt_cu12_libs")):
+    import sys
+    import types
+
+    devices = {0: _Prop(b"Example GPU A\x00\x00", 7, 5), 1: _Prop("Example GPU B", 8, 0)}
+    queried = []
+
+    def result(name, value):
+        return (1 if fail == name else 0, value)
+
+    def get_props(device):
+        queried.append(device)
+        return result("props", devices[device])
+
+    cudart = types.SimpleNamespace(
+        cudaGetDevice=lambda: result("device", current),
+        cudaGetDeviceProperties=get_props,
+        cudaRuntimeGetVersion=lambda: result("runtime", runtime),
+    )
+    bindings = types.ModuleType("cuda.bindings")
+    bindings.runtime = cudart
+    cuda = types.ModuleType("cuda")
+    cuda.bindings = bindings
+    monkeypatch.setitem(sys.modules, "cuda", cuda)
+    monkeypatch.setitem(sys.modules, "cuda.bindings", bindings)
+    monkeypatch.setitem(sys.modules, "tensorrt", types.SimpleNamespace(__version__="10.16.1.11"))
+    mapping = {}
+    for wheel in wheels:
+        package = "tensorrt_libs" if wheel.endswith("_libs") else "tensorrt"
+        mapping.setdefault(package, []).append(wheel)
+    monkeypatch.setattr(tensorrt_cache.metadata, "packages_distributions", lambda: mapping)
+    return queried
+
+
+def test_environment_queries_the_current_device_not_device_zero(monkeypatch):
+    queried = _fake_cuda(monkeypatch, current=1)
+    env = tensorrt_cache._local_environment()
+    assert queried == [1]
+    assert env == {
+        "tensorrt_version": "10.16.1.11",
+        "tensorrt_cuda": "cu12",
+        "compute_capability": "8.0",
+        "device_name": "Example GPU B",
+    }
+
+
+def test_environment_decodes_nul_padded_device_name(monkeypatch):
+    _fake_cuda(monkeypatch, current=0)
+    env = tensorrt_cache._local_environment()
+    assert env["device_name"] == "Example GPU A"
+    assert env["compute_capability"] == "7.5"
+
+
+@pytest.mark.parametrize("wheels, expected", [
+    (("tensorrt_cu13", "tensorrt_cu13_libs"), "cu13"),
+    (("tensorrt-cu12",), "cu12"),
+    (("tensorrt_cu13_libs",), "cu13"),
+])
+def test_tensorrt_cuda_comes_from_the_tensorrt_wheel(monkeypatch, wheels, expected):
+    _fake_cuda(monkeypatch, runtime=13040, wheels=wheels)  # cuda-python version is ignored
+    assert tensorrt_cache._local_environment()["tensorrt_cuda"] == expected
+
+
+def test_tensorrt_cuda_falls_back_to_cuda_python_major(monkeypatch):
+    _fake_cuda(monkeypatch, runtime=13040, wheels=("tensorrt",))  # e.g. tarball install
+    assert tensorrt_cache._local_environment()["tensorrt_cuda"] == "cuda-python-13"
+
+
+@pytest.mark.parametrize("fail, message", [
+    ("device", "current CUDA device"),
+    ("props", "properties of CUDA device 1"),
+])
+def test_environment_query_failures_are_reported(monkeypatch, fail, message):
+    _fake_cuda(monkeypatch, fail=fail)
+    with pytest.raises(RuntimeError, match=message):
+        tensorrt_cache._local_environment()
+
+
+def test_runtime_query_failure_reported_in_fallback(monkeypatch):
+    _fake_cuda(monkeypatch, fail="runtime", wheels=())
+    with pytest.raises(RuntimeError, match="CUDA runtime version"):
+        tensorrt_cache._local_environment()
+
+
+def _fake_builder(monkeypatch):
+    builds = []
+
+    def fake_build_engine(onnx_path, output_path, **kwargs):
+        builds.append(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"engine")
+
+    monkeypatch.setattr(tensorrt_cache, "build_engine", fake_build_engine)
+    return builds
+
+
+def test_switching_device_or_tensorrt_cuda_uses_a_different_engine(monkeypatch, onnx_a,
+                                                                   tmp_path):
+    builds = _fake_builder(monkeypatch)
+    cache = tmp_path / "cache"
+    _fake_cuda(monkeypatch, current=0)
+    on_gpu_a = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    _fake_cuda(monkeypatch, current=1)
+    on_gpu_b = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    _fake_cuda(monkeypatch, current=1, wheels=("tensorrt_cu13", "tensorrt_cu13_libs"))
+    on_gpu_b_cu13 = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    _fake_cuda(monkeypatch, current=1)
+    again = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    assert len({on_gpu_a, on_gpu_b, on_gpu_b_cu13}) == 3
+    assert again == on_gpu_b
+    assert len(builds) == 3
+
+
+def test_cuda_python_upgrade_does_not_rebuild(monkeypatch, onnx_a, tmp_path):
+    builds = _fake_builder(monkeypatch)
+    cache = tmp_path / "cache"
+    _fake_cuda(monkeypatch, runtime=13040)
+    first = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    _fake_cuda(monkeypatch, runtime=13050)
+    assert get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache) == first
+    assert len(builds) == 1
