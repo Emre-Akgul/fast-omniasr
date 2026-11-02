@@ -3,7 +3,7 @@
 TensorRT engines are not portable across GPUs, TensorRT versions or CUDA versions, so the
 cache key covers everything that can invalidate a previously-built engine: the ONNX content
 (the graph file plus every external-data weights file it references), the precision and
-optimization profile requested, the local TensorRT version and GPU identity, and this
+optimization profile requested, the build environment (see `_local_environment`), and this
 module's own build-recipe version.
 """
 import contextlib
@@ -177,6 +177,16 @@ def _external_data_fingerprint(onnx_path: Path) -> dict[str, str]:
 
 
 def _local_environment() -> dict:
+    """Environment fields that decide whether a cached engine can be reused.
+
+    Queried for the *current* CUDA device -- the one TensorRT builds and deserializes
+    engines on (selectable with `cudaSetDevice` or CUDA_VISIBLE_DEVICES) -- not device 0.
+
+    In the key: TensorRT version, CUDA runtime version (major.minor), and the GPU's
+    compute capability and name. Deliberately not in the key: the device ordinal, so
+    identical GPUs share engines, and the driver version, since newer drivers run
+    existing engines and including it would force a rebuild on every driver update.
+    """
     try:
         import tensorrt as trt
     except ImportError as exc:
@@ -187,14 +197,22 @@ def _local_environment() -> dict:
         from cuda.bindings import runtime as cudart
     except ImportError as exc:
         raise ImportError("Install fast-omniasr[tensorrt] for the cuda-python dependency") from exc
-    error, prop = cudart.cudaGetDeviceProperties(0)
-    if int(error) != 0:
-        raise RuntimeError(f"Failed to query the local GPU: {error}")
+
+    def query(what, result):
+        error, value = result
+        if int(error) != 0:
+            raise RuntimeError(f"Failed to query the {what}: {error}")
+        return value
+
+    device = query("current CUDA device", cudart.cudaGetDevice())
+    prop = query(f"properties of CUDA device {device}", cudart.cudaGetDeviceProperties(device))
+    runtime_version = query("CUDA runtime version", cudart.cudaRuntimeGetVersion())
     name = prop.name.decode() if isinstance(prop.name, bytes) else prop.name
     return {
         "tensorrt_version": trt.__version__,
+        "cuda_runtime_version": f"{runtime_version // 1000}.{runtime_version % 1000 // 10}",
         "compute_capability": f"{prop.major}.{prop.minor}",
-        "device_name": name,
+        "device_name": name.rstrip("\x00"),
     }
 
 

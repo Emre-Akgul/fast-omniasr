@@ -10,6 +10,7 @@ from fast_omniasr.tensorrt_cache import get_or_build_engine
 
 FAKE_ENV = {
     "tensorrt_version": "10.16.1.11",
+    "cuda_runtime_version": "12.8",
     "compute_capability": "8.6",
     "device_name": "NVIDIA GeForce RTX 3060 Laptop GPU",
 }
@@ -363,3 +364,94 @@ def test_external_locations_match_onnx_package(tmp_path):
     collect(reloaded.graph)
     assert expected  # the fixture really uses external data
     assert tensorrt_cache._external_data_locations(path) == sorted(expected)
+
+
+# --- the fingerprint describes the device actually in use, plus CUDA (issue #11) ---
+
+class _Prop:
+    def __init__(self, name, major, minor):
+        self.name, self.major, self.minor = name, major, minor
+
+
+def _fake_cuda(monkeypatch, *, current=1, runtime=12080, fail=None):
+    import sys
+    import types
+
+    devices = {0: _Prop(b"NVIDIA GeForce RTX 2070\x00\x00", 7, 5),
+               1: _Prop("NVIDIA A100-SXM4-40GB", 8, 0)}
+    queried = []
+
+    def result(name, value):
+        return (1 if fail == name else 0, value)
+
+    def get_props(device):
+        queried.append(device)
+        return result("props", devices[device])
+
+    cudart = types.SimpleNamespace(
+        cudaGetDevice=lambda: result("device", current),
+        cudaGetDeviceProperties=get_props,
+        cudaRuntimeGetVersion=lambda: result("runtime", runtime),
+    )
+    bindings = types.ModuleType("cuda.bindings")
+    bindings.runtime = cudart
+    cuda = types.ModuleType("cuda")
+    cuda.bindings = bindings
+    monkeypatch.setitem(sys.modules, "cuda", cuda)
+    monkeypatch.setitem(sys.modules, "cuda.bindings", bindings)
+    monkeypatch.setitem(sys.modules, "tensorrt", types.SimpleNamespace(__version__="10.16.1.11"))
+    return queried
+
+
+def test_environment_queries_the_current_device_not_device_zero(monkeypatch):
+    queried = _fake_cuda(monkeypatch, current=1)
+    env = tensorrt_cache._local_environment()
+    assert queried == [1]
+    assert env == {
+        "tensorrt_version": "10.16.1.11",
+        "cuda_runtime_version": "12.8",
+        "compute_capability": "8.0",
+        "device_name": "NVIDIA A100-SXM4-40GB",
+    }
+
+
+def test_environment_decodes_device_name_and_cuda_version(monkeypatch):
+    _fake_cuda(monkeypatch, current=0, runtime=13040)
+    env = tensorrt_cache._local_environment()
+    assert env["device_name"] == "NVIDIA GeForce RTX 2070"
+    assert env["compute_capability"] == "7.5"
+    assert env["cuda_runtime_version"] == "13.4"
+
+
+@pytest.mark.parametrize("fail, message", [
+    ("device", "current CUDA device"),
+    ("props", "properties of CUDA device 1"),
+    ("runtime", "CUDA runtime version"),
+])
+def test_environment_query_failures_are_reported(monkeypatch, fail, message):
+    _fake_cuda(monkeypatch, fail=fail)
+    with pytest.raises(RuntimeError, match=message):
+        tensorrt_cache._local_environment()
+
+
+def test_switching_device_or_cuda_version_uses_a_different_engine(monkeypatch, onnx_a, tmp_path):
+    builds = []
+
+    def fake_build_engine(onnx_path, output_path, **kwargs):
+        builds.append(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"engine")
+
+    monkeypatch.setattr(tensorrt_cache, "build_engine", fake_build_engine)
+    cache = tmp_path / "cache"
+    _fake_cuda(monkeypatch, current=0)
+    on_2070 = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    _fake_cuda(monkeypatch, current=1)
+    on_a100 = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    _fake_cuda(monkeypatch, current=1, runtime=13000)
+    on_a100_cuda13 = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    _fake_cuda(monkeypatch, current=1)
+    again = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    assert len({on_2070, on_a100, on_a100_cuda13}) == 3
+    assert again == on_a100
+    assert len(builds) == 3

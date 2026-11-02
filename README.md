@@ -80,7 +80,7 @@ For the fast path with no manual export or `build_tensorrt.py` call, pass `backe
 model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="tensorrt", precision="fp16")
 ```
 
-The first call downloads the ONNX asset, builds a local engine, and caches it under `~/.cache/fast-omniasr/tensorrt/<key>/model.engine`. The cache key includes the SHA-256 of the ONNX graph and of every external-data weights file it references, the precision, profile, TensorRT version, and GPU identity, so replacing only a weights file rebuilds the engine. The default profile accepts 400 to 480,000 samples and optimizes for 80,000 samples. Advanced users can pass `min_samples`, `opt_samples`, and `max_samples`; a changed profile creates a separate cached engine. `precision="fp16"` warns once per process about its accuracy caveat.
+The first call downloads the ONNX asset, builds a local engine, and caches it under `~/.cache/fast-omniasr/tensorrt/<key>/model.engine`. The cache key includes the SHA-256 of the ONNX graph and of every external-data weights file it references, the precision, profile, TensorRT version, CUDA runtime version, and the identity (name and compute capability) of the current CUDA device, so replacing only a weights file or switching GPU model rebuilds the engine. The driver version and device index are not part of the key. The default profile accepts 400 to 480,000 samples and optimizes for 80,000 samples. Advanced users can pass `min_samples`, `opt_samples`, and `max_samples`; a changed profile creates a separate cached engine. `precision="fp16"` warns once per process about its accuracy caveat.
 
 Or supply local assets directly (no download, no `hub` extra needed):
 
