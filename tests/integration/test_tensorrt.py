@@ -117,3 +117,32 @@ def test_repeated_construct_and_close_does_not_leak_gpu_memory(assets):
             assert result.logits_shape == (1, 249, 10288)
         del model
         gc.collect()
+
+
+def test_concurrent_calls_match_sequential(assets):
+    import threading
+
+    from fast_omniasr import OmniASR
+    with OmniASR(assets[0], assets[1], backend="tensorrt") as model:
+        rng = np.random.default_rng(0)
+        inputs = [(0.1 * rng.standard_normal(n)).astype(np.float32)
+                  for n in [16000, 32000, 48000, 64000, 16000, 80000, 24000, 40000]]
+        sequential = [model.backend.infer(x[None]) for x in inputs]
+        results, errors = [None] * len(inputs), []
+        barrier = threading.Barrier(len(inputs))
+
+        def worker(i):
+            try:
+                barrier.wait()
+                for _ in range(3):
+                    results[i] = model.backend.infer(inputs[i][None])
+                    np.testing.assert_array_equal(results[i], sequential[i])
+            except Exception as exc:  # noqa: BLE001 -- surfaced below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(len(inputs))]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert errors == []

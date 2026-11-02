@@ -1,4 +1,7 @@
 """TensorRT engine inference. No PyTorch, ONNX Runtime, or training-framework imports."""
+import contextlib
+import sys
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -70,6 +73,17 @@ def _validate_contract(trt, engine, context):
 
 
 class TensorRTBackend:
+    """Batch-one TensorRT engine runner.
+
+    Thread-safe: one instance owns a single execution context, CUDA stream and pair of
+    device buffers, so concurrent `infer()` calls are serialized by a per-instance lock
+    (they never overlap or mix requests). For parallel GPU throughput, create one
+    instance per worker. `close()` waits for an in-flight `infer()` to finish, so don't
+    call it from a signal handler that may interrupt `infer()` on the same thread.
+    GPU work runs on the device that was current when the engine was loaded; the
+    calling thread's current device is restored afterwards.
+    """
+
     def __init__(self, path: str | Path):
         try:
             import tensorrt as trt
@@ -82,7 +96,11 @@ class TensorRTBackend:
         except ImportError as exc:
             raise ImportError("Install fast-omniasr[tensorrt] for the cuda-python dependency") from exc
         self._cudart = cudart
+        self._lock = threading.Lock()
         self.closed = False  # set early so close()/__del__ can clean up a partial init
+        # The engine lives on the device current at load time; the current device is
+        # per-thread, so infer() re-selects it for callers on other threads.
+        self.device = self._check(cudart.cudaGetDevice())
         logger = trt.Logger(trt.Logger.WARNING)
         # Kept on the instance: the runtime must outlive the engine it deserialized.
         self.runtime = runtime = trt.Runtime(logger)
@@ -118,7 +136,56 @@ class TensorRTBackend:
         (or to the OmniASR wrapping it); later infer() calls raise RuntimeError."""
         if getattr(self, "closed", True):
             return
-        self.closed = True
+        with self._lock:  # wait for an in-flight infer() before releasing its buffers
+            if self.closed:
+                return
+            self.closed = True
+            self._release()
+
+    @contextlib.contextmanager
+    def _on_device(self, *, best_effort: bool = False):
+        """Run on this engine's device, restoring the caller thread's current device.
+        With `best_effort` (used when releasing), a failed device query runs the body on
+        the current device instead of raising, so cleanup is still attempted."""
+        device = getattr(self, "device", None)
+        if device is None:  # partial init: nothing was created on a device yet
+            yield
+            return
+        try:
+            previous = self._check(self._cudart.cudaGetDevice())
+            if previous != device:
+                self._check(self._cudart.cudaSetDevice(device))
+        except RuntimeError:
+            if not best_effort:
+                raise
+            yield
+            return
+        try:
+            yield
+        finally:
+            if previous != device:
+                self._cudart.cudaSetDevice(previous)
+
+    def _release(self) -> None:
+        try:
+            with self._on_device(best_effort=True):
+                try:
+                    self._release_on_device()
+                finally:
+                    # Inside the device switch so TensorRT's destructors free the
+                    # engine's device memory on its own device.
+                    self._drop_tensorrt_objects()
+        finally:
+            self._drop_tensorrt_objects()  # no-op unless the device switch itself failed
+
+    def _drop_tensorrt_objects(self) -> None:
+        # Dependency order: context -> engine -> runtime. The Python bindings free the
+        # underlying C++ objects (and the engine's device memory) on the last reference.
+        self.context = None
+        self.engine = None
+        self.runtime = None
+
+    def _release_on_device(self) -> None:
         cudart = self._cudart
         stream = getattr(self, "stream", None)
         input_ptr = getattr(self, "input_ptr", None)
@@ -139,12 +206,6 @@ class TensorRTBackend:
                 func(arg)
             except Exception as exc:  # noqa: BLE001 -- keep releasing, re-raise below
                 first_error = first_error or exc
-        # Drop TensorRT objects in dependency order: context -> engine -> runtime.
-        # The Python bindings free the underlying C++ objects (and the engine's
-        # device memory) when their last reference goes away.
-        self.context = None
-        self.engine = None
-        self.runtime = None
         if first_error is not None:
             raise first_error
 
@@ -155,10 +216,22 @@ class TensorRTBackend:
         self.close()
 
     def __del__(self):
+        # Never block in a finalizer: during interpreter shutdown a daemon thread may be
+        # killed while holding the lock (waiting would hang or abort the process), and
+        # the OS reclaims GPU memory at exit anyway. Skip cleanup if the lock is busy.
+        if getattr(self, "closed", True) or sys.is_finalizing():
+            return
+        lock = getattr(self, "_lock", None)
+        if lock is None or not lock.acquire(blocking=False):
+            return
         try:
-            self.close()
-        except Exception:  # noqa: S110, BLE001 -- best effort; cuda module may be torn down at shutdown
+            if not self.closed:
+                self.closed = True
+                self._release()
+        except Exception:  # noqa: S110, BLE001 -- best effort; cuda module may be torn down
             pass
+        finally:
+            lock.release()
 
     def _check(self, result):
         error, *values = result
@@ -171,7 +244,6 @@ class TensorRTBackend:
     def infer(self, waveform: np.ndarray) -> np.ndarray:
         if self.closed:
             raise RuntimeError("TensorRTBackend is closed")
-        cudart = self._cudart
         waveform = np.asarray(waveform)
         if waveform.dtype != np.float32 or waveform.ndim != 2 or waveform.shape[0] != 1:
             raise ValueError("Expected normalized float32 waveform [1, samples]")
@@ -182,6 +254,17 @@ class TensorRTBackend:
                 f"[{self.min_samples}, {self.max_samples}]"
             )
         waveform = np.ascontiguousarray(waveform)
+        with self._lock:  # the context, stream and buffers are shared per instance
+            if self.closed:
+                raise RuntimeError("TensorRTBackend is closed")
+            return self._infer_locked(waveform, samples)
+
+    def _infer_locked(self, waveform: np.ndarray, samples: int) -> np.ndarray:
+        with self._on_device():
+            return self._infer_on_device(waveform, samples)
+
+    def _infer_on_device(self, waveform: np.ndarray, samples: int) -> np.ndarray:
+        cudart = self._cudart
         if not self.context.set_input_shape("audio", (1, samples)):
             raise RuntimeError("Failed to set the dynamic input shape")
         output_shape = tuple(self.context.get_tensor_shape("logits"))
