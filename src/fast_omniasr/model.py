@@ -168,12 +168,27 @@ class OmniASR:
                 stacklevel=2,
             )
         from .tensorrt_cache import get_or_build_engine
-        engine_path = get_or_build_engine(
-            model_path,
-            precision=precision,
-            min_samples=DEFAULT_MIN_SAMPLES if min_samples is None else min_samples,
-            opt_samples=DEFAULT_OPT_SAMPLES if opt_samples is None else opt_samples,
-            max_samples=DEFAULT_MAX_SAMPLES if max_samples is None else max_samples,
-            cache_dir=engine_cache_dir,
-        )
-        return cls(engine_path, tokenizer_path, backend="tensorrt", device=device, threads=threads)
+
+        def engine(rebuild=False):
+            return get_or_build_engine(
+                model_path,
+                precision=precision,
+                min_samples=DEFAULT_MIN_SAMPLES if min_samples is None else min_samples,
+                opt_samples=DEFAULT_OPT_SAMPLES if opt_samples is None else opt_samples,
+                max_samples=DEFAULT_MAX_SAMPLES if max_samples is None else max_samples,
+                cache_dir=engine_cache_dir,
+                rebuild=rebuild,
+            )
+
+        engine_path = engine()
+        try:
+            return cls(engine_path, tokenizer_path, backend="tensorrt", device=device,
+                       threads=threads)
+        except RuntimeError as exc:
+            if "deserialize" not in str(exc):
+                raise
+            import warnings
+            warnings.warn(f"Cached TensorRT engine {engine_path} could not be deserialized "
+                          f"({exc}); rebuilding it once", stacklevel=2)
+            return cls(engine(rebuild=True), tokenizer_path, backend="tensorrt",
+                       device=device, threads=threads)

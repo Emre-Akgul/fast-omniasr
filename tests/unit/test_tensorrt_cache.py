@@ -2,6 +2,7 @@ import builtins
 import json
 import threading
 import time
+import types
 
 import pytest
 
@@ -514,3 +515,118 @@ def test_changing_the_mixed_recipe_rebuilds(counting_builder, onnx_a, tmp_path, 
                         {"fp32_prefixes": ["/model/feature_extractor/"], "fp32_names": []})
     assert get_or_build_engine(onnx_a, precision="mixed", cache_dir=cache_dir) != first
     assert counting_builder == ["mixed", "mixed"]
+
+
+# --- cached engines are integrity-checked before reuse (issue #15) ---
+
+def _engine_and_metadata(path):
+    return path, json.loads((path.parent / "metadata.json").read_text())
+
+
+def test_metadata_records_the_engine_checksum(counting_builder, onnx_a, tmp_path):
+    import hashlib
+
+    engine, metadata = _engine_and_metadata(
+        get_or_build_engine(onnx_a, precision="fp16", cache_dir=tmp_path / "c"))
+    data = engine.read_bytes()
+    assert metadata["engine"] == {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+
+@pytest.mark.parametrize("damage", [
+    lambda p: p.write_bytes(b"FAKE ENGINE fp1X"),           # same size, different bytes
+    lambda p: p.write_bytes(p.read_bytes()[:5]),             # truncated
+])
+def test_corrupted_engine_is_rebuilt_with_a_warning(counting_builder, onnx_a, tmp_path, damage):
+    cache = tmp_path / "c"
+    engine = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
+    damage(engine)
+    with pytest.warns(UserWarning, match="does not match its recorded checksum"):
+        assert get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache) == engine
+    assert counting_builder == ["fp16", "fp16"]
+    assert engine.read_bytes() == b"FAKE ENGINE fp16"
+    get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)  # healthy again: reused
+    assert len(counting_builder) == 2
+
+
+def test_entries_cached_before_checksums_are_adopted_not_rebuilt(counting_builder, onnx_a,
+                                                                 tmp_path):
+    cache = tmp_path / "c"
+    engine = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
+    metadata_path = engine.parent / "metadata.json"
+    legacy = json.loads(metadata_path.read_text())
+    del legacy["engine"]
+    metadata_path.write_text(json.dumps(legacy))
+    assert get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache) == engine
+    assert counting_builder == ["fp16"]
+    assert "engine" in json.loads(metadata_path.read_text())
+
+
+def test_rebuild_forces_a_new_engine(counting_builder, onnx_a, tmp_path):
+    cache = tmp_path / "c"
+    get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
+    get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache, rebuild=True)
+    assert counting_builder == ["fp16", "fp16"]
+
+
+def test_failed_build_leaves_no_record_that_vouches_for_it(counting_builder, onnx_a,
+                                                           tmp_path, monkeypatch):
+    cache = tmp_path / "c"
+    engine = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
+
+    def crashing_build(onnx_path, output_path, **kwargs):
+        output_path.write_bytes(b"partial")
+        raise RuntimeError("builder crashed")
+
+    monkeypatch.setattr(tensorrt_cache, "build_engine", crashing_build)
+    with pytest.raises(RuntimeError, match="builder crashed"):
+        get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache, rebuild=True)
+    assert not (engine.parent / "metadata.json").exists()
+
+
+def _from_pretrained_with(monkeypatch, tmp_path, failures):
+    """OmniASR.from_pretrained(backend='tensorrt') with fake download, cache and backend;
+    the backend raises the queued errors in order, then succeeds."""
+    from fast_omniasr import OmniASR, hub, model
+
+    monkeypatch.setattr(hub, "download_verified", lambda *a, **k: (
+        {}, {"model.onnx": tmp_path / "m.onnx", "tokenizer.model": tmp_path / "t.model"}))
+    rebuilds = []
+
+    def fake_cache(onnx_path, **kwargs):
+        rebuilds.append(kwargs["rebuild"])
+        return tmp_path / "e.engine"
+
+    monkeypatch.setattr(tensorrt_cache, "get_or_build_engine", fake_cache)
+    real_init = model.OmniASR.__init__
+
+    def fake_init(self, *args, **kwargs):
+        if failures:
+            raise failures.pop(0)
+        self.backend = types.SimpleNamespace(closed=False, close=lambda: None)
+
+    monkeypatch.setattr(model.OmniASR, "__init__", fake_init)
+    try:
+        import warnings as warnings_module
+
+        with warnings_module.catch_warnings(record=True) as caught:
+            warnings_module.simplefilter("always")
+            result = OmniASR.from_pretrained("o/r", backend="tensorrt", precision="fp16")
+        return result, rebuilds, caught
+    finally:
+        monkeypatch.setattr(model.OmniASR, "__init__", real_init)
+
+
+def test_undeserializable_engine_is_rebuilt_once(monkeypatch, tmp_path):
+    failures = [RuntimeError("Failed to deserialize TensorRT engine")]
+    _, rebuilds, caught = _from_pretrained_with(monkeypatch, tmp_path, failures)
+    assert rebuilds == [False, True]
+    assert any("could not be deserialized" in str(w.message) for w in caught)
+
+
+@pytest.mark.parametrize("failures", [
+    [RuntimeError("Failed to deserialize TensorRT engine")] * 2,   # rebuilt engine also bad
+    [RuntimeError("Failed to create TensorRT execution context")],  # not a corrupt file
+])
+def test_other_or_repeated_failures_are_raised(monkeypatch, tmp_path, failures):
+    with pytest.raises(RuntimeError):
+        _from_pretrained_with(monkeypatch, tmp_path, list(failures))
