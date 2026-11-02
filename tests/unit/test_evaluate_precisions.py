@@ -57,3 +57,82 @@ def test_corpus_rate_weights_by_reference_length():
     # 1 substitution in a 1-word ref + 0 errors in a 3-word ref -> 1/4, not mean(100%, 0%).
     result = error_rates(["cat", "a b c"], ["dog", "a b c"])
     assert result["wer"] == pytest.approx(25.0)
+
+
+# --- LLM stop reasons are reported, not discarded (issue #20) ---
+
+def test_stop_reason_summary_counts_and_lists_truncated():
+    result = evaluate.stop_reason_summary(
+        ["a", "b", "c", "d"], ["eos", "max_new_tokens", "eos", "context_limit"]
+    )
+    assert result["stop_reasons"] == {"eos": 2, "max_new_tokens": 1, "context_limit": 1}
+    assert result["truncated"] == 2
+    assert result["truncated_ids"] == ["b", "d"]
+
+
+def test_stop_reason_summary_all_complete_reports_every_reason():
+    result = evaluate.stop_reason_summary(["a"], ["eos"])
+    assert result["stop_reasons"] == {"eos": 1, "max_new_tokens": 0, "context_limit": 0}
+    assert result["truncated"] == 0 and result["truncated_ids"] == []
+
+
+def test_stop_reason_summary_rejects_unknown_reasons():
+    with pytest.raises(ValueError, match="unexpected stop reasons"):
+        evaluate.stop_reason_summary(["a", "b"], ["eos", None])
+
+
+def test_stop_reasons_come_from_the_runtime():
+    from fast_omniasr.llm import STOP_REASONS
+
+    assert evaluate.LLM_STOP_REASONS is STOP_REASONS
+    assert STOP_REASONS[0] == "eos"
+
+
+def _fake_llm_main(monkeypatch, tmp_path, reasons_by_precision):
+    import json
+    import sys
+    import types
+
+    class FakeResult:
+        def __init__(self, text, stop_reason):
+            self.text, self.stop_reason = text, stop_reason
+
+    class FakeLLM:
+        def __init__(self, path, backend, device, precision):
+            self.reasons = iter(reasons_by_precision[precision])
+
+        def transcribe(self, wav, lang=None):
+            return FakeResult("some text", next(self.reasons))
+
+    monkeypatch.setitem(sys.modules, "fast_omniasr.llm", types.SimpleNamespace(OmniASRLLM=FakeLLM))
+    import numpy as np
+
+    rows = [{"id": f"u{i}", "wav": np.zeros(16000, np.float32)} for i in range(3)]
+    monkeypatch.setattr(evaluate, "load_rows", lambda args: rows)
+    monkeypatch.setattr(evaluate, "gpu_mib", lambda: 0)
+    report = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", [
+        "evaluate_precisions.py", "--llm", str(tmp_path), "--audio", "x.wav",
+        "--precision", *reasons_by_precision, "--report", str(report),
+    ])
+    evaluate.main()
+    return json.loads(report.read_text())
+
+
+def test_main_reports_llm_truncation(monkeypatch, tmp_path, capsys):
+    # First reason of each precision is consumed by the warm-up call.
+    report = _fake_llm_main(monkeypatch, tmp_path, {
+        "fp32": ["eos", "eos", "eos", "eos"],
+        "fp16": ["eos", "eos", "max_new_tokens", "context_limit"],
+    })
+    fp32, fp16 = report["precisions"]["fp32"], report["precisions"]["fp16"]
+    assert fp32["truncated"] == 0
+    assert fp16["stop_reasons"] == {"eos": 1, "max_new_tokens": 1, "context_limit": 1}
+    assert fp16["truncated_ids"] == ["u1", "u2"]
+    assert fp16["hypothesis_stop_reasons"] == {"u0": "eos", "u1": "max_new_tokens",
+                                               "u2": "context_limit"}
+    out, err = capsys.readouterr()
+    assert "fp16: 2/3 transcripts did not end at EOS" in err
+    assert "fp32" not in err
+    # stdout summary lines carry counts but not the per-utterance maps
+    assert '"truncated": 2' in out and "hypothesis_stop_reasons" not in out
