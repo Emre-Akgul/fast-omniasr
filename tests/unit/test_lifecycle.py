@@ -145,13 +145,22 @@ def test_llm_close_on_bare_instance_is_safe():
 @pytest.fixture
 def llm_backend(fake_ort, monkeypatch, tmp_path):
     """A fresh ONNXLLMBackend module bound to the fake onnxruntime, with stub sessions."""
-    import importlib
+    import importlib.util
+    from pathlib import Path
 
-    monkeypatch.delitem(sys.modules, "fast_omniasr.llm.onnx_backend", raising=False)
-    sys.modules["onnxruntime"].RunOptions = lambda: types.SimpleNamespace(
+    import fast_omniasr.llm as llm_package
+
+    monkeypatch.setattr(sys.modules["onnxruntime"], "RunOptions", lambda: types.SimpleNamespace(
         add_run_config_entry=lambda key, value: None
-    )
-    module = importlib.import_module("fast_omniasr.llm.onnx_backend")
+    ), raising=False)
+    # A private copy of the module, executed while the fake onnxruntime is installed and
+    # never registered in sys.modules, so the real fast_omniasr.llm.onnx_backend (and any
+    # other test using it) is untouched. Relative imports resolve via the package name.
+    path = Path(llm_package.__file__).with_name("onnx_backend.py")
+    spec = importlib.util.spec_from_file_location("fast_omniasr.llm._lifecycle_onnx_backend",
+                                                  path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
     for name in ["encoder.onnx", "decoder_prefill.onnx", "decoder_step.onnx",
                  "decoder.weights", "decoder_weights.json"]:
         (tmp_path / name).write_bytes(b"")
@@ -183,7 +192,6 @@ def llm_backend(fake_ort, monkeypatch, tmp_path):
     monkeypatch.setattr(module, "decoder_sessions", decoder_sessions)
     return module.ONNXLLMBackend, tmp_path, loads
 
-
 def _run_clip(backend):
     context = backend.encode(np.zeros((1, 1600), np.float32))
     _, cache = backend.prefill(context, np.zeros((1, 1), np.int64))
@@ -207,6 +215,26 @@ def test_llm_backend_close_is_permanent_and_idempotent(llm_backend):
     assert loads == ["encoder", "decoder"]  # nothing was silently reloaded
 
 
+def test_llm_backend_initialize_decoder_after_close_raises(llm_backend):
+    backend_class, directory, loads = llm_backend
+    backend = backend_class(directory, "cpu")
+    backend.close()
+    with pytest.raises(RuntimeError, match="ONNXLLMBackend is closed"):
+        backend.initialize_decoder()
+    assert loads == []
+
+
+def test_llm_backend_fixture_leaves_no_fake_bound_module(llm_backend):
+    import fast_omniasr.llm as llm_package
+
+    real = sys.modules.get("fast_omniasr.llm.onnx_backend")
+    attr = llm_package.__dict__.get("onnx_backend")
+    for module in (real, attr):
+        if module is not None:
+            assert not isinstance(module.ort, types.SimpleNamespace)
+    assert "fast_omniasr.llm._lifecycle_onnx_backend" not in sys.modules
+
+
 def test_llm_backend_low_memory_unload_is_not_a_close(llm_backend):
     backend_class, directory, loads = llm_backend
     backend = backend_class(directory, "cpu", low_memory=True)
@@ -227,13 +255,52 @@ def test_close_returns_freed_memory_once(fake_ort, monkeypatch):
     assert calls == [1]
 
 
+def test_release_freed_memory_calls_malloc_trim_zero(monkeypatch):
+    from fast_omniasr import _memory
+
+    calls = []
+
+    class Trim:
+        def __call__(self, pad):
+            calls.append(pad)
+            return 1
+
+    monkeypatch.setattr(_memory, "_malloc_trim", lambda: Trim())
+    monkeypatch.setattr(_memory.sys, "platform", "linux")
+    _memory.release_freed_memory()
+    assert calls == [0]
+
+
 def test_release_freed_memory_is_safe_without_glibc(monkeypatch):
     from fast_omniasr import _memory
 
     def missing(name):
         raise OSError("no libc")
 
+    _memory._malloc_trim.cache_clear()
     monkeypatch.setattr(_memory.ctypes, "CDLL", missing)
+    monkeypatch.setattr(_memory.sys, "platform", "linux")
     _memory.release_freed_memory()  # must not raise
+    _memory._malloc_trim.cache_clear()
     monkeypatch.setattr(_memory.sys, "platform", "darwin")
     _memory.release_freed_memory()
+
+
+def test_omniasr_closes_backend_if_tokenizer_fails(fake_ort, monkeypatch):
+    from fast_omniasr import model as model_module
+
+    created = []
+    real_init = ONNXBackend.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        real_init(self, *args, **kwargs)
+        created.append(self)
+
+    def broken_tokenizer(path):
+        raise OSError("tokenizer missing")
+
+    monkeypatch.setattr(ONNXBackend, "__init__", tracking_init)
+    monkeypatch.setattr(model_module, "Tokenizer", broken_tokenizer)
+    with pytest.raises(OSError, match="tokenizer missing"):
+        OmniASR("model.onnx", "tokenizer.model", backend="onnx")
+    assert created and created[0].closed

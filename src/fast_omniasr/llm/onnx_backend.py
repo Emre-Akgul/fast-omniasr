@@ -216,6 +216,7 @@ class ONNXLLMBackend:
             self.empty_cache = [np.zeros((1, 0, heads, dim), np.float32)] * 24
 
     def initialize_decoder(self):
+        self._check_open()
         if self.unified:
             self._initialize_unified()
             return

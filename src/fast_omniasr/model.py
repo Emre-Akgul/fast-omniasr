@@ -34,7 +34,11 @@ class OmniASR:
             self.backend = TensorRTBackend(model_path)
         else:
             raise ValueError("backend must be 'onnx' or 'tensorrt'")
-        self.tokenizer = Tokenizer(tokenizer_path)
+        try:
+            self.tokenizer = Tokenizer(tokenizer_path)
+        except BaseException:
+            self.backend.close()  # don't leave a loaded session/engine behind
+            raise
 
     @property
     def closed(self) -> bool:
