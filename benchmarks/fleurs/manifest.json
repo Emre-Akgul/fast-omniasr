@@ -1,0 +1,1016 @@
+{
+  "dataset": "google/fleurs",
+  "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+  "split": "test",
+  "license": "CC-BY-4.0",
+  "languages": {
+    "en_us": {
+      "lang": "eng_Latn",
+      "metric": "wer",
+      "utterances": [
+        {
+          "file_name": "2074231104398719826.wav",
+          "reference": "These are sometimes-crowded family beaches with a good range of shops lining the shore. Swimming is safe.",
+          "seconds": 9.72,
+          "sha256": "2f216a67a8cbc73fbde8c28c385008ede9126e154943bde046bc76097c211df9"
+        },
+        {
+          "file_name": "1722118868151836971.wav",
+          "reference": "Current senator and Argentine First Lady Cristina Fernandez de Kirchner announced her presidential candidacy yesterday evening in La Plata, a city 50 kilometers (31 miles) away from Buenos Aires.",
+          "seconds": 19.56,
+          "sha256": "4da955093bf9f50423b1f0209ba90d96640821c5f6ea66958474371a1a43e9ac"
+        },
+        {
+          "file_name": "2133693849393745219.wav",
+          "reference": "It is related to but usually not involving alpine style ski touring or mountaineering, the latter ones done in steep terrain and requiring much stiffer skis and boots.",
+          "seconds": 9.9,
+          "sha256": "6744efe5ba49c8c6dc11d8260a88bdbe434ac6d41720affb695724cf020fe72d"
+        },
+        {
+          "file_name": "2782797728435367637.wav",
+          "reference": "In 2002 Goma was destroyed by lava from the Nyiragongo volcano which buried most of the town’s streets, particularly the town centre.",
+          "seconds": 10.38,
+          "sha256": "8109259c5302b4f6dc9d8f368b440024e8f9d704c9355c675410d356f80b8055"
+        },
+        {
+          "file_name": "1803816418609037922.wav",
+          "reference": "Many German baked goods also feature almonds, hazelnuts, and other tree nuts. Popular cakes often pair particularly well with a cup of strong coffee.",
+          "seconds": 10.44,
+          "sha256": "60643e1b0f9bc186d462ff89738d80252bbf9837abdd6199d75d049c8895f31f"
+        },
+        {
+          "file_name": "13070914954918539330.wav",
+          "reference": "The composition of these crystals matches those found in the urine of affected pets when compared by infrared spectroscopy (FTIR).",
+          "seconds": 11.88,
+          "sha256": "a9a2e6269912d0fce17a921ae887069d67f6aa700b3d427644c6e7449fc04f00"
+        },
+        {
+          "file_name": "5381110210154713971.wav",
+          "reference": "He was initially hospitalised in the James Paget Hospital in Great Yarmouth.",
+          "seconds": 7.5,
+          "sha256": "acbdadf37eb239dfb4fcd7d9830d4345b5da4bb7480f12ce065e62d4acc004d2"
+        },
+        {
+          "file_name": "3562415917464695718.wav",
+          "reference": "The smaller the Rossby number, the less active the star with respect to magnetic reversals.",
+          "seconds": 5.64,
+          "sha256": "842a7425bdeab7346c8a18876603ebf580a75ac86e5de2d0eb37a79b6fa9b4f7"
+        },
+        {
+          "file_name": "5904418145588789259.wav",
+          "reference": "Congress began funding the obscenity initiative in fiscal 2005 and specified that the FBI must devote 10 agents to adult pornography.",
+          "seconds": 12.42,
+          "sha256": "506125d46411b14cf0475f1f1d1a48ea977216ffa313e96422ad58bb33cf9192"
+        },
+        {
+          "file_name": "15004506730396162914.wav",
+          "reference": "He has been unable to take the drugs needed to overcome his pain as they are banned from the Games.",
+          "seconds": 6.36,
+          "sha256": "521273bea3032405934ef0f63888c7b56e0d57be23a2d7623af9f0efa97dcdf0"
+        },
+        {
+          "file_name": "16702780028313283623.wav",
+          "reference": "Everything in the Universe is made of matter. All matter is made of tiny particles called atoms.",
+          "seconds": 7.52,
+          "sha256": "6c45412edb77e32ed0525b552ff4f3c2926b65b8564c7dcd169ef7afb525c98a"
+        },
+        {
+          "file_name": "11426556553252626005.wav",
+          "reference": "The harbor was the site of an infamous naval standoff in 1889 when seven ships from Germany, the US, and Britain refused to leave the harbor.",
+          "seconds": 12.78,
+          "sha256": "e9216146bc8a9054526e538464eea6f016a25753658c7b46a82c0c337a780aab"
+        },
+        {
+          "file_name": "11766033532714442721.wav",
+          "reference": "Since 1966 the Sundarbans have been a wildlife sanctuary, and it is estimated that there are now 400 Royal Bengal tigers and about 30,000 spotted deer in the area.",
+          "seconds": 17.46,
+          "sha256": "96c5cde39f15883c5f8ba875581f862cd70e4ab0000ac5f6daae1c15e8c88ef0"
+        },
+        {
+          "file_name": "1003119935936341070.wav",
+          "reference": "However, due to the slow communication channels, styles in the west could lag behind by 25 to 30 year.",
+          "seconds": 10.56,
+          "sha256": "33aca50159ec2e3cbcc894eb26faa916d6badb1b49fb75994973561540a7f012"
+        },
+        {
+          "file_name": "17722393517246760407.wav",
+          "reference": "He was greeted by Singapore's Deputy Prime Minister Wong Kan Seng and discussed trade and terrorism issues with the Singapore Prime Minister Lee Hsien Loong.",
+          "seconds": 14.04,
+          "sha256": "47cffa89c2365c7df9cbf6ca59f2d4eceee466cb625a21fe9e4a665e36342baf"
+        },
+        {
+          "file_name": "8148321977143490493.wav",
+          "reference": "The Plitvice Lakes national park is heavily forested, mainly with beech, spruce, and fir trees, and features a mixture of Alpine and Mediterranean vegetation.",
+          "seconds": 10.68,
+          "sha256": "a60e0e4f34c6ad659de4ae2d90e8a16ca4d731687c0819dd36c7aedae6588f1b"
+        },
+        {
+          "file_name": "2939761992885557861.wav",
+          "reference": "During the Revolutionary War, the thirteen states first formed a weak central government—with the Congress being its only component—under the Articles of Confederation.",
+          "seconds": 10.68,
+          "sha256": "7e51d6fe42e0b34861736e8a43d91e30608906806a6f29d6ba5fed800fd8055a"
+        },
+        {
+          "file_name": "14210445503617137582.wav",
+          "reference": "Traffic Flow is the study of the movement of individual drivers and vehicles between two points and the interactions they make with one another.",
+          "seconds": 7.68,
+          "sha256": "c64a5ef027808f4d0e70c3e90a490c99b65306ffad3c563e1bf23fcfd6f20d6b"
+        },
+        {
+          "file_name": "14146977097620621690.wav",
+          "reference": "To get the best views of Hong Kong, leave the island and head for the Kowloon waterfront opposite.",
+          "seconds": 6.9,
+          "sha256": "93c7eecc33d90ed90ed7653ed37819acf7341e1aa8002f5d4908af49b7c74350"
+        },
+        {
+          "file_name": "8582392026322819617.wav",
+          "reference": "Regional and seasonal severe weather phenomena include blizzards, snowstorms, ice storms, and dust storms.",
+          "seconds": 7.8,
+          "sha256": "7d3d71b8f39087c14d9a9507445029b45be08899fe97a8a2fdf78eb501cedd6f"
+        }
+      ]
+    },
+    "tr_tr": {
+      "lang": "tur_Latn",
+      "metric": "wer",
+      "utterances": [
+        {
+          "file_name": "4104225732856888601.wav",
+          "reference": "Antik Çin, farklı zaman dönemlerini göstermek konusunda özgün bir yol izlemiştir; Çin'in her dönemi veya iktidardaki her aile ayrı bir hanedanlıktır.",
+          "seconds": 14.64,
+          "sha256": "5f87a9b7f1a1027cf851253ca5b774648554ebcec5dadef89d8c56c1b26c4426"
+        },
+        {
+          "file_name": "15512415003885194349.wav",
+          "reference": "İnsanların büyük bir kısmı, tüylerinin bulunması ve uçabilmeleri nedeniyle, onları dinozor olarak görmez.",
+          "seconds": 7.68,
+          "sha256": "be67cbb808898245628f2a5ab335c9326119d1f6cb882c9c08b5504b57521265"
+        },
+        {
+          "file_name": "16546958546815905919.wav",
+          "reference": "Hong Kong'un en iyi manzarasını görmek için adayı terk edin ve karşıdaki Kowloon kıyısına gidin.",
+          "seconds": 10.02,
+          "sha256": "8724374fb4ea5b2234434175c5dab2966303aa17b8e7c54cb05dee01bd56fceb"
+        },
+        {
+          "file_name": "7174199309610704527.wav",
+          "reference": "1990 yılında çöl kumları tehdidi nedeniyle tehlike altındaki dünya mirası alanları listesine eklendi.",
+          "seconds": 11.34,
+          "sha256": "042d574b3a72b7119a81ce0c3bd6d97523053e7c55c0e737c678966d790b13c6"
+        },
+        {
+          "file_name": "11832895795546081738.wav",
+          "reference": "Martelly dün, dokuz üyeden oluşan yeni Geçici Seçim Konseyi (CEP) huzurunda and içti.",
+          "seconds": 11.82,
+          "sha256": "0700d464ba7f1f12f542c7a39e76de7edc74c2e8d2c952d180da97be7b7f9ffc"
+        },
+        {
+          "file_name": "13213290455858218904.wav",
+          "reference": "Yüksek enlemlerde veya dağ geçitlerinde araç kullanacak olan herhangi bir kimse kar, buz veya donma ihtimalini göz önünde bulundurmalıdır.",
+          "seconds": 12.48,
+          "sha256": "7cbc2b44f896436fc587435130e869252e27227f1fbb180ff8118d90920bbee3"
+        },
+        {
+          "file_name": "10147164563742619338.wav",
+          "reference": "Güreşçi arkadaşları da Luna'ya saygılarını sundular.",
+          "seconds": 4.2,
+          "sha256": "e1f1ca24c6d251db5cb48bbebe21ceddc163f54baf7af029dcad7dcf03d0ccd8"
+        },
+        {
+          "file_name": "13753461523904002080.wav",
+          "reference": "Yine Devrim'den sonra meslekler, en hırslı ve başarılı olanın kazanmasını sağlayacak şekilde tüm erkek adaylara açıktı.",
+          "seconds": 12.84,
+          "sha256": "f18c2d10d1e0292a6a523f2f102db0ce4272cbf8dfaacf8b4c264e23b5ef0810"
+        },
+        {
+          "file_name": "9710712441223264491.wav",
+          "reference": "403 numaralı Scotturb Otobüsü, oldukça sık bir şekilde Cabo da Roca'da durarak Sintra'ya gider.",
+          "seconds": 11.04,
+          "sha256": "96763ec29c76cf0d05057ac9709ad2a7bc69d83d805b5817faf1aa07ce94b491"
+        },
+        {
+          "file_name": "4761888246602032120.wav",
+          "reference": "Barselona'nın resmi dilleri Katalanca ve İspanyolcadır. Halkın yaklaşık yarısı Katalanca konuşmayı tercih etmekte, büyük çoğunluğu bu dili anlamakta ve neredeyse herkes İspanyolca bilmektedir.",
+          "seconds": 15.6,
+          "sha256": "dde3ebdfed3aa0eeea6670c256ade0fe8c0129a6f86d22a4ac263627d693b889"
+        },
+        {
+          "file_name": "5699802372321017406.wav",
+          "reference": "Kuzeydeki geniş alanlar oldukça az nüfusa sahiptir ve bazıları neredeyse ıssız bir vahşi doğadan oluşmaktadır.",
+          "seconds": 8.64,
+          "sha256": "6333df8455e4024f6c542b8d49bc8fc9ab6aa8433556e959054e2276d5ec56f0"
+        },
+        {
+          "file_name": "14978300616178681620.wav",
+          "reference": "Yeniden inşa çabasının liberal eleştirisi yeniden inşa sözleşmelerinin Washington içinden olarak algılanan kişilere verilmesine odaklandı.",
+          "seconds": 12.72,
+          "sha256": "d951d5e798261b68153d51ba6058dc5b3f561017ab05ec960394e84b5b0a34d8"
+        },
+        {
+          "file_name": "8456230362417133336.wav",
+          "reference": "Benzer sayılır ama genellikle alp tarzı kayak turu veya dağcılıktan biraz farklıdır. Bu sporlar dik arazide yapılır ve çok daha sert kayaklar ve botlar gerektirir.",
+          "seconds": 18.6,
+          "sha256": "9d5066f82b0e1823fd02e4af72a720d6edec51eaf0fcd950e347e6ef92a1b270"
+        },
+        {
+          "file_name": "16301122959254304410.wav",
+          "reference": "Ana subje için en etkili alanın, görüntüyü boylamsal ve düzlemsel biçimde üçe ayıran hatların birleşme noktası olduğunu ifade eder (örneğe bakın).",
+          "seconds": 12.12,
+          "sha256": "a0432d329841e3693adfca18207030a387e6535cec4716c4bc1b1cd6fd14a0fd"
+        },
+        {
+          "file_name": "3106268260735996854.wav",
+          "reference": "Plitvice Gölleri ulusal parkı, çoğunlukla kayın, ladin ve köknar ağaçlarıyla dolu yoğun bir ormanlık alandır ve Alp ve Akdeniz bitki örtüsünün bir bileşimini yansıtır.",
+          "seconds": 19.32,
+          "sha256": "a05f07433fb1b7fcd7827b2aac0b1f0692e33722d90b23d70083c0900e270746"
+        },
+        {
+          "file_name": "15328160210557678745.wav",
+          "reference": "Fakat kaptanın kalesini kaybetmesinin ardından Hindistan sadece 36 puan alarak vuruş sırasını bitirebilmek için 7 kale kaybetti.",
+          "seconds": 16.56,
+          "sha256": "30bdbfe9543661926f689eb4e85d2182993129060e4780b45e3e74f2b34137f2"
+        },
+        {
+          "file_name": "101089684978402857.wav",
+          "reference": "Avrupa nispeten küçük ama birçok bağımsız ülkenin bulunduğu bir kıtadır. Normal şartlar altında, birden fazla ülkeyi gezmek birçok vize uygulamalarından ve pasaport kontrollerinden geçmek anlamına gelmektedir.",
+          "seconds": 15.84,
+          "sha256": "be09d0e727f1fef777e542902f10798d43e468359015af7e02bccde8f9e4e1a9"
+        },
+        {
+          "file_name": "17579105305203748884.wav",
+          "reference": "Kışın Kuzey Baltık'tan geçiyorsanız kabinin yerini bildiğinizden emin olun. Çünkü buzun içinden geçmek, hassas olanlar için korkunç bir gürültüye neden olur.",
+          "seconds": 14.52,
+          "sha256": "f3e4d9b0628d794baa8a908552d8ae8550d99c7d4365733f6c163cc1b41dbda4"
+        },
+        {
+          "file_name": "17573190805248701988.wav",
+          "reference": "Bayan Kirchner, Buenos Aires ili delege heyetinin bir üyesi olarak senatoya yönelik 2005 yılı kampanyasını başlatırken kullandığı yer olan Arjantin Tiyatrosu'nda başkanlığa aday olmak istediğini açıkladı.",
+          "seconds": 18.72,
+          "sha256": "86f6271c4c52436e763013ade9bd87ca73dbabfc236c30b34f00a208425121c5"
+        },
+        {
+          "file_name": "17046032145490582134.wav",
+          "reference": "ABD Jimnastik Federasyonu, Birleşik Devletler Olimpiyat Komitesi'nin mektubunu destekler ve Olimpiyat ailesinin tüm sporcularımız için güvenli bir çevre oluşturulmasını desteklemeye mutlaka ihtiyaç olduğunu kabul eder.",
+          "seconds": 16.98,
+          "sha256": "577435d6f36e0b3fd559be508359f1367e702558e10c5f4f10e06ebbb7b2e878"
+        }
+      ]
+    },
+    "ckb_iq": {
+      "lang": "ckb_Arab",
+      "metric": "wer",
+      "utterances": [
+        {
+          "file_name": "16131851921135265697.wav",
+          "reference": "ئۆفیسی پارێزگار گوتی نۆزدە کەس لە بریندارەکان ئەفسەری پۆلیس بوون.",
+          "seconds": 5.94,
+          "sha256": "36e70b31f25e0cbdbe9da92e13f39118357f1d18a997ae7c511b67dc754f4e03"
+        },
+        {
+          "file_name": "12905965778635161254.wav",
+          "reference": "بەهۆی هەڵکەوتەی ڕووی ژێر ئاوەکەوە، گەڕانەوەی شەپۆلەکە کۆبۆتەوە لە چەند ناوچەیەکی قوڵتردا، وە لەوانەیە تەوژم بەرەو قوڵایی ئاوەکە لەوێدا دروست ببێت.",
+          "seconds": 18.6,
+          "sha256": "3ec3d8f42258572892ac8213f63483c54270eb23b5652413e85c5d8c14d2da9d"
+        },
+        {
+          "file_name": "5808801713532599422.wav",
+          "reference": "وشەی شارستانی لە وشەی لاتینی سیڤیل هاتووە، بە مانای مەدەنی دێت، پەیوەستە بە وشەی سیڤیسی لاتینی، بە واتای هاوڵاتی، شار یان شاری وڵات، و ئەمەش بە رێگەیەک قەبارەی کۆمەڵگە پێناسە دەکات.",
+          "seconds": 13.98,
+          "sha256": "a23690b7b46c5cc79936088a9c937053ca0ea73b0350488f02d51a6fc296764b"
+        },
+        {
+          "file_name": "6016513338091278919.wav",
+          "reference": "مەدەگەسکەر گەورەترین ژیانی کێویە و خۆی کیشوەرێکە لە ژیانی کێوی.",
+          "seconds": 8.94,
+          "sha256": "3ad9af879c50a0f1c54e6bd7c5682f9f83cde970fed162a12a08c6b4029e0188"
+        },
+        {
+          "file_name": "13658532316453048206.wav",
+          "reference": "شوێنەکە تێکمەدە بە نوسین و هەڵکەندن و وێنە.",
+          "seconds": 4.68,
+          "sha256": "dcf54cfc77228343dd31d3313aab84229318f2a7b8e23e027ec7554297eaf1ee"
+        },
+        {
+          "file_name": "8386088973853718028.wav",
+          "reference": "دار بە دەستی ناوەراست، ساچین تەندولکار و راهول دراڤید زۆر باش یاریان کرد و هاوبەشێتیەکی ڕراکردنی سەدییان کرد.",
+          "seconds": 10.44,
+          "sha256": "6f2aae33a52b106f38a69ac74bbf0ef62db51cc87ca159d14cfef4b8550566db"
+        },
+        {
+          "file_name": "13707864090473615824.wav",
+          "reference": "هەرچەندە ئال حەزێکی گەورەی هەیە بۆ ئەندێشەی زانستی، ئال لقێکی هەرە گرنگی زانستی کۆمپیوتەری دروست کرد بۆ مامەڵەکردن لەگەڵ وەرگرتنی ڕەفتار و فێربوون و ژیریی لەلایەن ئامێرەوە.",
+          "seconds": 15.0,
+          "sha256": "9bc414cc30e4d427c37c71a39647f75629c31f94aec552d5eef0cfffaf102bdf"
+        },
+        {
+          "file_name": "5078196564796877613.wav",
+          "reference": "پچڕانی خەو پرۆسەی بە ئاگاهاتنەوەی مەبەستدارە لە ماوەی خەوی ئاسایی خۆت و دواتر خەوتنەوە لە ماوەیەکی کورت (10-60 خولەک)‎.",
+          "seconds": 10.8,
+          "sha256": "9fd4e36e39d1e52e95ee9bca0bf735dc30500f2965564841eeeb9774fe5568b2"
+        },
+        {
+          "file_name": "5491703659358763496.wav",
+          "reference": "لە سەرەتادا خرایە نەخۆشخانەی جەیمس پاگەت لە گرەیت یارمۆت.",
+          "seconds": 6.06,
+          "sha256": "056bb2d938562828f48ac01bfc6480686cb08420bb1aeca637ffbdffbb272f5c"
+        },
+        {
+          "file_name": "15215416934757354946.wav",
+          "reference": "یەکەم، زۆرینەی سوارەکان پوتی سوارە لەپێ دەکەن کە پاژنەی هەیە و بنەکەی لوس و تەسکە.",
+          "seconds": 8.64,
+          "sha256": "a4cc5f68205f03b30eefbc49aeb6ce69de460c6bb3fe8440c6226374427d02b9"
+        },
+        {
+          "file_name": "15661022707336697997.wav",
+          "reference": "پڵنگ وەکو وەرزشەوانێکی تەواو دەتوانێت سەربکەوێت (زۆرباش نا) و مەلە بکات و بازی گەورە بدات و پێنج هێندەی مرۆڤێکی بەهێز هێزی ڕاکێشانی هەیە.",
+          "seconds": 12.0,
+          "sha256": "7f48bddc9d39b621eb241e79e3821ea3bfc9bdb09b9a04086088b30b99e882ed"
+        },
+        {
+          "file_name": "2800338410064239724.wav",
+          "reference": "پاش ڕووداوەکە، گیبسن گوازرایەوە بۆ نەخۆشخانە بەڵام پاش کەمێك دواتر مرد.",
+          "seconds": 6.66,
+          "sha256": "1487d639e7d8f93f17c649b631c1888b5c38238178070a823375b31c88206485"
+        },
+        {
+          "file_name": "17532617771027599359.wav",
+          "reference": "منداڵە کێویەکان ئەگەری هەیە توشی مامەڵەی نەشیاو ببن یان توشی زەبری دەرونی ببنەوە پێش ئەوەی بەجێ بهێڵدرێن یان ڕا بکەن.",
+          "seconds": 10.5,
+          "sha256": "1fdb37e6498c092a14304615c7b19fd598ee48e8a47b0b41438dda33474ea1e6"
+        },
+        {
+          "file_name": "4662837027487145924.wav",
+          "reference": "بۆ نمونە، باوترین شێوازی وێنەگرتن لە جیهاندا ٣٥ ملیمەترە، کە ئەم قەبارەی فلیمە بەربلاوترین بووە لەکاتی کۆتایی هاتن بە سەردەمی کامێرەی فلیمدا.",
+          "seconds": 12.9,
+          "sha256": "12f08b428bbb3398e8b576a6212d8d10bb9397ea1b6ef44ec4429b0f2d48f08b"
+        },
+        {
+          "file_name": "16314125460392609129.wav",
+          "reference": "لە ماوەی 1960ەکان، برزێزینسکی کاری بۆ جۆن ئێف کەنەدی کرد وەک ڕاوێژكار و ئینجا لە ئیدارەی لیدۆن بی جۆنسۆنیش کاری کرد.",
+          "seconds": 17.64,
+          "sha256": "9c9b46e70f04d23b4ce4ce1441dcbbd632f597382159f5fb9dca8b96629d839a"
+        },
+        {
+          "file_name": "8040971028223594371.wav",
+          "reference": "بۆمبێك تەقیەوە لە دەرەوەی نوسینگەی پارێزگاری گشتیدا.",
+          "seconds": 6.48,
+          "sha256": "3e1ad2b5f296e8e9c058ee8c268ae0a35f1e335fb1b2004b87c5ed156e9d26d6"
+        },
+        {
+          "file_name": "12996609004779080741.wav",
+          "reference": "ئەگەر ویستت لە ڕووداوەکانەوە نزیکتر بیت، ئەوا دەبێت زوو بێیت بۆ ئەوەی شوێنی خێمەیەکی نزیک لە مۆسیقاکەت بەربکەوێت.",
+          "seconds": 10.32,
+          "sha256": "6d84f84618cd529b37c8a1d01bfde9a4937b36c13ace2d0da3d62f84d0ecabdf"
+        },
+        {
+          "file_name": "7665444448913871198.wav",
+          "reference": "دورگەی هۆنک کۆنگ ناوەکەی داوە بە خاکە گەورەکە و ئەو شوێنەیە گەشتیاران جەختی دەکەنەوە سەر.",
+          "seconds": 8.16,
+          "sha256": "30c3ac1c030e1cc448db0891b1f5c38c623925f83d5655e39f712165e94cacf0"
+        },
+        {
+          "file_name": "11044369909105217355.wav",
+          "reference": "گیزا پلاتیو، یان \"گۆڕستانی گیزا\" لە دۆڵی مردووانی میسر چەندین هەرەمی تێدایە(کە هەرەمی مەزن گەورەترینە)، چەند گۆڕێکی بچووک، چەند پەرستگایەک، هەروەها ئەبوهەولیشی گەورە‎.",
+          "seconds": 14.7,
+          "sha256": "73f8ef725bca9130902710bbcf13a140000cd452ca85c82e07c491b3c0937ad6"
+        },
+        {
+          "file_name": "6048813815104170611.wav",
+          "reference": "کاری ناڤیەکان بە نەریتی ئەوە بووە کە وڵاتەکەت توانای جوڵاندنی خەڵک و کەلوپەلەکانت بپارێزێت، لە هەمان کاتدا دەست لە توانای دوژمنەکەت هەڵدەقورتێنێت بۆ جوڵاندنی خەڵک و کەلوپەلەکانی.",
+          "seconds": 14.04,
+          "sha256": "01c3267d2c9f03e1d42dbca8a92c27a66b5da0d6fc47055d198d8475524d5e42"
+        }
+      ]
+    },
+    "de_de": {
+      "lang": "deu_Latn",
+      "metric": "wer",
+      "utterances": [
+        {
+          "file_name": "2898985736467661787.wav",
+          "reference": "Sechs Geiseln, darunter die Kinder und Ältere, wurden, wie auch die philippinischen Fotografen, frühzeitig freigelassen.",
+          "seconds": 6.84,
+          "sha256": "dc546d58db4e84a7ddd58c71c4522b33936905a76151678c1e75d1938bc6dd68"
+        },
+        {
+          "file_name": "781298712249931542.wav",
+          "reference": "Für die Springboks endete eine fünf Spiele lange Verlustserie.",
+          "seconds": 11.4,
+          "sha256": "555d1c19640181d16aa4457f569410e5ad798ff2128fed41406402bc2b4a1b25"
+        },
+        {
+          "file_name": "1230554609171138786.wav",
+          "reference": "Im Norden ist die Region von der Sahelzone begrenzt und im Süden und Westen vom Atlantischen Ozean.",
+          "seconds": 18.96,
+          "sha256": "f66a1c802b2d16054da6a53a3de7e0039bc30c709975ee76540676b56c06af76"
+        },
+        {
+          "file_name": "15231653817964823262.wav",
+          "reference": "Genau wie der Mond die Erde anzieht und die Gezeiten verursacht, übt auch die Milchstraße Anziehungskräfte auf die Sagittarius-Galaxie aus.",
+          "seconds": 15.42,
+          "sha256": "e5bcedbcaa04a353434a3c4b719fbf0206219dd6d634682ae26d0e0aeaf64794"
+        },
+        {
+          "file_name": "16664585007179141407.wav",
+          "reference": "Sie besagt, dass der Kreuzungspunkt der Linien, die ein Bild vertikal und horizontal dritteln, der effektivste Platz für das Hauptmotiv ist (siehe Beispiel).",
+          "seconds": 11.64,
+          "sha256": "885338eb26054eef6abee522aa7db0abd0dee1c62d6fd9d1a1e483d4ac7c7cff"
+        },
+        {
+          "file_name": "17247279665084969441.wav",
+          "reference": "Tatsächlich ist sie ganz und gar nicht einfach zu finden, auch wenn man weiß, dass sie existiert. Sobald man sich in der Höhle befindet, ist man vollkommen isoliert.",
+          "seconds": 9.48,
+          "sha256": "466702cf2a40beab3edc7a77e13672e5aec1c1ec2b0ff488d76edc6ca1a44f86"
+        },
+        {
+          "file_name": "13178896418285412993.wav",
+          "reference": "Ein Curry ist ein Gericht, das auf Kräutern und Gewürzen basiert, zusammen mit entweder Fleisch oder Gemüse.",
+          "seconds": 9.18,
+          "sha256": "12a0ad21d9d44ff8333241562138b18ffbf97b28153de220ce35f5c3f060d657"
+        },
+        {
+          "file_name": "13619903763102250854.wav",
+          "reference": "Es hat uns die Eisenbahn, das Auto und viele andere Transportmittel gebracht.",
+          "seconds": 4.8,
+          "sha256": "708314a4b2fc7bb6693382390668eded191e56b0498283eea44f6c608f11e3e8"
+        },
+        {
+          "file_name": "15703599681428731412.wav",
+          "reference": "Riss-Strömungen sind der der zurückkehrende Strom von am Strand gebrochenen Wellen, häufig bei Riffen oder ähnlichem.",
+          "seconds": 7.5,
+          "sha256": "5f2f73d43b5c230c6c5f51bb2fed2b227349342de50cf606bb830e235a686d0f"
+        },
+        {
+          "file_name": "12408906154111618341.wav",
+          "reference": "Der Mosasaurus war das größte Raubtier seiner Zeit, somit fürchtete er sich vor nichts außer anderen Mosasauriern.",
+          "seconds": 9.96,
+          "sha256": "47d7e3f7db173d32e7432422fb4a144cf057f9b5fb39050794bbe3eb16ff7720"
+        },
+        {
+          "file_name": "11382001736352097343.wav",
+          "reference": "Berichten zufolge war er in seinen 20er Jahren. In einer Stellungnahme sagte Bieber: „Obwohl ich bei diesem tragischen Unfall weder anwesend noch direkt an ihm beteiligt war, sind meine Gedanken und Gebete bei der Familie des Opfers“.",
+          "seconds": 17.76,
+          "sha256": "362142e584f91bdaa1ad0c40bf9455366b518abbce76a04386dc63b43684d271"
+        },
+        {
+          "file_name": "14773722935832990560.wav",
+          "reference": "Die Wissenschaftler kamen zu dem Schluss, dass die dunkle Materie auf andere dunkle Materie in der gleichen Weise wirkt wie normale Materie.",
+          "seconds": 7.8,
+          "sha256": "fdd4065af2e04422ab4116031aa0536447bd15ad16e11a445032a1463aba6891"
+        },
+        {
+          "file_name": "12776449081388495774.wav",
+          "reference": "Die Kommission war Martellys Antwort auf die weitverbreiteten regimekritischen Proteste, die im Oktober begannen.",
+          "seconds": 13.38,
+          "sha256": "669ca3fe4f47e7f5ba15c6eb6559c92c83059f746c01b1e9e9adefa95f8c9955"
+        },
+        {
+          "file_name": "17743281006726942718.wav",
+          "reference": "Die meisten Gebäude an den Rändern des Komplexes wurden wieder aufgebaut, um den Touristen einen besseren Eindruck davon zu vermitteln, wie sie ursprünglich aussahen.",
+          "seconds": 12.0,
+          "sha256": "c618b4391d045b4545bc56933539e4046f73732ca1938da231a1756db13065c8"
+        },
+        {
+          "file_name": "3193521992132875601.wav",
+          "reference": "Auf der Nahseite könnte es mehr Maria geben, da die Kruste dünner ist. Es war einfacher für die Lava, an die Oberfläche aufzusteigen.",
+          "seconds": 13.68,
+          "sha256": "f1e36954ac0475bac05df86aad23eae3dc33232cd6987047feba2ba7fa9c4c15"
+        },
+        {
+          "file_name": "9900611883450917327.wav",
+          "reference": "Die Klang- und Lichtshow bei den Pyramiden ist eine der interessantesten Attraktionen für Kinder in der Gegend.",
+          "seconds": 10.2,
+          "sha256": "601a62bb53b364d3f0d327a93638fb3a6ed7fa7804f6ffbddf689a24731227a6"
+        },
+        {
+          "file_name": "13340325550442074798.wav",
+          "reference": "Da die Lichtverschmutzung während ihrer Hochphase nicht das Problem darstellte, das es heute ist, befinden sie sich in der Regel in Städten oder auf Universitätsgeländen, die leichter zu erreichen sind als die in neuerer Zeit errichteten.",
+          "seconds": 13.56,
+          "sha256": "68b3428c1e15316b8c53071d47297dacd616156c468519110e62cf25132ec410"
+        },
+        {
+          "file_name": "6929877932503939126.wav",
+          "reference": "Weitere Themen auf der Tagesordnung in Bali sind die Rettung der noch verbliebenen Wälder der Welt und die gemeinsame Nutzung von Technologien, die den Entwicklungsländern helfen sollen, auf weniger umweltschädliche Weise zu wachsen.",
+          "seconds": 17.7,
+          "sha256": "387cb299c1f752cd0791519434889351f37d77a303008d913bc766451e5cadab"
+        },
+        {
+          "file_name": "5395409816123967672.wav",
+          "reference": "Im warmen Klima des Mittleren Ostens kamen Häusern keine so große bedeutung zu.",
+          "seconds": 15.6,
+          "sha256": "73a368e0bb62d75146102e7a27e9fec4854a2acf304c7f127a6d9592d63342ba"
+        },
+        {
+          "file_name": "2657886852505727674.wav",
+          "reference": "Die Szenen werden auf den Pyramiden dargestellt, wobei die verschiedenen Pyramiden beleuchtet werden.",
+          "seconds": 16.02,
+          "sha256": "a86df6c0ef122ca1e0b4dbfdf74b9779b4690d6715f14b877b76d498df75d0bc"
+        }
+      ]
+    },
+    "es_419": {
+      "lang": "spa_Latn",
+      "metric": "wer",
+      "utterances": [
+        {
+          "file_name": "13514155407450307475.wav",
+          "reference": "Al día de hoy no se ha demostrado a ciencia cierta que algún fármaco sea adecuado para tratar la infección existente causada por ébola, aun cuando existe una vacuna experimental que pareciera ser capaz de disminuir la mortalidad causada por esa enfermedad.",
+          "seconds": 18.0,
+          "sha256": "b8b75738c1605817d0cf06ee829331a474ef224a4aa84fd5ef5de351a4cd74b3"
+        },
+        {
+          "file_name": "3042683732975676288.wav",
+          "reference": "La interrupción del sueño consiste en despertarse intencionalmente durante el período normal de sueño y dormirse después de un rato (10 a 60 minutos).",
+          "seconds": 10.74,
+          "sha256": "61a65214c7dd855a9d30d665eca114101776aa0eb3cd3d3b853a66acc8d1e4b2"
+        },
+        {
+          "file_name": "15157489772208688760.wav",
+          "reference": "Liggins comenzó sus investigaciones sobre el parto prematuro en su tiempo libre, mientras trabajaba en el hospital.",
+          "seconds": 8.82,
+          "sha256": "7d1bed5718b972ce00b412e55923e3cdc5b70526e5585256f0eb482cff8140d1"
+        },
+        {
+          "file_name": "20096106466477420.wav",
+          "reference": "Desde el gobierno informaron que diecinueve de las personas heridas eran policías.",
+          "seconds": 8.16,
+          "sha256": "91a255523a97c9a2305dac97b0aa7844b91820ac249f5baa901d54a5ad1b5943"
+        },
+        {
+          "file_name": "16889105656278261948.wav",
+          "reference": "Estas son playas familiares, en ocasiones muy concurridas, con numerosas y variadas tiendas disponibles sobre la cosa. También son seguras para nadar.",
+          "seconds": 11.28,
+          "sha256": "ac1ab761f520b34784f874ef2fd7df0a5838cafb72128f36b85e979fba0817c2"
+        },
+        {
+          "file_name": "7746935114405462627.wav",
+          "reference": "Se consideran metales a los elementos como el calcio y el potasio. Desde ya, también existen metales del tipo del oro y la plata.",
+          "seconds": 10.32,
+          "sha256": "2435891934d093798fe833482dc10df1685c8283248c10669f1263d87cd92ffd"
+        },
+        {
+          "file_name": "876388728912448737.wav",
+          "reference": "Retiraron el vehículo del lugar del siniestro alrededor de las 12:00 GMT del mismo día.",
+          "seconds": 6.6,
+          "sha256": "8b7e22b839d41f0dbe283caadf2a3d48d69b4447df8eece9f88d3815239b63ff"
+        },
+        {
+          "file_name": "2606670528531717832.wav",
+          "reference": "Se ha comparado el despliegue de edificaciones que delimitan el horizonte de Hong Kong con un gráfico de barras luminoso que se evidencia por la presencia de las aguas del Puerto Victoria.",
+          "seconds": 12.24,
+          "sha256": "742dbe8729110bdcc0072cf4b2a9caf0de2bf0deb19fdaee81183f1231b28c80"
+        },
+        {
+          "file_name": "12358913935231344539.wav",
+          "reference": "Los blogs también pueden contribuir a mejorar la redacción de los alumnos. Aun cuando los estudiantes suelen iniciar su experiencia de blog con una gramática y ortografía poco cuidadas, esto generalmente cambia ante la presencia de una audiencia.",
+          "seconds": 17.16,
+          "sha256": "2c15723ae717d39d3b51138473044178da70df6ff6293068580c33c599789a12"
+        },
+        {
+          "file_name": "7917257148703104668.wav",
+          "reference": "Después del accidente, trasladaron a Gibson a un hospital, pero falleció al poco tiempo.",
+          "seconds": 8.4,
+          "sha256": "dc0eafd8beebdc2bb90d88a3180f29ebea4c0a498a94766edb04c5e2d9d6e144"
+        },
+        {
+          "file_name": "15273741597070592128.wav",
+          "reference": "Agregó: «Aun así, no es correcto exigirles que asuman obligaciones que sobrepasan su fase de desarrollo, su nivel de responsabilidad y sus capacidades».",
+          "seconds": 11.82,
+          "sha256": "bbbdbf0b99e5017f0618e23e547abc29c846300b09ba7c41c4ef1773d096c1fa"
+        },
+        {
+          "file_name": "10312331453126623791.wav",
+          "reference": "El color del jugo de repollo se verá alterado en función de cuán ácida o básica (alcalina) sea la sustancia química.",
+          "seconds": 10.32,
+          "sha256": "673915cbbe36d64961f67ca19e658febf62b16d1acb85a087506b5b6604d0939"
+        },
+        {
+          "file_name": "11954820864874034293.wav",
+          "reference": "Esto se denomina pH de una sustancia química. Usted puede elaborar un indicador de pH utilizando jugo de col roja.",
+          "seconds": 11.22,
+          "sha256": "14aefe43e1409e75fd51c0b78287d143aeb9253fd47397d9feea0dedc304c9a3"
+        },
+        {
+          "file_name": "3570922401409908523.wav",
+          "reference": "El pleno funcionamiento del puente se estima para septiembre de 2017, que es para cuando se prevé que finalicen los controles de aduana brasileños.",
+          "seconds": 9.12,
+          "sha256": "f36bd3bf945d98d424146f8a73e94163760b327bac7bab8424f701db93211789"
+        },
+        {
+          "file_name": "3413185111403482962.wav",
+          "reference": "Uno de los periodos más sanguinarios de la historia de Antigua China fue el de Los Tres Reinos, donde miles de personas murieron en una lucha por ocupar el trono del gran palacio en Xi'an.",
+          "seconds": 14.4,
+          "sha256": "b2acc5d31cc62034c5999344d394ac95efd953d57c1c57424ff18e289d78e490"
+        },
+        {
+          "file_name": "3916255312318174861.wav",
+          "reference": "Se acoge a los niños en hogares de guarda por una amplia variedad de motivos, desde negligencia hasta abuso e, incluso, extorsión.",
+          "seconds": 10.62,
+          "sha256": "a633d6f71fccbc6d5eb03953d2c66b75fe3cf39d3f99a6d5a5b640df712fcb9c"
+        },
+        {
+          "file_name": "16940047964722835471.wav",
+          "reference": "Los Sundarbans son la cadena de manglares costeros más grande del mundo, con una longitud de 80 km (50 millas) desde la costa hacia el interior de Bangladesh y de la India.",
+          "seconds": 14.88,
+          "sha256": "2607c020bf1131e1d82c23501de35658a00a8150632ec11f2b5dc88af45bef5c"
+        },
+        {
+          "file_name": "2743021137943761953.wav",
+          "reference": "Otros temas incluidos en la agenda en Bali son salvar los bosques que subsisten en el planeta y compartir tecnologías para contribuir a que las naciones en vías de desarrollo crezcan de forma menos contaminante.",
+          "seconds": 15.72,
+          "sha256": "8937b5c273ea3342312bc405a9a96aaf12e823c6f6b02788f1990e3bcc474183"
+        },
+        {
+          "file_name": "569488395657807430.wav",
+          "reference": "La profesora Pamela Ferguson de la Universidad de Dundee señaló: «al parecer, los periodistas caminan sobre terreno peligroso cuando publican fotos u otra información de los sospechosos».",
+          "seconds": 15.24,
+          "sha256": "c5176159dae1f9fe6dcbac40f1ee9d6ef0f99cec2f50edb9ad5edfd5e8aa8a57"
+        },
+        {
+          "file_name": "5665886738819863936.wav",
+          "reference": "En 1889, el puerto fue el escenario de un nefasto enfrentamiento naval cuando siete barcos alemanes, americanos y e ingleses se negaron a salir del puerto.",
+          "seconds": 13.74,
+          "sha256": "58232e7e6c63c200e4dad35cc92c9337f0915ad0c0f0b3f0c483bda29c740628"
+        }
+      ]
+    },
+    "fr_fr": {
+      "lang": "fra_Latn",
+      "metric": "wer",
+      "utterances": [
+        {
+          "file_name": "8337790299494656816.wav",
+          "reference": "Si vous ne vous rendez à terre qu'avec des excursions de croisière, vous n'aurez pas besoin d'un visa distinct (à partir de 2009).",
+          "seconds": 8.46,
+          "sha256": "d0f7afc323bcecfda728018f10a99584d138e6bd87497bbd65a0a6bfb10e7c28"
+        },
+        {
+          "file_name": "5001020775514452955.wav",
+          "reference": "Les politiques d'annulation varient, mais à partir de fin mars, la plupart des politiques d'annulation basées sur les coronavirus ne s'étendent pas jusqu'en juillet 2020, date à laquelle les Jeux olympiques avaient été prévus.",
+          "seconds": 14.58,
+          "sha256": "29a9ccbe62c9216b72f81f2b083d51a85cf2a2ea539062744a69f29c5f1a028b"
+        },
+        {
+          "file_name": "17815512019716102082.wav",
+          "reference": "Cuomo, 53 ans, a commencé son mandat de gouverneur au début de cette année et a signé le mois dernier un projet de loi légalisant le mariage entre personnes du même sexe.",
+          "seconds": 9.9,
+          "sha256": "301c637b45983cc20ebc81be38015eaf9ef2b3e24781eac1e5d214e88eedef98"
+        },
+        {
+          "file_name": "8567141705345262295.wav",
+          "reference": "Dans la catégorie des femmes en ski assis, quatre skieuses ne sont pas parvenues à terminer leur parcours ; en ce qui concerne le slalom géant, 45 skieuses sur un total de 117 dans cette course n'ont pas réussi à se classer.",
+          "seconds": 15.6,
+          "sha256": "f403c332481631534a41b88aa6b0882983c7a7588aea30071a8a8aa896a46427"
+        },
+        {
+          "file_name": "5982567161370394797.wav",
+          "reference": "Les deux composés réagissent l'un avec l'autre pour former des cristaux qui peuvent bloquer la fonction rénale, ont déclaré des chercheurs de l'université.",
+          "seconds": 12.72,
+          "sha256": "f8a89a44376775a6ad3f9e33f32bf77248faccac5668b9dde269823dacf352c8"
+        },
+        {
+          "file_name": "7163324756398649509.wav",
+          "reference": "Des éléments comme le calcium et le potassium sont considérés comme des métaux. Bien sûr, il y a aussi des métaux comme l’argent et l’or.",
+          "seconds": 9.96,
+          "sha256": "42e973f6b78aa7375b6411668b5c7456fbabf39d85f07b3a0e2d5305b501057d"
+        },
+        {
+          "file_name": "4088577714441894427.wav",
+          "reference": "L'épaisseur de la croûte est d'environ 70 km sur la face visible et 100 km sur la face cachée.",
+          "seconds": 6.48,
+          "sha256": "077d804c4d970fba30e418f4eda88a7b2e005c67d2c8448da4f42e083acbffa4"
+        },
+        {
+          "file_name": "5943336644055372622.wav",
+          "reference": "Peu après le début des hostilités, la Grande-Bretagne a mis en place un blocus naval contre l’Allemagne.",
+          "seconds": 9.0,
+          "sha256": "ac7df47a1f6dcab636e97b71a5c50ca49cd91644a3d4704c078510b1fbd853fe"
+        },
+        {
+          "file_name": "691257513202273870.wav",
+          "reference": "Le bus 403 de Scotturb se rend régulièrement à Sintra, avec un arrêt à Cabo da Roca.",
+          "seconds": 7.38,
+          "sha256": "f08c410389c151218b255c3cba9f7dd9850d6f080ccd9399842fc5b731f7a5f9"
+        },
+        {
+          "file_name": "2882330443072436357.wav",
+          "reference": "Angel (2006) présente l'approche Continuum comme une méthode employée pour aider les organisations à obtenir de meilleurs résultats.",
+          "seconds": 8.28,
+          "sha256": "9ea075b43e1f4d0c86561d1426606d7009258f9c53346448d2280c2b18d737a1"
+        },
+        {
+          "file_name": "882897483766712466.wav",
+          "reference": "Les scènes sont affichées sur les pyramides et les différentes pyramides sont éclairées.",
+          "seconds": 4.62,
+          "sha256": "daeed2ccab7e6df841873c6c47f9b8ede37b1b13eece5c062546fe9b1b1c03fa"
+        },
+        {
+          "file_name": "5468793292723670932.wav",
+          "reference": "L'humidité sur vos mains va réagir avec les couches extérieures, ce qui induira une sensation étrange et produira une sorte de coquille.",
+          "seconds": 8.34,
+          "sha256": "b2d6f9f646b0926ab82679a9446641c8cbdbeeefd9a305b96261c0da1cc0d1d9"
+        },
+        {
+          "file_name": "18151681871637167427.wav",
+          "reference": "Nous fabriquons nos maisons et nos vêtements à base de plantes. La plupart des aliments que nous mangeons sont des plantes. Sans les plantes, les animaux ne survivraient pas.",
+          "seconds": 10.74,
+          "sha256": "218bedf8816bfc367c114a8d67dc1d93148beca277e428dcd9cea3c4e2252103"
+        },
+        {
+          "file_name": "8048456904739408213.wav",
+          "reference": "Internet allie des éléments de communication de masse et de communication interpersonnelle.",
+          "seconds": 5.46,
+          "sha256": "99947b58baaa79c1555948cd8bcc1de754862a1d77eb6881ff5f1a95448ca005"
+        },
+        {
+          "file_name": "7748066543694729317.wav",
+          "reference": "Une recherche sur internet de « Cours en environnement hostile » fournira probablement l'adresse d'une entreprise locale.",
+          "seconds": 7.32,
+          "sha256": "ce531294ac548aa292701f8ddad0a2a4ab9ba508485e53f375586e7575ecd830"
+        },
+        {
+          "file_name": "12549203010893340688.wav",
+          "reference": "Lorsque toutes les ressources disponibles sont utilisées efficacement dans les services fonctionnels d'une organisation, la créativité et l'ingéniosité peuvent s'exprimer pleinement.",
+          "seconds": 8.88,
+          "sha256": "e17fd7724ccda8ebbdb4bc87561d69aed45ea05ba7968ecfedeac91363911fdc"
+        },
+        {
+          "file_name": "655404083166657720.wav",
+          "reference": "Dans de nombreuses autres villes d'Italie et dans le reste du monde, en particulier en Pologne, des installations similaires ont été réalisées et ont été vues par un grand nombre de personnes.",
+          "seconds": 9.3,
+          "sha256": "2980cd560a5b11ad3c9d8a96e96d2d00176d4957ce5024dc28a1f070756010e1"
+        },
+        {
+          "file_name": "141608451470541627.wav",
+          "reference": "Il s'agit d'un excellent moyen de faire la distinction entre certains verbes et objets.",
+          "seconds": 8.7,
+          "sha256": "3a7403fc80194b61ba2c0a383639e442e1f741f31b5825e05bc5c5d6cf9c3986"
+        },
+        {
+          "file_name": "11026160349720831517.wav",
+          "reference": "Aux femmes : Il est recommandé à toute femme qui voyage de dire qu’elle est mariée, quel que soit son état civil.",
+          "seconds": 5.94,
+          "sha256": "1f89fe5b6252183005b59b1ebe79cfe4a3dd31b7a914a60ad62cc3a0166d180e"
+        },
+        {
+          "file_name": "13215458268584779067.wav",
+          "reference": "Il est donc probable que la notation a été ajoutée simplement comme une étiquette.",
+          "seconds": 8.52,
+          "sha256": "711bf7350bf6029edee2320979f35ace5f6d1262975ad37562eca79fc8677e08"
+        }
+      ]
+    },
+    "hi_in": {
+      "lang": "hin_Deva",
+      "metric": "wer",
+      "utterances": [
+        {
+          "file_name": "12576622961596360825.wav",
+          "reference": "सामान के ट्रांसपोर्ट के लिए जहाज़ों का इस्तेमाल करना समुद्रों के एक सिरे से दूसरे सिरे तक बड़ी मात्रा में लोगों और सामान को लाने और ले जाने का बहुत ज़्यादा प्रभावी तरीका है.",
+          "seconds": 16.92,
+          "sha256": "356147305d9e4d1ce17338da158d585a8f8611847398278909e5c749b40b39f4"
+        },
+        {
+          "file_name": "579454037541708253.wav",
+          "reference": "बाहरी द्वीपों पर क्रेडिट कार्ड शायद स्वीकार नहीं किए जाएँगे, हालाँकि ब्रिटिश और संयुक्त राज्य की मुद्रा स्वीकार्य होगी; यह निर्धारित करने के लिए कि स्वीकार्य भुगतान विधि क्या है, मालिकों से पहले ही पूछ लें।",
+          "seconds": 18.18,
+          "sha256": "86263bf5a2e3264464b0de9b3e8e1ed06a96aef7b4365e19ce10dba838ec8825"
+        },
+        {
+          "file_name": "13109433266350566952.wav",
+          "reference": "अलगाव और पुनर्संयोजन भिन्नता प्रत्येक पीढ़ी के साथ दो पूलों के बीच आगे-पीछे होती रहती है।",
+          "seconds": 10.08,
+          "sha256": "24e2f42d2e57c21e2e1910ade5bbb793bbcd508ff7c7f54586dfbde5d7984e4c"
+        },
+        {
+          "file_name": "1599033818694102662.wav",
+          "reference": "लक्खा सिंह ने छप्पन भोग भजन भी प्रस्तुत किया। गायक, राजू खंडेलवाल उनके साथ थे।",
+          "seconds": 7.44,
+          "sha256": "50c825f7aba99de920c9c17c4b55e99fedd212aaf1b6e5c1562ca6149f9dbf23"
+        },
+        {
+          "file_name": "1236616481434986.wav",
+          "reference": "अस्पताल में काम करते हुए, लिगिन्स ने अपने खाली समय के दौरान समय से पहले प्रसव की जाँच शुरू कर दी.",
+          "seconds": 9.48,
+          "sha256": "24d89d845734837f6007b01fa7cdda92c1457840238521336511c591164144d2"
+        },
+        {
+          "file_name": "16630730871144997656.wav",
+          "reference": "असल में, किसी को इसकी मौजूदगी का पता होने पर भी इसे ढूँढना बिल्कुल भी आसान नहीं है. एक बार गुफ़ा में पहुँच जाने पर, वहाँ आप एकदम अकेले हो जाते हैं.",
+          "seconds": 13.26,
+          "sha256": "f01cdef7dcc099d62e08ff97afacc73f6c645ba2f9e303e8de29b028b32802b4"
+        },
+        {
+          "file_name": "6524300363139967185.wav",
+          "reference": "हम पक्के तौर पर नहीं जानते हैं, लेकिन इसकी कांटेदार जीभ हो सकती है. इसके आहार में कछुए, बड़ी मछली, दूसरे मोसासॉर शामिल थे और ये एक नरभक्षी भी हो सकता है.",
+          "seconds": 14.16,
+          "sha256": "3a6a032e419c5a7fa22b5a039084ed0aae31e118d711b9a208b6c88c3457194c"
+        },
+        {
+          "file_name": "10907654079731428081.wav",
+          "reference": "यदि आप केवल शिपबोर्ड भ्रमण का उपयोग करके किनारे तक जाते हैं तो आपको एक अलग वीज़ा की आवश्यकता नहीं होगी (2009 तक).",
+          "seconds": 12.78,
+          "sha256": "1605965817d43610ebfbf3c4751915a1a630b4ca92fca45fa5f819ae560086d5"
+        },
+        {
+          "file_name": "4786756809138902466.wav",
+          "reference": "इटली के कई अन्य शहरों और दुनिया के बाकी हिस्सों में, खासकर पोलैंड में, इस तरह के सेटअप बनाए गए थे, जिन्हें बड़ी संख्या में लोगों ने देखा था।",
+          "seconds": 12.9,
+          "sha256": "366399646fb7f11d1916f51ce01581e80e9e5a02af0744f4d389d61dd8749698"
+        },
+        {
+          "file_name": "3571969712948146868.wav",
+          "reference": "परिसर के किनारे ज़्यादातर इमारतें फिर से बनाई गई हैं ताकि पर्यटकों को बेहतर ढंग से पता चल सके कि वे मूल रूप में कैसी दिखाई देती थी.",
+          "seconds": 10.2,
+          "sha256": "5abe1458aa19cb593874108b25a8e70d993769bb5b1b3678a43460741aa4f480"
+        },
+        {
+          "file_name": "8437160403366702365.wav",
+          "reference": "उनके पंख और उड़ने की वजह से कई लोग उनको डायनासोर नहीं मानते.",
+          "seconds": 8.04,
+          "sha256": "2d4e9af753a0a413ef1a95456a6d7784130e947cd1997e01dd6fde7589b0e910"
+        },
+        {
+          "file_name": "1908329718103862127.wav",
+          "reference": "हालाँकि, टुबर्क्युलोसिस वाले लोगों के पूरे समूह में एक्सडीआर-टीबी का प्रतिशत अभी भी कम है; दक्षिण अफ़्रीका में किसी भी विशेष समय पर कुल 330,000 लोगों में से 6,000 संक्रमित हैं.",
+          "seconds": 13.56,
+          "sha256": "afd23964feda0f5e6f0491ad4fcd18eeb72c044e66a9449aa5c4a5f6c9b313cd"
+        },
+        {
+          "file_name": "15502428720282733551.wav",
+          "reference": "वाइल्ड कार्ड खरीद लेना फ़ायदेमंद भी हो सकता है क्योंकि इससे आप दक्षिण अफ़्रीका के चुनिंदा पार्क या सभी दक्षिण अफ़्रीकी नेशनल पार्क देख सकते हैं.",
+          "seconds": 11.46,
+          "sha256": "863ed13f14c4a7ddad31a4cf8b5349bfbd07c00cc217e5a3035cd55e5bfd89ca"
+        },
+        {
+          "file_name": "533946222103008669.wav",
+          "reference": "पहाड़ी इलाकों में ज़्यादा दुर्घटना हुई. इसकी वजह आपसी दुश्मनी को माना जाता है.",
+          "seconds": 5.58,
+          "sha256": "9606106d07a2f28557ff46abef521d2e8b5fa29bc6f3cb507c9f17dfbebdce0c"
+        },
+        {
+          "file_name": "13981741863006798200.wav",
+          "reference": "यहूदी और गैर-यहूदी की तरह, अभी भी ऐसे कई पुरुष और महिलाएं जीवित हैं जो उस समय बचने में सफल रहे और कई जिनके प्रियजनों को मार दिया गया या उनके मरने तक उनसे काम करवाया गया.",
+          "seconds": 12.18,
+          "sha256": "414c871cab879c4cb84f321895c8f055488a200343411b3c4741c664b8f156b5"
+        },
+        {
+          "file_name": "18050109654890999214.wav",
+          "reference": "टेलीविजन रिपोर्टों में प्लांट से निकलने वाला सफेद धुआँ दिखाया गया है।",
+          "seconds": 8.46,
+          "sha256": "1e4ad068195482de032430ed43a0aebf2a44bc19809b669b1383236fa7eab1f8"
+        },
+        {
+          "file_name": "18376328677533202391.wav",
+          "reference": "प्राकृतिक वातावरण में पौधे सबसे अच्छे दिखते हैं, इसलिए “सिर्फ एक” नमूने को भी हटाने के प्रलोभन को रोकें.",
+          "seconds": 7.68,
+          "sha256": "0a31411cbd57ca259c6f603ec4a2d39f34604dca6436f6cd73eaad7a43de6369"
+        },
+        {
+          "file_name": "3417726039347618077.wav",
+          "reference": "चांद की सतह चट्टानों और धूल से बनी है. चांद की बाहरी परत को क्रस्ट कहते हैं.",
+          "seconds": 7.32,
+          "sha256": "e3cf7783e35c7e171a0912da1a5060bb8208e4fa7ea14d8be3406d760d339908"
+        },
+        {
+          "file_name": "3280261134886643047.wav",
+          "reference": "यह तर्कसंगत लग रहा है, क्योंकि ऐसा महसूस नहीं होता है कि पृथ्वी चल रही है, है कि नहीं?",
+          "seconds": 8.88,
+          "sha256": "645fac1c8539b62efadc5421c1fd36207c42478d99f05b7e669c3493db72569f"
+        },
+        {
+          "file_name": "10107687492910459268.wav",
+          "reference": "अपनी सरकार के अलावा आप अन्य देशों की सरकारों की सलाह ले सकते हैं. हालाँकि, उनकी सलाह उनके नागरिकों को ध्यान में रखकर दी जाती हैं.",
+          "seconds": 10.62,
+          "sha256": "b853e4f4cc9e2c0e312a8ae0ce59bc3637319866de1a674045e0de3f5d240693"
+        }
+      ]
+    },
+    "cmn_hans_cn": {
+      "lang": "cmn_Hans",
+      "metric": "cer",
+      "utterances": [
+        {
+          "file_name": "10142207404499844309.wav",
+          "reference": "当所有可用的资源在一个组织的职能部门之间得到有效利用时，创造力和独创性就会发生。",
+          "seconds": 7.26,
+          "sha256": "cd570cba752dd4214a9c6ec050759172932e4bc4df18ed2a2bb0d8a9e30172db"
+        },
+        {
+          "file_name": "1212046656299271869.wav",
+          "reference": "在某些航线上，大型公司有自己的飞机，但对于其他航线和小公司来说，就有问题了。",
+          "seconds": 14.32,
+          "sha256": "5d936fb14a5398eed90691c79e6ab788fbabb19412879d152a6e133338861a18"
+        },
+        {
+          "file_name": "2211176532836691628.wav",
+          "reference": "埃及死亡之谷的吉萨（Giza）高原（即“吉萨金字塔群”）包括多个金字塔（其中大金字塔是最大的）、几个小坟墓，几个寺庙和大狮身人面像。",
+          "seconds": 17.82,
+          "sha256": "947394cb6a84dce1d113169aff1acb77f0a8974e824d99dd2d1340ec805586ad"
+        },
+        {
+          "file_name": "15647719969739775381.wav",
+          "reference": "然而，由于文化交流迟缓，西方的时尚可能落后 25 到 30 年。",
+          "seconds": 8.16,
+          "sha256": "11250f993966d3258f3f885cd32cc11ea1ffbdf32c82f4b878be72e4677d6d39"
+        },
+        {
+          "file_name": "7118855371224214736.wav",
+          "reference": "一般来说，当管理者开始领导过去的同事时，会出现两种行为。一种情况是，他们会努力与团队成员保持“亲密关系”。",
+          "seconds": 12.48,
+          "sha256": "7c8ad662487ca9aba23a56ca871c547b41b9a8e4004eb944bb95aa439ccab36b"
+        },
+        {
+          "file_name": "1055783299672050865.wav",
+          "reference": "他还参与了许多国家的纸币雕版制作，近期作品包括加拿大新版 5 元和 100 元纸币正面的总理肖像。",
+          "seconds": 11.16,
+          "sha256": "dd6e959df7374a7579e23c60091a206e74ee43de5832dec294385384b5ae00cc"
+        },
+        {
+          "file_name": "9853448135009496348.wav",
+          "reference": "这座城市也是攀登尼拉贡戈火山（Nyiragongo）以及非洲最便宜的山地大猩猩追踪项目的基地。",
+          "seconds": 11.7,
+          "sha256": "0e89f6f0a14a81fa9cc2cf5e8234c5d67de3de276ef0b434b67c384b6acf6ddd"
+        },
+        {
+          "file_name": "10674527227632117693.wav",
+          "reference": "他一直无法用药物来缓解疼痛，因为比赛禁止参赛者服用这些药物。",
+          "seconds": 9.78,
+          "sha256": "7dd080907920c8e2fbf95961244720bf63d57097d55b0bc6bc3c886c610f4f65"
+        },
+        {
+          "file_name": "5473826726739727303.wav",
+          "reference": "坠机发生在高海拔山区，据称是敌方火力所致。",
+          "seconds": 4.8,
+          "sha256": "5f0dd3e52d95a02d151ca9c9c4a9fb664bf10d01dacdf671673d3ff18f302880"
+        },
+        {
+          "file_name": "9401374422679378543.wav",
+          "reference": "\"适当使用博客，\"可以使学生变得更善于分析和进行思辨；通过积极回应网络材料，学生们可以在他人文章的上下文语境中找到自己的立场，并能够针对特定问题提出自己的观点（Oravec, 2002）。\"",
+          "seconds": 16.98,
+          "sha256": "f4fc83173cb9cba1715ccd121223f8ee084ab05c29c67a0c8c66f277a70761ba"
+        },
+        {
+          "file_name": "710895149610681971.wav",
+          "reference": "大金字塔是埃及人在公元前三世纪的杰作，它是众多向已故法老表示敬意的大型金字塔的其中之一。",
+          "seconds": 12.6,
+          "sha256": "242a6508f8580a9021a9d5daaada65a13527f3e0c3bc33e90064cc253fa4333f"
+        },
+        {
+          "file_name": "314154669869510753.wav",
+          "reference": "邓迪大学（University of Dundee）的 Pamela Ferguson 教授指出：“记者如果公布嫌疑人的照片等信息的话，似乎确实存在危害性。”",
+          "seconds": 10.74,
+          "sha256": "e83e6dca5f7ba9431647da4eda4bbc25bf66c62b0fbbb94c2d3d4d0dce0e9498"
+        },
+        {
+          "file_name": "11355960588560603456.wav",
+          "reference": "氢离子是失去了电子的质子（因为氢原子由一个质子和一个电子组成）。",
+          "seconds": 7.5,
+          "sha256": "6e78ce60fee04c791b93481b9395c956e4613def1c639377775d9970ebd7ddec"
+        },
+        {
+          "file_name": "1919235771608723899.wav",
+          "reference": "自从 1537 年亚松森（Asunción）建成以来，巴拉圭一直设法保留了这座城的许多本土特色和特性。",
+          "seconds": 8.22,
+          "sha256": "c009d35f5124e13cca442092c11367243379c062600482d0f1b70143743c65f5"
+        },
+        {
+          "file_name": "15440819358190460877.wav",
+          "reference": "芬兰是绝佳的帆船运动圣地， 素有“千湖之乡”的美誉 ，在其湖泊和沿海群岛范围内也含有数千座岛屿。",
+          "seconds": 13.32,
+          "sha256": "cb254f26ca50885ebcc1bcdab7ceb931a579957daa882ea81caf8a642ef0be6e"
+        },
+        {
+          "file_name": "775506143805267767.wav",
+          "reference": "这里是英国殖民者占领的地方，所以如果你想寻找这片领土殖民历史的证据，这里是一个很好的起点。",
+          "seconds": 10.8,
+          "sha256": "1b7d8b02b58763ab40786112b41de0eecdb14b6291d4f70f151e7d4c55d03e36"
+        },
+        {
+          "file_name": "17381936933530140952.wav",
+          "reference": "但鸟类还是有很多地方跟恐龙相似。",
+          "seconds": 6.18,
+          "sha256": "e95bcdf6ec1cb0e79455a6698e2e55849f9523e4a9c4668196e629517a3c0f14"
+        },
+        {
+          "file_name": "15179165224739543387.wav",
+          "reference": "基什内尔女士在阿根廷大剧院宣布她有意参加总统竞选，2005 年也是在这里，她作为布宜诺斯艾利斯省代表开始竞选参议员。",
+          "seconds": 12.36,
+          "sha256": "109c6651fff976d75b3cca872e00492d6ab082c4b33ca13ce15a21440e9281a3"
+        },
+        {
+          "file_name": "7305205291638652040.wav",
+          "reference": "压力越小，生命力就表现得越积极。每个人都有可能找到绝对的平静和满足。",
+          "seconds": 7.38,
+          "sha256": "e6ad5a4944dd27379d87292dbc0afddbd8e7e3aabba745be8edd8df3c4a95194"
+        },
+        {
+          "file_name": "16888312171483558824.wav",
+          "reference": "报道称他年仅 20 多岁。比伯发表声明表示：“虽然我当时并不在场，也没有直接经历这起悲惨事故，但我仍为死者家属感到悲伤，为他们祈祷。”",
+          "seconds": 10.98,
+          "sha256": "0b362a92acd15606e261916f9d19b8ccae59b7b6887359367b584ed65d7abc2e"
+        }
+      ]
+    }
+  }
+}

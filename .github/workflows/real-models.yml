@@ -1,6 +1,8 @@
 name: Real-model CPU validation
 # Downloads the pinned published CTC and LLM 300M v2 models (~8 GB) and runs them end to
-# end on CPU against the committed FLEURS fixtures (tests/fixtures/fleurs). Too heavy for
+# end on CPU against the committed FLEURS fixtures (tests/fixtures/fleurs), then scores them
+# per language on the pinned FLEURS sample and fails on regressions past
+# benchmarks/fleurs/thresholds.json (tools/fleurs_eval.py). Too heavy for
 # every push: runs weekly, after each release is published (a report, not a gate), on
 # demand, and on PRs that change this validation or the runtime code it exercises.
 on:
@@ -14,6 +16,8 @@ on:
       - .github/workflows/real-models.yml
       - tests/integration/test_real_models_cpu.py
       - tests/fixtures/fleurs/**
+      - benchmarks/fleurs/**
+      - tools/fleurs_eval.py
       # Runtime code these tests exercise end to end
       - src/fast_omniasr/llm/**
       - src/fast_omniasr/hub.py
@@ -55,3 +59,37 @@ jobs:
       - run: python -m pip install -e ".[dev,onnx,hub]"
       - name: Run the published models on the FLEURS fixtures
         run: python -m pytest tests/integration/test_real_models_cpu.py tests/unit/test_fleurs_fixtures.py -v -rs
+
+  fleurs-gate:
+    name: fleurs-${{ matrix.model }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [ctc, llm]
+    env:
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+    steps:
+      - name: Free disk space for the model and dataset downloads
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e ".[dev,onnx,hub]"
+      - name: Restore the extracted FLEURS clips
+        uses: actions/cache@v4
+        with:
+          path: .cache/fleurs
+          key: fleurs-${{ matrix.model }}-${{ hashFiles('benchmarks/fleurs/manifest.json') }}
+      - name: Per-language WER/CER gate
+        run: python tools/fleurs_eval.py run --model ${{ matrix.model }} --gate --report fleurs-${{ matrix.model }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fleurs-${{ matrix.model }}
+          path: fleurs-${{ matrix.model }}.json
+          if-no-files-found: ignore

@@ -1,0 +1,115 @@
+{
+  "models": {
+    "ctc": {
+      "repo": "EmreAkgul/omniASR-CTC-300M-v2-ONNX",
+      "revision": "6c1096d65763f1d268a7ed61fe8874596f0a4eb8",
+      "per_language": 20,
+      "languages": {
+        "en_us": {
+          "baseline_wer": 20.88,
+          "baseline_cer": 5.43,
+          "max_wer": 24.01,
+          "max_cer": 6.93
+        },
+        "tr_tr": {
+          "baseline_wer": 22.01,
+          "baseline_cer": 4.08,
+          "max_wer": 25.31,
+          "max_cer": 5.58
+        },
+        "ckb_iq": {
+          "baseline_wer": 42.3,
+          "baseline_cer": 8.71,
+          "max_wer": 48.64,
+          "max_cer": 10.21
+        },
+        "de_de": {
+          "baseline_wer": 12.99,
+          "baseline_cer": 3.29,
+          "max_wer": 15.99,
+          "max_cer": 4.79
+        },
+        "es_419": {
+          "baseline_wer": 9.29,
+          "baseline_cer": 2.69,
+          "max_wer": 12.29,
+          "max_cer": 4.19
+        },
+        "fr_fr": {
+          "baseline_wer": 18.51,
+          "baseline_cer": 5.75,
+          "max_wer": 21.51,
+          "max_cer": 7.25
+        },
+        "hi_in": {
+          "baseline_wer": 12.66,
+          "baseline_cer": 5.57,
+          "max_wer": 15.66,
+          "max_cer": 7.07
+        },
+        "cmn_hans_cn": {
+          "baseline_wer": null,
+          "baseline_cer": 21.84,
+          "max_wer": null,
+          "max_cer": 25.11
+        }
+      }
+    },
+    "llm": {
+      "repo": "EmreAkgul/omniASR-LLM-300M-v2-ONNX",
+      "revision": "dfd02a38ca9050cc83411ff28317278c683df103",
+      "per_language": 5,
+      "languages": {
+        "en_us": {
+          "baseline_wer": 12.4,
+          "baseline_cer": 5.04,
+          "max_wer": 15.4,
+          "max_cer": 6.54
+        },
+        "tr_tr": {
+          "baseline_wer": 9.33,
+          "baseline_cer": 3.64,
+          "max_wer": 12.33,
+          "max_cer": 5.14
+        },
+        "ckb_iq": {
+          "baseline_wer": 15.0,
+          "baseline_cer": 2.67,
+          "max_wer": 18.0,
+          "max_cer": 4.17
+        },
+        "de_de": {
+          "baseline_wer": 3.53,
+          "baseline_cer": 0.36,
+          "max_wer": 6.53,
+          "max_cer": 1.86
+        },
+        "es_419": {
+          "baseline_wer": 3.42,
+          "baseline_cer": 1.21,
+          "max_wer": 6.42,
+          "max_cer": 2.71
+        },
+        "fr_fr": {
+          "baseline_wer": 3.92,
+          "baseline_cer": 1.26,
+          "max_wer": 6.92,
+          "max_cer": 2.76
+        },
+        "hi_in": {
+          "baseline_wer": 4.53,
+          "baseline_cer": 1.85,
+          "max_wer": 7.53,
+          "max_cer": 3.35
+        },
+        "cmn_hans_cn": {
+          "baseline_wer": null,
+          "baseline_cer": 7.58,
+          "max_wer": null,
+          "max_cer": 9.08
+        }
+      }
+    }
+  },
+  "policy": "max_wer = baseline + max(3 points, 15%); max_cer = baseline + max(1.5 points, 15%). Baselines: the pinned model on the first `per_language` utterances, CPU, fp32. For languages whose manifest metric is 'cer' (Mandarin) only CER is gated, computed with whitespace removed after normalization."
+}
