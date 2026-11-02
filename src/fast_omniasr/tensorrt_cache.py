@@ -11,6 +11,8 @@ import hashlib
 import json
 import mmap
 import os
+import re
+from importlib import metadata
 from pathlib import Path
 
 from .tensorrt_builder import (
@@ -176,16 +178,42 @@ def _external_data_fingerprint(onnx_path: Path) -> dict[str, str]:
     return fingerprint
 
 
+_TENSORRT_WHEEL = re.compile(r"tensorrt[-_]cu(\d+)(?:[-_].*)?")
+
+
+def _tensorrt_cuda_flavor() -> str | None:
+    """The CUDA major TensorRT itself was built for, e.g. "cu13" from the installed
+    `tensorrt_cu13` / `tensorrt_cu13_libs` wheel. TensorRT links the CUDA runtime
+    statically, so this -- not the cuda-python version -- is the CUDA its engines use.
+    None when TensorRT wasn't installed from a pip wheel (tarball, system package)."""
+    try:
+        distributions = metadata.packages_distributions()
+    except Exception:  # noqa: BLE001 -- metadata is best effort; caller falls back
+        return None
+    for package in ("tensorrt_libs", "tensorrt"):
+        for name in distributions.get(package, []):
+            match = _TENSORRT_WHEEL.fullmatch(name.lower())
+            if match:
+                return f"cu{match.group(1)}"
+    return None
+
+
 def _local_environment() -> dict:
     """Environment fields that decide whether a cached engine can be reused.
 
     Queried for the *current* CUDA device -- the one TensorRT builds and deserializes
-    engines on (selectable with `cudaSetDevice` or CUDA_VISIBLE_DEVICES) -- not device 0.
+    engines on in this thread (select it with `cudaSetDevice` or CUDA_VISIBLE_DEVICES;
+    the TensorRT backend does not use the `device=` argument) -- not device 0.
 
-    In the key: TensorRT version, CUDA runtime version (major.minor), and the GPU's
-    compute capability and name. Deliberately not in the key: the device ordinal, so
-    identical GPUs share engines, and the driver version, since newer drivers run
-    existing engines and including it would force a rebuild on every driver update.
+    In the key:
+      - `tensorrt_version`
+      - `tensorrt_cuda`: the CUDA major TensorRT was built for, from its pip wheel name
+        ("cu12", "cu13"). Without wheel metadata it falls back to the CUDA major of the
+        cuda-python runtime ("cuda-python-13"); minor versions are deliberately left out
+        so upgrading cuda-python doesn't rebuild every engine.
+      - the GPU's `compute_capability` and `device_name`.
+    Not in the key: the device ordinal, so identical GPUs share engines, and the driver
+    version, since newer drivers run existing engines (a too-old driver fails loudly).
     """
     try:
         import tensorrt as trt
@@ -206,11 +234,14 @@ def _local_environment() -> dict:
 
     device = query("current CUDA device", cudart.cudaGetDevice())
     prop = query(f"properties of CUDA device {device}", cudart.cudaGetDeviceProperties(device))
-    runtime_version = query("CUDA runtime version", cudart.cudaRuntimeGetVersion())
+    tensorrt_cuda = _tensorrt_cuda_flavor()
+    if tensorrt_cuda is None:
+        runtime_version = query("CUDA runtime version", cudart.cudaRuntimeGetVersion())
+        tensorrt_cuda = f"cuda-python-{runtime_version // 1000}"
     name = prop.name.decode() if isinstance(prop.name, bytes) else prop.name
     return {
         "tensorrt_version": trt.__version__,
-        "cuda_runtime_version": f"{runtime_version // 1000}.{runtime_version % 1000 // 10}",
+        "tensorrt_cuda": tensorrt_cuda,
         "compute_capability": f"{prop.major}.{prop.minor}",
         "device_name": name.rstrip("\x00"),
     }
