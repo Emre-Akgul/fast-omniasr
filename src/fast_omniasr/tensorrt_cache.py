@@ -6,7 +6,6 @@ cache key covers everything that can invalidate a previously-built engine: the O
 optimization profile requested, the build environment (see `_local_environment`), and this
 module's own build-recipe version.
 """
-import contextlib
 import hashlib
 import json
 import mmap
@@ -15,6 +14,7 @@ import re
 from importlib import metadata
 from pathlib import Path
 
+from ._locking import file_lock
 from .tensorrt_builder import (
     BUILDER_CONFIG_VERSION,
     DEFAULT_MAX_SAMPLES,
@@ -249,18 +249,6 @@ def _local_environment() -> dict:
     }
 
 
-@contextlib.contextmanager
-def _locked(lock_path: Path):
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    import fcntl
-    with lock_path.open("w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
-
-
 def get_or_build_engine(onnx_path: str | Path, *, precision: str,
                          min_samples: int = DEFAULT_MIN_SAMPLES,
                          opt_samples: int = DEFAULT_OPT_SAMPLES,
@@ -288,7 +276,7 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
     engine_path = entry_dir / "model.engine"
     metadata_path = entry_dir / "metadata.json"
 
-    with _locked(root / f"{key}.lock"):
+    with file_lock(root / f"{key}.lock"):
         if engine_path.exists() and metadata_path.exists():
             try:
                 cached = json.loads(metadata_path.read_text())
