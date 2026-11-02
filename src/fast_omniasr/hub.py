@@ -1,19 +1,18 @@
 """Download Hub assets declared by a repo's config.json and verify their sha256."""
 
-import contextlib
-import errno
 import hashlib
 import json
 import os
 import re
 import shutil
 import tempfile
-import threading
 import uuid
 import warnings
 from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote
+
+from ._locking import file_lock
 
 DEFAULT_CACHE = Path.home() / ".cache" / "fast-omniasr" / "hub"
 
@@ -98,45 +97,8 @@ def _write_snapshot(local_dir: Path, record: dict) -> None:
         raise
 
 
-_THREAD_LOCKS: dict[str, threading.Lock] = {}
-_THREAD_LOCKS_GUARD = threading.Lock()
-
-
-@contextlib.contextmanager
-def _bundle_lock(lock_path: Path):
-    """Exclusive lock per bundle across threads and processes (advisory). A process-local
-    lock comes first because on some filesystems (e.g. NFS) the file lock is per process
-    and would not keep this process's own threads apart."""
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with _THREAD_LOCKS_GUARD:
-        thread_lock = _THREAD_LOCKS.setdefault(os.path.abspath(lock_path), threading.Lock())
-    with thread_lock, lock_path.open("a+b") as f:
-        try:
-            import fcntl
-        except ImportError:  # Windows
-            import msvcrt
-            import time
-
-            f.seek(0)
-            while True:
-                try:
-                    msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
-                    break
-                except OSError as exc:  # LK_LOCK gives up after ~10 s of contention
-                    if exc.errno not in (errno.EDEADLOCK, errno.EACCES):
-                        raise
-                    time.sleep(1)
-            try:
-                yield
-            finally:
-                f.seek(0)
-                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-            return
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+# The per-bundle lock (portable; see _locking.file_lock).
+_bundle_lock = file_lock
 
 
 def _sha256(path: Path) -> str:
