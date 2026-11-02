@@ -10,9 +10,11 @@ A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/f
 |---|---:|---:|
 | ONNX Runtime CUDA (FP32) | 358 ms | reference |
 | TensorRT FP32 | 374 ms | 40/40 |
-| TensorRT FP16 | **76 ms** | 34/40 |
+| TensorRT FP16 | **76 ms** | 34/40¹ |
 
-**TensorRT FP16 is experimental and not recognition-equivalent to FP32.** See [Performance and accuracy](#performance-and-accuracy) for WER, tolerance and sample-size caveats.
+¹ An earlier TensorRT and profile; on the current stack FP16 keeps 141/160 transcripts identical to FP32 on the larger FLEURS sample below.
+
+**TensorRT FP16 trades a few near-tie token flips for speed.** On the 160-utterance, 8-language FLEURS sample with the current TensorRT, FP16 keeps 141/160 transcripts identical to FP32 and every language's WER within 0.5 points; `precision="mixed"` keeps the precision-sensitive convolutional front end in FP32 (150/160 identical, about twice the FP16 latency, still ~2.6× faster than FP32). The latency table above predates these measurements. See [Performance and accuracy](#performance-and-accuracy).
 
 <details>
 <summary>Forward-only research harness numbers</summary>
@@ -74,13 +76,13 @@ model card has its numbers and `parity/precision_agreement.json`.
 | LLM 300M v2 | 9.5 GiB | 6.5 GiB, ~1.5x faster |
 | LLM 7B v2 | 33.5 GiB | 19.5 GiB, ~1.5x faster |
 
-For the fast path with no manual export or `build_tensorrt.py` call, pass `backend="tensorrt"` and an explicit `precision` (no "auto" — see [Performance and accuracy](#performance-and-accuracy) before choosing `"fp16"`):
+For the fast path with no manual export or `build_tensorrt.py` call, pass `backend="tensorrt"` and an explicit `precision` — `"fp32"`, `"fp16"` or `"mixed"` (no "auto" — see [Performance and accuracy](#performance-and-accuracy) before choosing a reduced precision):
 
 ```python
 model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="tensorrt", precision="fp16")
 ```
 
-The first call downloads the ONNX asset, builds a local engine, and caches it under `~/.cache/fast-omniasr/tensorrt/<key>/model.engine`. The cache key includes the SHA-256 of the ONNX graph and of every external-data weights file it references, the precision, profile, TensorRT version and the CUDA major it was built for (`cu12`/`cu13`), and the identity (name and compute capability) of the current CUDA device, so replacing only a weights file, switching GPU model, or switching TensorRT's CUDA flavor rebuilds the engine. The driver version, device index and `cuda-python` version are not part of the key. The default profile accepts 400 to 480,000 samples and optimizes for 80,000 samples. Advanced users can pass `min_samples`, `opt_samples`, and `max_samples`; a changed profile creates a separate cached engine. `precision="fp16"` warns once per process about its accuracy caveat.
+The first call downloads the ONNX asset, builds a local engine, and caches it under `~/.cache/fast-omniasr/tensorrt/<key>/model.engine`. The cache key includes the SHA-256 of the ONNX graph and of every external-data weights file it references, the precision, profile, TensorRT version and the CUDA major it was built for (`cu12`/`cu13`), and the identity (name and compute capability) of the current CUDA device, so replacing only a weights file, switching GPU model, or switching TensorRT's CUDA flavor rebuilds the engine. The driver version, device index and `cuda-python` version are not part of the key. The default profile accepts 400 to 480,000 samples and optimizes for 80,000 samples. Advanced users can pass `min_samples`, `opt_samples`, and `max_samples`; a changed profile creates a separate cached engine. `precision="fp16"` warns once per process about its accuracy caveat; `"mixed"` builds a separate engine with the feature extractor and positional convolution kept in FP32.
 
 `OmniASR` and `OmniASRLLM` release their ONNX Runtime sessions or TensorRT engine on `close()` or when leaving a `with` block (`with OmniASR.from_pretrained(...) as model:`); `close()` is idempotent, and transcribing afterwards raises `RuntimeError`. An `OmniASR` instance may be shared across threads. With the TensorRT backend, each instance owns one execution context and its buffers, so concurrent calls are serialized (never mixed); create one instance per worker for parallel GPU throughput. `OmniASRLLM` instances may also be shared: each `transcribe()` runs its encode and full decode loop alone (calls are serialized), so concurrent requests never mix; use one instance per worker for parallel throughput.
 
@@ -117,6 +119,7 @@ python export_onnx.py \
 
 python build_tensorrt.py artifacts/finetuned/model.onnx --output artifacts/omniasr_fp32.engine
 python build_tensorrt.py artifacts/finetuned/model.onnx --precision fp16 --output artifacts/omniasr_fp16.engine
+python build_tensorrt.py artifacts/finetuned/model.onnx --precision mixed --output artifacts/omniasr_mixed.engine
 
 # Optional profile tuning (defaults: 400/80,000/480,000 samples).
 python build_tensorrt.py artifacts/finetuned/model.onnx \
@@ -164,12 +167,26 @@ Without `--upload`, this prepares and validates the bundle as a dry run. The pub
 
 Tested with PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, and TensorRT 10.16.1.11 (CUDA 12). The current default TensorRT profile is batch one, 400/80,000/480,000 MIN/OPT/MAX samples with TF32 disabled; the performance figures above were measured with the earlier 16,000/80,000/480,000 profile. Engines are built for the local hardware/software stack and portability is not validated. `build_tensorrt.py` and `OmniASR.from_pretrained(..., backend="tensorrt")` call the same underlying `fast_omniasr.tensorrt_builder.build_engine`, so there's one build recipe, not two.
 
-ONNX FP32 is the verified runtime; TensorRT FP32 and FP16 are explicit, separate experimental backends (not fallback-interchangeable). Mixed-precision TensorRT engines are ongoing stabilization work, not wired into `build_tensorrt.py` or the runtime yet.
+ONNX FP32 is the reference runtime; TensorRT FP32, FP16 and mixed are explicit, separate engines (not fallback-interchangeable), each gated per language against the FP32 baselines with `tools/fleurs_eval.py --backend tensorrt`.
 </details>
 
 ## Performance and accuracy
 
-TensorRT FP16 preserved **34/40** transcripts against FP32 on a small English/Turkish FLEURS sample; aggregate WER matched FP32 at 22.82% only because offsetting language-level errors hid the recognition changes. TensorRT FP32 preserved all 40 transcripts, though 3 clips failed a tight logit tolerance. None of this establishes production recognition parity, and 40 clips is too small a sample for general claims. The original experiment workspace holds the detailed evidence; it isn't bundled here.
+Measured on the pinned 8-language FLEURS sample (`benchmarks/fleurs/manifest.json`, 160 test utterances) with `omniASR-CTC-300M-v2` and TensorRT 10.16 (details and every variant in [`benchmarks/tensorrt_fp16_sensitivity.json`](benchmarks/tensorrt_fp16_sensitivity.json)):
+
+| TensorRT precision | Transcripts identical to FP32 | Frame argmax agreement | Latency vs FP32 | Per-language FP32 gate |
+|---|---:|---:|---:|---|
+| `fp32` | 160/160 (matches CPU ONNX exactly) | 100% | 1.0× | pass |
+| `fp16` | 141/160 | 99.80% | ~0.19× | pass (WER within 0.5 points everywhere) |
+| `mixed` | 150/160 | 99.91% | ~0.38× | pass |
+
+Pinning layer groups to FP32 one at a time showed that only the convolutional front end is precision-sensitive under FP16: the 7-block waveform feature extractor and the positional convolution. Keeping them in FP32 (`precision="mixed"`) cuts the median per-clip logit error about 4× and leaves the remaining differences as near-tie token flips. Normalization, softmax, attention, residual adds, the final projection and every quarter of the 24 encoder blocks made no measurable difference. Regate any engine against the FP32 baselines on a GPU with:
+
+```bash
+python tools/fleurs_eval.py run --model ctc --backend tensorrt --precision mixed --gate
+```
+
+An earlier 40-clip English/Turkish experiment on an older TensorRT and profile reported 34/40 identical FP16 transcripts; those numbers are superseded by the measurements above.
 
 ## Benchmark and tests
 
@@ -182,7 +199,7 @@ python -m ruff check .
 python -m pytest tests/unit
 ```
 
-Integration tests need real assets via env vars and skip otherwise: `OMNIASR_ONNX`/`OMNIASR_TOKENIZER`/`OMNIASR_TEST_WAV` for ONNX, `OMNIASR_TRT_FP32_ENGINE` (+ same tokenizer/WAV) and `OMNIASR_TRT_FP16_ENGINE`/`OMNIASR_TRT_FP16_TEST_WAV` for TensorRT. `tests/integration/test_hub.py` needs only `OMNIASR_TEST_WAV` but hits the real Hub repo over the network.
+Integration tests need real assets via env vars and skip otherwise: `OMNIASR_ONNX`/`OMNIASR_TOKENIZER`/`OMNIASR_TEST_WAV` for ONNX, `OMNIASR_TRT_FP32_ENGINE` (+ same tokenizer/WAV) for TensorRT. `tests/integration/test_tensorrt_fleurs.py` (GPU, `OMNIASR_REAL_MODELS=1`) builds `fp32`, `fp16` and `mixed` engines from the published model and checks them on the FLEURS fixtures. `tests/integration/test_hub.py` needs only `OMNIASR_TEST_WAV` but hits the real Hub repo over the network.
 
 `tests/integration/test_real_models_cpu.py` runs the pinned published CTC and LLM 300M v2 models end to end on CPU against three committed [FLEURS](https://huggingface.co/datasets/google/fleurs) clips (English, Turkish, Central Kurdish; CC BY 4.0, see `tests/fixtures/fleurs/`), checking per-clip CER ceilings, determinism and clean shutdown. The ceilings are each model's measured CER plus 8 points: a smoke signal that catches a broken model or runtime, not small accuracy regressions. Per-language accuracy is gated separately: `tools/fleurs_eval.py` scores both models on a pinned 8-language FLEURS sample and fails on regressions past `benchmarks/fleurs/thresholds.json` (see [benchmarks/fleurs](benchmarks/fleurs/README.md)); the same workflow runs it. To gate a release, dispatch that workflow on the release commit before tagging and require it to pass. It downloads about 8 GB, so it is opt-in locally (`OMNIASR_REAL_MODELS=1 pytest tests/integration/test_real_models_cpu.py`) and runs in the `Real-model CPU validation` workflow weekly, after each release is published (reporting, not gating), on demand, and on PRs that change it or the runtime code it exercises.
 

@@ -169,6 +169,7 @@ def test_run_gate_exit_codes_and_report(tmp_path, monkeypatch):
     assert report["results"]["en_us"]["wer"] == 0 and report["failures"] == []
     assert report["per_language"] == {"en_us": 1} and report["skipped_gated_languages"] == []
     assert report["revision"] == "c" * 40 and report["dataset_revision"] == "f" * 40
+    assert (report["backend"], report["precision"]) == ("onnx", "fp32")
     factory, _ = fake_transcriber("hello word")
     monkeypatch.setattr(fleurs_eval, "transcriber", factory)
     assert fleurs_eval.main(args) == 1
@@ -238,3 +239,13 @@ def test_unknown_languages_are_rejected_cleanly(tmp_path, monkeypatch):
 def test_skipped_gated_languages_are_reported():
     thresholds = {"languages": {"en_us": {}, "tr_tr": {}, "cmn_hans_cn": {}}}
     assert fleurs_eval.skipped_languages({"en_us": {}}, thresholds) == ["cmn_hans_cn", "tr_tr"]
+
+
+@pytest.mark.parametrize("extra, message", [
+    (["--backend", "tensorrt"], "only available for --model ctc"),
+    (["--precision", "fp16"], "applies to --backend tensorrt"),
+])
+def test_backend_and_precision_combinations_are_validated(tmp_path, monkeypatch, extra, message):
+    args = _run_setup(tmp_path, monkeypatch)  # --model llm
+    with pytest.raises(SystemExit, match=message):
+        fleurs_eval.main([*args, *extra])

@@ -1,0 +1,326 @@
+{
+  "model": "EmreAkgul/omniASR-CTC-300M-v2-ONNX@6c1096d65763f1d268a7ed61fe8874596f0a4eb8",
+  "tensorrt": "10.16.1.11",
+  "eval_set": "benchmarks/fleurs/manifest.json (8 languages x 20 FLEURS test utterances)",
+  "method": "Each variant builds an FP16 engine (BuilderFlag.FP16, TF32 off, default profile) with the listed layers' compute and floating-point outputs forced to FP32 under OBEY_PRECISION_CONSTRAINTS, then compares per-clip logits and greedy transcripts with the FP32 engine. 'median_max_logit_error' is the median over clips of the largest absolute logit difference; the largest errors sit in tail (non-top) logits of the 10,288-entry vocabulary and do not affect decoding. Latency is per clip relative to the FP32 engine (lower is faster).",
+  "finding": "Only the convolutional front end (feature extractor + positional Conv) is precision-sensitive: keeping it in FP32 cuts the median logit error ~4x and raises identical transcripts from 141 to 150/160. Normalization, softmax, attention, residuals, the final projection and every encoder block quarter make no measurable difference. Per-language WER/CER of fp16 and mixed both stay within the FP32 regression thresholds in benchmarks/fleurs/thresholds.json.",
+  "per_language_fleurs": {
+    "fp32": {
+      "en_us": {
+        "wer": 20.88167053364269,
+        "cer": 5.425448868071819,
+        "n": 20
+      },
+      "tr_tr": {
+        "wer": 22.01086956521739,
+        "cer": 4.083885209713024,
+        "n": 20
+      },
+      "ckb_iq": {
+        "wer": 42.296918767507,
+        "cer": 8.71369294605809,
+        "n": 20
+      },
+      "de_de": {
+        "wer": 12.990196078431373,
+        "cer": 3.285498489425982,
+        "n": 20
+      },
+      "es_419": {
+        "wer": 9.288537549407115,
+        "cer": 2.693714665779847,
+        "n": 20
+      },
+      "fr_fr": {
+        "wer": 18.510158013544018,
+        "cer": 5.7532172596517785,
+        "n": 20
+      },
+      "hi_in": {
+        "wer": 12.664277180406213,
+        "cer": 5.572441742654509,
+        "n": 20
+      },
+      "cmn_hans_cn": {
+        "wer": null,
+        "cer": 21.837708830548927,
+        "n": 20
+      }
+    },
+    "fp16": {
+      "en_us": {
+        "wer": 21.34570765661253,
+        "cer": 5.542544886807182,
+        "n": 20
+      },
+      "tr_tr": {
+        "wer": 22.01086956521739,
+        "cer": 4.083885209713024,
+        "n": 20
+      },
+      "ckb_iq": {
+        "wer": 42.296918767507,
+        "cer": 8.759797141539881,
+        "n": 20
+      },
+      "de_de": {
+        "wer": 12.745098039215685,
+        "cer": 3.2477341389728096,
+        "n": 20
+      },
+      "es_419": {
+        "wer": 9.090909090909092,
+        "cer": 2.660458929165281,
+        "n": 20
+      },
+      "fr_fr": {
+        "wer": 18.73589164785553,
+        "cer": 5.7532172596517785,
+        "n": 20
+      },
+      "hi_in": {
+        "wer": 12.664277180406213,
+        "cer": 5.572441742654509,
+        "n": 20
+      },
+      "cmn_hans_cn": {
+        "wer": null,
+        "cer": 21.837708830548927,
+        "n": 20
+      }
+    },
+    "mixed": {
+      "en_us": {
+        "wer": 20.88167053364269,
+        "cer": 5.425448868071819,
+        "n": 20
+      },
+      "tr_tr": {
+        "wer": 22.282608695652176,
+        "cer": 4.120676968359088,
+        "n": 20
+      },
+      "ckb_iq": {
+        "wer": 42.016806722689076,
+        "cer": 8.71369294605809,
+        "n": 20
+      },
+      "de_de": {
+        "wer": 12.745098039215685,
+        "cer": 3.2477341389728096,
+        "n": 20
+      },
+      "es_419": {
+        "wer": 9.090909090909092,
+        "cer": 2.660458929165281,
+        "n": 20
+      },
+      "fr_fr": {
+        "wer": 18.510158013544018,
+        "cer": 5.7532172596517785,
+        "n": 20
+      },
+      "hi_in": {
+        "wer": 12.903225806451612,
+        "cer": 5.623100303951368,
+        "n": 20
+      },
+      "cmn_hans_cn": {
+        "wer": null,
+        "cer": 21.957040572792362,
+        "n": 20
+      }
+    }
+  },
+  "variants": [
+    {
+      "variant": "fp32",
+      "kept_in_fp32": "FP32 engine (reference)",
+      "pinned_layers": null,
+      "transcripts_identical_to_fp32": "160/160",
+      "frame_argmax_agreement_pct": 100.0,
+      "median_max_logit_error": 0.0,
+      "latency_vs_fp32": 1.0
+    },
+    {
+      "variant": "fp16_all",
+      "kept_in_fp32": "FP16, nothing pinned (precision='fp16')",
+      "pinned_layers": 0,
+      "transcripts_identical_to_fp32": "141/160",
+      "frame_argmax_agreement_pct": 99.803,
+      "median_max_logit_error": 2.113,
+      "latency_vs_fp32": 0.191
+    },
+    {
+      "variant": "fp16_keep_norm",
+      "kept_in_fp32": "LayerNormalization layers in FP32",
+      "pinned_layers": 57,
+      "transcripts_identical_to_fp32": "136/160",
+      "frame_argmax_agreement_pct": 99.812,
+      "median_max_logit_error": 1.995,
+      "latency_vs_fp32": 0.194
+    },
+    {
+      "variant": "fp16_keep_softmax",
+      "kept_in_fp32": "softmax layers in FP32",
+      "pinned_layers": 24,
+      "transcripts_identical_to_fp32": "143/160",
+      "frame_argmax_agreement_pct": 99.813,
+      "median_max_logit_error": 2.005,
+      "latency_vs_fp32": 0.191
+    },
+    {
+      "variant": "fp16_keep_feature_extractor",
+      "kept_in_fp32": "7-block convolutional feature extractor in FP32",
+      "pinned_layers": 79,
+      "transcripts_identical_to_fp32": "144/160",
+      "frame_argmax_agreement_pct": 99.861,
+      "median_max_logit_error": 1.087,
+      "latency_vs_fp32": 0.273
+    },
+    {
+      "variant": "fp16_keep_pos_encoder",
+      "kept_in_fp32": "positional conv encoder in FP32",
+      "pinned_layers": 10,
+      "transcripts_identical_to_fp32": "143/160",
+      "frame_argmax_agreement_pct": 99.843,
+      "median_max_logit_error": 1.771,
+      "latency_vs_fp32": 0.307
+    },
+    {
+      "variant": "fp16_keep_final_proj",
+      "kept_in_fp32": "final layer norm + CTC projection in FP32",
+      "pinned_layers": 3,
+      "transcripts_identical_to_fp32": "143/160",
+      "frame_argmax_agreement_pct": 99.813,
+      "median_max_logit_error": 2.112,
+      "latency_vs_fp32": 0.205
+    },
+    {
+      "variant": "fp16_keep_norm_softmax_fe_pos",
+      "kept_in_fp32": "normalization + softmax + feature extractor + positional encoder in FP32",
+      "pinned_layers": 163,
+      "transcripts_identical_to_fp32": "150/160",
+      "frame_argmax_agreement_pct": 99.916,
+      "median_max_logit_error": 0.496,
+      "latency_vs_fp32": 0.384
+    },
+    {
+      "variant": "fp16_keep_fe_pos",
+      "kept_in_fp32": "feature extractor + whole positional encoder in FP32",
+      "pinned_layers": 89,
+      "transcripts_identical_to_fp32": "151/160",
+      "frame_argmax_agreement_pct": 99.913,
+      "median_max_logit_error": 0.539,
+      "latency_vs_fp32": 0.385
+    },
+    {
+      "variant": "fp16_keep_blocks_0_5",
+      "kept_in_fp32": "encoder blocks 0-5 in FP32",
+      "pinned_layers": 240,
+      "transcripts_identical_to_fp32": "139/160",
+      "frame_argmax_agreement_pct": 99.812,
+      "median_max_logit_error": 2.035,
+      "latency_vs_fp32": 0.34
+    },
+    {
+      "variant": "fp16_keep_blocks_6_11",
+      "kept_in_fp32": "encoder blocks 6-11 in FP32",
+      "pinned_layers": 240,
+      "transcripts_identical_to_fp32": "142/160",
+      "frame_argmax_agreement_pct": 99.823,
+      "median_max_logit_error": 2.054,
+      "latency_vs_fp32": 0.338
+    },
+    {
+      "variant": "fp16_keep_blocks_12_17",
+      "kept_in_fp32": "encoder blocks 12-17 in FP32",
+      "pinned_layers": 240,
+      "transcripts_identical_to_fp32": "140/160",
+      "frame_argmax_agreement_pct": 99.803,
+      "median_max_logit_error": 2.13,
+      "latency_vs_fp32": 0.339
+    },
+    {
+      "variant": "fp16_keep_blocks_18_23",
+      "kept_in_fp32": "encoder blocks 18-23 in FP32",
+      "pinned_layers": 240,
+      "transcripts_identical_to_fp32": "140/160",
+      "frame_argmax_agreement_pct": 99.796,
+      "median_max_logit_error": 2.109,
+      "latency_vs_fp32": 0.338
+    },
+    {
+      "variant": "fp16_keep_residual_adds",
+      "kept_in_fp32": "residual additions in FP32",
+      "pinned_layers": 48,
+      "transcripts_identical_to_fp32": "141/160",
+      "frame_argmax_agreement_pct": 99.823,
+      "median_max_logit_error": 2.101,
+      "latency_vs_fp32": 0.193
+    },
+    {
+      "variant": "fp16_keep_attn_scores",
+      "kept_in_fp32": "attention score matmuls + softmax in FP32",
+      "pinned_layers": 72,
+      "transcripts_identical_to_fp32": "136/160",
+      "frame_argmax_agreement_pct": 99.814,
+      "median_max_logit_error": 2.0,
+      "latency_vs_fp32": 0.369
+    },
+    {
+      "variant": "fp16_keep_fe0",
+      "kept_in_fp32": "feature-extractor block 0 only in FP32",
+      "pinned_layers": 11,
+      "transcripts_identical_to_fp32": "140/160",
+      "frame_argmax_agreement_pct": 99.816,
+      "median_max_logit_error": 2.107,
+      "latency_vs_fp32": 0.196
+    },
+    {
+      "variant": "fp16_keep_fe012",
+      "kept_in_fp32": "feature-extractor blocks 0-2 in FP32",
+      "pinned_layers": 33,
+      "transcripts_identical_to_fp32": "142/160",
+      "frame_argmax_agreement_pct": 99.812,
+      "median_max_logit_error": 1.981,
+      "latency_vs_fp32": 0.247
+    },
+    {
+      "variant": "fp16_keep_pos_conv",
+      "kept_in_fp32": "positional Conv only in FP32",
+      "pinned_layers": 1,
+      "transcripts_identical_to_fp32": "143/160",
+      "frame_argmax_agreement_pct": 99.834,
+      "median_max_logit_error": 1.764,
+      "latency_vs_fp32": 0.309
+    },
+    {
+      "variant": "fp16_keep_fe0_pos",
+      "kept_in_fp32": "feature-extractor block 0 + positional encoder in FP32",
+      "pinned_layers": 21,
+      "transcripts_identical_to_fp32": "140/160",
+      "frame_argmax_agreement_pct": 99.82,
+      "median_max_logit_error": 1.828,
+      "latency_vs_fp32": 0.312
+    },
+    {
+      "variant": "fp16_keep_fe012_pos",
+      "kept_in_fp32": "feature-extractor blocks 0-2 + positional encoder in FP32",
+      "pinned_layers": 43,
+      "transcripts_identical_to_fp32": "150/160",
+      "frame_argmax_agreement_pct": 99.855,
+      "median_max_logit_error": 1.653,
+      "latency_vs_fp32": 0.367
+    },
+    {
+      "variant": "fp16_keep_fe_pos_conv",
+      "kept_in_fp32": "feature extractor + positional Conv in FP32 (precision='mixed')",
+      "pinned_layers": 80,
+      "transcripts_identical_to_fp32": "150/160",
+      "frame_argmax_agreement_pct": 99.911,
+      "median_max_logit_error": 0.484,
+      "latency_vs_fp32": 0.384
+    }
+  ]
+}
