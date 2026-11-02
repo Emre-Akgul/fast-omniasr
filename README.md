@@ -10,7 +10,9 @@ A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/f
 |---|---:|---:|
 | ONNX Runtime CUDA (FP32) | 358 ms | reference |
 | TensorRT FP32 | 374 ms | 40/40 |
-| TensorRT FP16 | **76 ms** | 34/40 |
+| TensorRT FP16 | **76 ms** | 34/40¹ |
+
+¹ An earlier TensorRT and profile; on the current stack FP16 keeps 141/160 transcripts identical to FP32 on the larger FLEURS sample below.
 
 **TensorRT FP16 trades a few near-tie token flips for speed.** On the 160-utterance, 8-language FLEURS sample with the current TensorRT, FP16 keeps 141/160 transcripts identical to FP32 and every language's WER within 0.5 points; `precision="mixed"` keeps the precision-sensitive convolutional front end in FP32 (150/160 identical, about twice the FP16 latency, still ~2.6× faster than FP32). The latency table above predates these measurements. See [Performance and accuracy](#performance-and-accuracy).
 

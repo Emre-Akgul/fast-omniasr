@@ -225,7 +225,8 @@ def transcriber(model: str, repo: str, revision: str, cache_dir: Path | None,
             import warnings
 
             with warnings.catch_warnings():
-                warnings.simplefilter("ignore")  # the fp16 caveat is what is being measured
+                # The fp16 caveat is what is being measured; keep every other warning.
+                warnings.filterwarnings("ignore", message="TensorRT FP16")
                 asr = OmniASR.from_pretrained(repo, revision=revision, backend="tensorrt",
                                               precision=precision, cache_dir=cache_dir)
         else:

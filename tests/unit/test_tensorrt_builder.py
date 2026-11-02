@@ -159,9 +159,17 @@ def test_mixed_pins_exactly_the_convolutional_front_end(fake_trt, tmp_path):
 
 def test_mixed_refuses_graphs_without_the_front_end(fake_trt, tmp_path):
     fake_trt["layers"] = [Layer("/model/encoder/layers.0/self_attn/MatMul")]
-    with pytest.raises(ValueError, match="precision='mixed' found none"):
+    with pytest.raises(ValueError, match="could not find the OmniASR front-end"):
         _build(tmp_path, "mixed")
     assert not (tmp_path / "out.engine").exists()
+
+
+def test_mixed_refuses_a_partially_matching_graph(fake_trt, tmp_path):
+    # e.g. a re-export renamed the positional conv: don't silently pin only half.
+    fake_trt["layers"] = [Layer("/model/feature_extractor/layers/layers.0/conv/Conv"),
+                          Layer("/model/pos_encoder/conv/conv/Conv")]
+    with pytest.raises(ValueError, match="pos_encoder/conv/Conv"):
+        _build(tmp_path, "mixed")
 
 
 def test_unknown_precision_is_rejected(tmp_path):

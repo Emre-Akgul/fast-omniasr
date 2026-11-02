@@ -31,19 +31,22 @@ _metrics = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_metrics)
 
 
-@pytest.fixture(scope="module", params=["fp32", "fp16", "mixed"])
-def engine(request):
+def _load(precision):
     pytest.importorskip("tensorrt")
     from fast_omniasr import OmniASR
 
     pinned = MANIFEST["models"]["ctc"]
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        model = OmniASR.from_pretrained(
+        warnings.filterwarnings("ignore", message="TensorRT FP16")
+        return OmniASR.from_pretrained(
             pinned["repo"], revision=pinned["revision"], backend="tensorrt",
-            precision=request.param, cache_dir=os.environ.get("OMNIASR_CACHE_DIR") or None,
+            precision=precision, cache_dir=os.environ.get("OMNIASR_CACHE_DIR") or None,
         )
-    with model:
+
+
+@pytest.fixture(scope="module", params=["fp32", "fp16", "mixed"])
+def engine(request):
+    with _load(request.param) as model:
         yield request.param, model
 
 
@@ -56,3 +59,15 @@ def test_engine_transcribes_fleurs_clip(engine, clip):
     cer = _metrics.error_rates([clip["reference"]], [first.text])["cer"]
     # The same ceilings as the CPU FP32 run: every precision must stay within them.
     assert cer <= clip["max_cer"]["ctc"], f"{precision} CER {cer:.1f}: {first.text!r}"
+
+
+def test_mixed_matches_fp32_on_the_fixtures():
+    """The point of 'mixed': on these clips it decodes exactly like FP32 (pure FP16 need
+    not), so a recipe regression to FP16-level behaviour shows up here."""
+    texts = {}
+    for precision in ("fp32", "mixed"):
+        with _load(precision) as model:
+            texts[precision] = [
+                model.transcribe_numpy(*sf.read(FIXTURES / c["file"], dtype="float32")).token_ids
+                for c in MANIFEST["clips"]]
+    assert texts["mixed"] == texts["fp32"]

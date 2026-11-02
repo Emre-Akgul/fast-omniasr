@@ -503,3 +503,14 @@ def test_mixed_precision_has_its_own_cache_entry(counting_builder, onnx_a, tmp_p
     mixed = get_or_build_engine(onnx_a, precision="mixed", cache_dir=cache_dir)
     assert fp16 != mixed and counting_builder == ["fp16", "mixed"]
     assert get_or_build_engine(onnx_a, precision="mixed", cache_dir=cache_dir) == mixed
+    metadata = json.loads((mixed.parent / "metadata.json").read_text())
+    assert metadata["mixed_recipe"]["fp32_names"] == ["/model/pos_encoder/conv/Conv"]
+
+
+def test_changing_the_mixed_recipe_rebuilds(counting_builder, onnx_a, tmp_path, monkeypatch):
+    cache_dir = tmp_path / "cache"
+    first = get_or_build_engine(onnx_a, precision="mixed", cache_dir=cache_dir)
+    monkeypatch.setattr(tensorrt_cache, "MIXED_RECIPE",
+                        {"fp32_prefixes": ["/model/feature_extractor/"], "fp32_names": []})
+    assert get_or_build_engine(onnx_a, precision="mixed", cache_dir=cache_dir) != first
+    assert counting_builder == ["mixed", "mixed"]
