@@ -2,10 +2,13 @@ from pathlib import Path
 
 import numpy as np
 
+from .._memory import release_freed_memory
+
 
 class ONNXBackend:
     def __init__(self, path: str | Path, device: str = "cpu", threads: int = 4,
                  precision: str = "fp32"):
+        self.closed = False
         if device not in {"cpu", "cuda"}:
             raise ValueError("device must be 'cpu' or 'cuda'")
         from ..precision import check_precision
@@ -40,8 +43,25 @@ class ONNXBackend:
         if len(outputs) != 1 or outputs[0].name != "logits":
             raise ValueError("Expected one output named logits")
 
+    def close(self) -> None:
+        """Release the ONNX Runtime session (and its CPU/GPU memory arena). Idempotent;
+        later infer() calls raise RuntimeError."""
+        self.closed = True
+        if getattr(self, "session", None) is not None:
+            self.session = None
+            release_freed_memory()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
+
     def infer(self, waveform: np.ndarray) -> np.ndarray:
+        session = getattr(self, "session", None)
+        if self.closed or session is None:
+            raise RuntimeError("ONNXBackend is closed")
         waveform = np.asarray(waveform)
         if waveform.dtype != np.float32 or waveform.ndim != 2 or waveform.shape[0] != 1:
             raise ValueError("Expected normalized float32 waveform [1, samples]")
-        return self.session.run(["logits"], {"audio": np.ascontiguousarray(waveform)})[0]
+        return session.run(["logits"], {"audio": np.ascontiguousarray(waveform)})[0]

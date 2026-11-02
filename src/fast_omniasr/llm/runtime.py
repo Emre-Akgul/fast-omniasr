@@ -41,6 +41,7 @@ class OmniASRLLM:
         low_memory: bool = False,
         precision: str = "fp32",
     ):
+        self.closed = False
         if backend not in {"torch", "onnx"}:
             raise ValueError("backend must be torch or onnx")
         if backend == "torch" and precision != "fp32":
@@ -152,6 +153,24 @@ class OmniASRLLM:
             raise ValueError(f"Unknown language code {lang!r}; expected e.g. 'eng_Latn'")
         return np.array(self._lang_embeddings[index], dtype=np.float32)
 
+    def close(self) -> None:
+        """Release the model: the ONNX Runtime sessions (ONNX backend) or the TorchScript
+        modules (torch baseline). Idempotent; `transcribe()` afterwards raises
+        RuntimeError. Also called on leaving a `with OmniASRLLM(...) as model:` block."""
+        if getattr(self, "closed", False):
+            return
+        self.closed = True
+        onnx = getattr(self, "onnx", None)
+        if onnx is not None:
+            onnx.close()
+        self.encoder = self.decoder = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
+
     def transcribe(
         self,
         audio: str | Path | np.ndarray,
@@ -162,6 +181,8 @@ class OmniASRLLM:
     ) -> LLMTranscription:
         """Greedy-decode one clip. `lang` conditions on an upstream language code
         (e.g. "eng_Latn"); without it the model's learned no-language row is used."""
+        if getattr(self, "closed", False):
+            raise RuntimeError("This OmniASRLLM model is closed")
         if (
             not isinstance(max_new_tokens, int)
             or isinstance(max_new_tokens, bool)
