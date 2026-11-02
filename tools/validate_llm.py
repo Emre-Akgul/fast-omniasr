@@ -50,7 +50,8 @@ def main():
         cached=args.cached,
         backend=args.backend,
         device=args.device,
-        threads=threads,
+        # The TorchScript baseline follows torch.set_num_threads() (set above).
+        **({"threads": threads} if args.backend == "onnx" else {}),
     )
     results = []
     for index, expected in enumerate(references):

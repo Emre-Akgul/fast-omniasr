@@ -102,7 +102,7 @@ Audio must be mono, 16 kHz, at least 400 samples.
 model = OmniASR("omniasr_fp16.engine", "omniASR_tokenizer_written_v2.model", backend="tensorrt")
 ```
 
-`backend` defaults to `"onnx"` and is never inferred from the file extension. The TensorRT backend binds reusable device buffers sized to the engine's profile maximum and runs inference with `set_tensor_address` + `execute_async_v3` on its own CUDA stream via `cuda-python` — buffers are allocated once and reused across calls; a length outside the engine's `[min, max]` profile raises `ValueError` before touching the GPU. `device`/`threads` are accepted but unused for this backend.
+`backend` defaults to `"onnx"` and is never inferred from the file extension. The TensorRT backend binds reusable device buffers sized to the engine's profile maximum and runs inference with `set_tensor_address` + `execute_async_v3` on its own CUDA stream via `cuda-python` — buffers are allocated once and reused across calls; a length outside the engine's `[min, max]` profile raises `ValueError` before touching the GPU. It runs on the current CUDA device (select it with `CUDA_VISIBLE_DEVICES`), so `device` must be omitted or `"cuda"` and `threads` must be omitted; options a backend would ignore raise `ValueError` instead. `device` (`"cpu"`/`"cuda"`) and `threads` (a positive integer, default 4) are validated the same way for the ONNX CTC and LLM runtimes; the TorchScript LLM baseline rejects `threads` and `low_memory`.
 </details>
 
 ## Export and engine building

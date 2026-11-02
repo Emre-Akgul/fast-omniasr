@@ -10,9 +10,11 @@ import onnxruntime as ort
 from .._memory import release_freed_memory
 
 
-def options(threads=4):
+def options(threads=None):
+    from ..options import resolve_threads
+
     result = ort.SessionOptions()
-    result.intra_op_num_threads = threads
+    result.intra_op_num_threads = resolve_threads(threads)
     # Decoder cache shapes grow every call. A shape-specific memory pattern can
     # retain stale CUDA allocations until this 5 GiB model exhausts a 6 GiB GPU.
     result.enable_mem_pattern = False
@@ -25,8 +27,9 @@ def providers(device, arena="kSameAsRequested"):
     """`arena` is the CUDA arena extend strategy. kSameAsRequested suits phased, shrinking
     sessions; resident sessions use kNextPowerOfTwo so freed cache chunks coalesce and are
     reused as the cache grows instead of stranding one exact-size chunk per length."""
-    if device not in {"cpu", "cuda"}:
-        raise ValueError("device must be cpu or cuda")
+    from ..options import check_device
+
+    check_device(device)
     name = "CUDAExecutionProvider" if device == "cuda" else "CPUExecutionProvider"
     if device == "cuda":
         ort.preload_dlls(directory="")
@@ -130,7 +133,12 @@ class ONNXLLMBackend:
     """
 
     def __init__(self, directory, device="cpu", threads=4, low_memory=False, precision="fp32"):
+        from ..options import check_device, check_flag, resolve_threads
         from ..precision import check_precision
+
+        check_device(device)
+        threads = resolve_threads(threads)
+        check_flag("low_memory", low_memory)
 
         self.closed = False
         self.directory = Path(directory)

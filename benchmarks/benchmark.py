@@ -11,13 +11,15 @@ parser.add_argument("audio")
 parser.add_argument("--model", required=True)
 parser.add_argument("--tokenizer", required=True)
 parser.add_argument("--backend", choices=["onnx", "tensorrt"], default="onnx")
-parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+parser.add_argument("--device", choices=["cpu", "cuda"],
+                    help="ONNX only (default cpu); TensorRT uses the current CUDA device")
 parser.add_argument("--runs", type=int, default=10)
 args = parser.parse_args()
 if args.runs < 1:
     parser.error("--runs must be positive")
 start = time.perf_counter()
-model = OmniASR(args.model, args.tokenizer, backend=args.backend, device=args.device)
+model = OmniASR(args.model, args.tokenizer, backend=args.backend,
+                **({"device": args.device} if args.device else {}))
 load = time.perf_counter() - start
 start = time.perf_counter()
 result = model.transcribe(args.audio)

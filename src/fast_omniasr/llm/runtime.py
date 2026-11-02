@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from ..audio import load_audio, prepare_audio
+from ..options import check_device, check_flag, resolve_threads
 from ..tokenizer import Tokenizer
 from .models import LLM_MODEL_CARDS
 
@@ -47,17 +48,32 @@ class OmniASRLLM:
         device: str = "cpu",
         cached: bool = False,
         backend: str = "torch",
-        threads: int = 4,
+        threads: int | None = None,
         low_memory: bool = False,
         precision: str = "fp32",
     ):
+        """`threads` (default 4) and `low_memory` apply to backend="onnx"; the TorchScript
+        baseline uses PyTorch's process-wide thread setting and loads one copy, so it
+        rejects both rather than silently ignoring them. `cached` selects the TorchScript
+        baseline's decoder; the ONNX backend always decodes with an explicit KV cache."""
         self.closed = False
         self._lock = threading.Lock()
         self._language_lock = threading.Lock()
         if backend not in {"torch", "onnx"}:
             raise ValueError("backend must be torch or onnx")
-        if backend == "torch" and precision != "fp32":
-            raise ValueError("The TorchScript baseline supports precision='fp32' only")
+        check_device(device)
+        check_flag("low_memory", low_memory)
+        check_flag("cached", cached)
+        if backend == "onnx":
+            threads = resolve_threads(threads)
+        else:
+            if precision != "fp32":
+                raise ValueError("The TorchScript baseline supports precision='fp32' only")
+            if threads is not None:
+                raise ValueError("threads only applies to backend='onnx'; the TorchScript "
+                                 "baseline follows torch.set_num_threads()")
+            if low_memory:
+                raise ValueError("low_memory only applies to backend='onnx'")
         self.backend = backend
 
         directory = Path(directory)
@@ -95,7 +111,7 @@ class OmniASRLLM:
         repo_id: str,
         *,
         device: str = "cpu",
-        threads: int = 4,
+        threads: int | None = None,
         low_memory: bool = False,
         precision: str = "fp32",
         revision: str | None = None,
@@ -116,8 +132,9 @@ class OmniASRLLM:
         precision, about half the size) plus the shared tokenizer and language tables.
         bf16 needs device="cuda" and an Ampere or newer GPU.
         """
-        if device not in {"cpu", "cuda"}:
-            raise ValueError("device must be cpu or cuda")
+        check_device(device)
+        threads = resolve_threads(threads)
+        check_flag("low_memory", low_memory)
         from ..hub import download_verified
         from ..precision import asset_selector, check_precision
 
