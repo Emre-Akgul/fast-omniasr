@@ -168,3 +168,183 @@ def test_containment_check_rejects_escaping_layout(monkeypatch, tmp_path):
     monkeypatch.setattr(hub, "_path_component", lambda name: name)
     with pytest.raises(ValueError, match="outside"):
         hub._bundle_dir(tmp_path / "cache", "owner/repo", "../../../escape")
+
+
+# --- one immutable commit for every file of a bundle (issue #12) ---
+
+SHA_A, SHA_B = "a" * 40, "b" * 40
+
+
+class MovingHub:
+    """A fake Hub whose `main` moves from commit A to commit B after the first file is
+    served. Each commit has its own config.json and tokenizer with matching sha256."""
+
+    def __init__(self, resolvable=True, moves=True):
+        self.resolvable = resolvable
+        self.moves = moves
+        self.head = SHA_A
+        self.requests = []  # (filename, revision) as passed to hf_hub_download
+        self.resolutions = 0
+        self.commits = {}
+        for sha, tag in ((SHA_A, b"tokenizer A"), (SHA_B, b"tokenizer B")):
+            config = {"format": 1, "files": {"tokenizer.model": {
+                "sha256": hashlib.sha256(tag).hexdigest(), "size": len(tag)}}}
+            self.commits[sha] = {"config.json": json.dumps(config).encode(),
+                                 "tokenizer.model": tag}
+
+    def module(self):
+        hub_self = self
+
+        class HfApi:
+            def model_info(self, repo_id, revision=None):
+                hub_self.resolutions += 1
+                if not hub_self.resolvable:
+                    raise ConnectionError("offline")
+                sha = revision if revision and len(revision) == 40 else hub_self.head
+                return types.SimpleNamespace(sha=sha)
+
+        def hf_hub_download(repo_id, filename, revision=None, local_dir=None):
+            hub_self.requests.append((filename, revision))
+            sha = revision if revision in hub_self.commits else hub_self.head
+            target = local_dir / filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(hub_self.commits[sha][filename])
+            if hub_self.moves:
+                hub_self.head = SHA_B  # the branch moves while we're downloading
+            return str(target)
+
+        return types.SimpleNamespace(HfApi=HfApi, hf_hub_download=hf_hub_download)
+
+
+def _install(monkeypatch, fake):
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake.module())
+
+
+def test_moving_branch_still_yields_one_consistent_commit(monkeypatch, tmp_path):
+    fake = MovingHub()
+    _install(monkeypatch, fake)
+    _, paths = hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    assert {revision for _, revision in fake.requests} == {SHA_A}
+    assert paths["tokenizer.model"].read_bytes() == b"tokenizer A"
+    record = json.loads((paths["tokenizer.model"].parent / hub.SNAPSHOT_METADATA).read_text())
+    assert record == {"repo_id": "owner/repo", "revision": "main", "commit": SHA_A}
+
+
+def test_unpinned_download_would_mix_commits(monkeypatch, tmp_path):
+    # Documents the bug: fetching by branch name lets config and files diverge.
+    fake = MovingHub(resolvable=False)
+    _install(monkeypatch, fake)
+    with pytest.raises(RuntimeError, match="checksum mismatch"), \
+            pytest.warns(UserWarning, match="without pinning"):
+        hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    assert {revision for _, revision in fake.requests} == {"main"}
+
+
+def test_offline_reuses_the_recorded_commit(monkeypatch, tmp_path):
+    online = MovingHub()
+    _install(monkeypatch, online)
+    hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    offline = MovingHub(resolvable=False)
+    offline.head = SHA_B  # the branch has moved since
+    _install(monkeypatch, offline)
+    with pytest.warns(UserWarning, match=r"ConnectionError.*previously downloaded commit aaaa"):
+        _, paths = hub.download_verified("owner/repo", {"tokenizer.model"},
+                                         cache_dir=tmp_path)
+    assert {revision for _, revision in offline.requests} == {SHA_A}
+    assert paths["tokenizer.model"].read_bytes() == b"tokenizer A"
+
+
+def test_explicit_commit_is_not_resolved_again(monkeypatch, tmp_path):
+    fake = MovingHub()
+    _install(monkeypatch, fake)
+    _, paths = hub.download_verified("owner/repo", {"tokenizer.model"}, revision=SHA_B,
+                                     cache_dir=tmp_path)
+    assert fake.resolutions == 0
+    assert {revision for _, revision in fake.requests} == {SHA_B}
+    assert paths["tokenizer.model"].read_bytes() == b"tokenizer B"
+
+
+def test_record_for_another_revision_is_ignored(monkeypatch, tmp_path):
+    local_dir = hub._bundle_dir(tmp_path, "owner/repo", None)
+    hub._write_snapshot(local_dir, {"repo_id": "owner/repo", "revision": "v2", "commit": SHA_B})
+    fake = MovingHub(resolvable=False, moves=False)
+    _install(monkeypatch, fake)
+    with pytest.warns(UserWarning, match="without pinning"):
+        hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    assert {revision for _, revision in fake.requests} == {"main"}
+
+
+@pytest.mark.parametrize("bad_sha", [None, "", "main", "A" * 40, "a" * 39])
+def test_unusable_resolved_sha_falls_back(monkeypatch, bad_sha):
+    fake = types.SimpleNamespace(HfApi=lambda: types.SimpleNamespace(
+        model_info=lambda repo_id, revision=None: types.SimpleNamespace(sha=bad_sha)))
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake)
+    commit, reason = hub._resolve_commit("owner/repo", "main")
+    assert commit is None and "unexpected commit" in reason
+
+
+def test_default_revision_resolves_main_not_the_default_branch(monkeypatch):
+    asked = []
+    fake = types.SimpleNamespace(HfApi=lambda: types.SimpleNamespace(
+        model_info=lambda repo_id, revision=None: asked.append(revision)
+        or types.SimpleNamespace(sha=SHA_A)))
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake)
+    assert hub._resolve_commit("owner/repo", None) == (SHA_A, None)
+    assert asked == ["main"]
+
+
+def test_api_errors_are_reported_not_hidden(monkeypatch):
+    def broken():
+        raise TypeError("future API change")
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(HfApi=broken))
+    commit, reason = hub._resolve_commit("owner/repo", "main")
+    assert commit is None and reason == "TypeError: future API change"
+
+
+def test_concurrent_snapshot_writes_do_not_collide(tmp_path):
+    import threading
+
+    errors = []
+
+    def writer(i):
+        try:
+            for _ in range(50):
+                hub._write_snapshot(tmp_path, {"repo_id": "o/r", "revision": "main",
+                                               "commit": SHA_A if i % 2 else SHA_B})
+        except Exception as exc:  # noqa: BLE001 -- surfaced below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    assert hub._read_snapshot(tmp_path)["commit"] in (SHA_A, SHA_B)
+    assert [p.name for p in tmp_path.iterdir()] == [hub.SNAPSHOT_METADATA]
+
+
+def test_explicit_offline_mode_reuses_record_without_warning(monkeypatch, tmp_path):
+    import warnings as warnings_module
+
+    online = MovingHub()
+    _install(monkeypatch, online)
+    hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    offline = MovingHub()
+    module = offline.module()
+
+    class OfflineModeIsEnabled(ConnectionError):
+        pass
+
+    def offline_api():
+        def model_info(repo_id, revision=None):
+            raise OfflineModeIsEnabled("HF_HUB_OFFLINE=1")
+        return types.SimpleNamespace(model_info=model_info)
+
+    module.HfApi = offline_api
+    monkeypatch.setitem(sys.modules, "huggingface_hub", module)
+    with warnings_module.catch_warnings():
+        warnings_module.simplefilter("error")
+        hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    assert {revision for _, revision in offline.requests} == {SHA_A}
