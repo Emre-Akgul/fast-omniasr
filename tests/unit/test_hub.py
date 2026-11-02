@@ -168,3 +168,111 @@ def test_containment_check_rejects_escaping_layout(monkeypatch, tmp_path):
     monkeypatch.setattr(hub, "_path_component", lambda name: name)
     with pytest.raises(ValueError, match="outside"):
         hub._bundle_dir(tmp_path / "cache", "owner/repo", "../../../escape")
+
+
+# --- one immutable commit for every file of a bundle (issue #12) ---
+
+SHA_A, SHA_B = "a" * 40, "b" * 40
+
+
+class MovingHub:
+    """A fake Hub whose `main` moves from commit A to commit B after the first file is
+    served. Each commit has its own config.json and tokenizer with matching sha256."""
+
+    def __init__(self, resolvable=True, moves=True):
+        self.resolvable = resolvable
+        self.moves = moves
+        self.head = SHA_A
+        self.requests = []  # (filename, revision) as passed to hf_hub_download
+        self.resolutions = 0
+        self.commits = {}
+        for sha, tag in ((SHA_A, b"tokenizer A"), (SHA_B, b"tokenizer B")):
+            config = {"format": 1, "files": {"tokenizer.model": {
+                "sha256": hashlib.sha256(tag).hexdigest(), "size": len(tag)}}}
+            self.commits[sha] = {"config.json": json.dumps(config).encode(),
+                                 "tokenizer.model": tag}
+
+    def module(self):
+        hub_self = self
+
+        class HfApi:
+            def model_info(self, repo_id, revision=None):
+                hub_self.resolutions += 1
+                if not hub_self.resolvable:
+                    raise ConnectionError("offline")
+                sha = revision if revision and len(revision) == 40 else hub_self.head
+                return types.SimpleNamespace(sha=sha)
+
+        def hf_hub_download(repo_id, filename, revision=None, local_dir=None):
+            hub_self.requests.append((filename, revision))
+            sha = revision if revision in hub_self.commits else hub_self.head
+            target = local_dir / filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(hub_self.commits[sha][filename])
+            if hub_self.moves:
+                hub_self.head = SHA_B  # the branch moves while we're downloading
+            return str(target)
+
+        return types.SimpleNamespace(HfApi=HfApi, hf_hub_download=hf_hub_download)
+
+
+def _install(monkeypatch, fake):
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake.module())
+
+
+def test_moving_branch_still_yields_one_consistent_commit(monkeypatch, tmp_path):
+    fake = MovingHub()
+    _install(monkeypatch, fake)
+    _, paths = hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    assert {revision for _, revision in fake.requests} == {SHA_A}
+    assert paths["tokenizer.model"].read_bytes() == b"tokenizer A"
+    record = json.loads((paths["tokenizer.model"].parent / hub.SNAPSHOT_METADATA).read_text())
+    assert record == {"repo_id": "owner/repo", "revision": "main", "commit": SHA_A}
+
+
+def test_unpinned_download_would_mix_commits(monkeypatch, tmp_path):
+    # Documents the bug: fetching by branch name lets config and files diverge.
+    fake = MovingHub(resolvable=False)
+    _install(monkeypatch, fake)
+    with pytest.raises(RuntimeError, match="checksum mismatch"):
+        hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    assert {revision for _, revision in fake.requests} == {None}
+
+
+def test_offline_reuses_the_recorded_commit(monkeypatch, tmp_path):
+    online = MovingHub()
+    _install(monkeypatch, online)
+    hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    offline = MovingHub(resolvable=False)
+    offline.head = SHA_B  # the branch has moved since
+    _install(monkeypatch, offline)
+    _, paths = hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    assert {revision for _, revision in offline.requests} == {SHA_A}
+    assert paths["tokenizer.model"].read_bytes() == b"tokenizer A"
+
+
+def test_explicit_commit_is_not_resolved_again(monkeypatch, tmp_path):
+    fake = MovingHub()
+    _install(monkeypatch, fake)
+    _, paths = hub.download_verified("owner/repo", {"tokenizer.model"}, revision=SHA_B,
+                                     cache_dir=tmp_path)
+    assert fake.resolutions == 0
+    assert {revision for _, revision in fake.requests} == {SHA_B}
+    assert paths["tokenizer.model"].read_bytes() == b"tokenizer B"
+
+
+def test_record_for_another_revision_is_ignored(monkeypatch, tmp_path):
+    local_dir = hub._bundle_dir(tmp_path, "owner/repo", None)
+    hub._write_snapshot(local_dir, {"repo_id": "owner/repo", "revision": "v2", "commit": SHA_B})
+    fake = MovingHub(resolvable=False, moves=False)
+    _install(monkeypatch, fake)
+    hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    assert {revision for _, revision in fake.requests} == {None}
+
+
+@pytest.mark.parametrize("bad_sha", [None, "", "main", "A" * 40, "a" * 39])
+def test_unusable_resolved_sha_falls_back(monkeypatch, bad_sha):
+    fake = types.SimpleNamespace(HfApi=lambda: types.SimpleNamespace(
+        model_info=lambda repo_id, revision=None: types.SimpleNamespace(sha=bad_sha)))
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake)
+    assert hub._resolve_commit("owner/repo", "main") is None
