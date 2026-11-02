@@ -42,7 +42,7 @@ model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="o
 print(model.transcribe("speech.wav").text)
 ```
 
-`from_pretrained` downloads `model.onnx`/`tokenizer.model` via `huggingface_hub` (requires the `hub` extra), verifies each against the sha256 in the repo's `config.json`, and stores them as regular files under `~/.cache/fast-omniasr/hub` (or `cache_dir`) — later calls (even fully offline, e.g. `HF_HUB_OFFLINE=1`) reuse them. Regular files are required because ONNX Runtime 1.31+ rejects external tensor data reached through the Hugging Face cache's symlinks.
+`from_pretrained` downloads `model.onnx`/`tokenizer.model` via `huggingface_hub` (requires the `hub` extra), verifies each against the sha256 in the repo's `config.json`, and stores them as regular files under `~/.cache/fast-omniasr/hub` (or `cache_dir`) — later calls (even fully offline, e.g. `HF_HUB_OFFLINE=1`) reuse them. Regular files are required because ONNX Runtime 1.31+ rejects external tensor data reached through the Hugging Face cache's symlinks. A branch or tag is resolved to one commit for the whole download, and bundles are staged and published atomically under a cross-process lock: concurrent processes download once, and an interrupted or failed download leaves the previously published bundle intact.
 
 ### Precision (fp32, fp16, bf16)
 
