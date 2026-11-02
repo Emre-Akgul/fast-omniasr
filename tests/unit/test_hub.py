@@ -425,7 +425,7 @@ def _bundle(tmp_path):
 
 def _leftovers(tmp_path):
     return sorted(p.name for p in (tmp_path / "owner--repo").iterdir()
-                  if p.name.startswith((".staging-", ".old-")))
+                  if p.name.startswith((".staging~", ".old~")))
 
 
 def test_published_bundle_is_reused_without_downloads(monkeypatch, tmp_path):
@@ -504,8 +504,8 @@ def test_interrupted_publish_is_recovered(monkeypatch, tmp_path):
     _load(tmp_path)
     bundle = _bundle(tmp_path)
     # Simulate a crash between the two renames of a publish, plus a dead staging dir.
-    os.rename(bundle, bundle.parent / ".old-main-deadbeef")
-    (bundle.parent / ".staging-main-cafebabe").mkdir()
+    os.rename(bundle, bundle.parent / f".old~main~{'d' * 32}")
+    (bundle.parent / f".staging~main~{'c' * 32}").mkdir()
     fake.requests.clear()
     _, paths = _load(tmp_path)
     assert fake.requests == []  # the previous snapshot was restored, not re-downloaded
@@ -521,3 +521,76 @@ def test_corrupted_published_file_is_repaired(monkeypatch, tmp_path):
     _, paths = _load(tmp_path)
     assert sorted(fake.requests) == ["config.json", "tokenizer.model"]
     assert paths["tokenizer.model"].read_bytes() == b"tok A"
+
+
+def test_prefix_sharing_revisions_never_touch_each_others_sidecars(monkeypatch, tmp_path):
+    _hub(monkeypatch)
+    hub.download_verified("owner/repo", {"tokenizer.model"}, revision=SHA_A, cache_dir=tmp_path)
+    repo_dir = tmp_path / "owner--repo"
+    # Another revision ("v1-rc") has a download in flight and a crash-left backup.
+    other_staging = repo_dir / f".staging~v1-rc~{'a' * 32}"
+    other_backup = repo_dir / f".old~v1-rc~{'b' * 32}"
+    other_staging.mkdir()
+    other_backup.mkdir()
+    (other_backup / "config.json").write_text("{}")
+    v1 = hub._bundle_dir(tmp_path, "owner/repo", "v1")
+    hub._recover(v1)
+    assert other_staging.is_dir() and other_backup.is_dir()
+    assert not v1.exists()
+
+
+def test_failed_second_rename_restores_the_previous_bundle(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    _load(tmp_path)
+    fake.head = SHA_B
+    real_rename = os.rename
+
+    def flaky_rename(src, dst):
+        if Path(src).name.startswith(".staging~"):
+            raise PermissionError("file in use")  # e.g. a scanner holding a handle
+        return real_rename(src, dst)
+
+    monkeypatch.setattr(hub.os, "rename", flaky_rename)
+    with pytest.raises(PermissionError):
+        _load(tmp_path)
+    monkeypatch.setattr(hub.os, "rename", real_rename)
+    bundle = _bundle(tmp_path)
+    assert (bundle / "tokenizer.model").read_bytes() == b"tok A"
+    assert hub._read_snapshot(bundle)["commit"] == SHA_A
+    assert _leftovers(tmp_path) == []
+
+
+def test_recovery_prefers_a_complete_backup(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    _load(tmp_path)
+    bundle = _bundle(tmp_path)
+    complete = bundle.parent / f".old~main~{'1' * 32}"
+    partial = bundle.parent / f".old~main~{'0' * 32}"
+    os.rename(bundle, complete)
+    partial.mkdir()
+    (partial / "tokenizer.model").write_bytes(b"half-deleted")
+    fake.requests.clear()
+    _, paths = _load(tmp_path)
+    assert fake.requests == []  # the complete backup was restored
+    assert paths["tokenizer.model"].read_bytes() == b"tok A"
+    assert _leftovers(tmp_path) == []
+
+
+def test_threads_are_serialized_by_the_process_local_lock(tmp_path):
+    lock_path = tmp_path / ".main.lock"
+    inside, overlaps = [], []
+
+    def worker():
+        with hub._bundle_lock(lock_path):
+            inside.append(1)
+            if len(inside) > 1:
+                overlaps.append(1)
+            time.sleep(0.01)
+            inside.pop()
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert overlaps == []

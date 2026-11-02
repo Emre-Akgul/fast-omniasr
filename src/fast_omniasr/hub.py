@@ -1,12 +1,14 @@
 """Download Hub assets declared by a repo's config.json and verify their sha256."""
 
 import contextlib
+import errno
 import hashlib
 import json
 import os
 import re
 import shutil
 import tempfile
+import threading
 import uuid
 import warnings
 from collections.abc import Callable
@@ -96,11 +98,19 @@ def _write_snapshot(local_dir: Path, record: dict) -> None:
         raise
 
 
+_THREAD_LOCKS: dict[str, threading.Lock] = {}
+_THREAD_LOCKS_GUARD = threading.Lock()
+
+
 @contextlib.contextmanager
 def _bundle_lock(lock_path: Path):
-    """Exclusive cross-process lock (advisory; fcntl on POSIX, msvcrt on Windows)."""
+    """Exclusive lock per bundle across threads and processes (advisory). A process-local
+    lock comes first because on some filesystems (e.g. NFS) the file lock is per process
+    and would not keep this process's own threads apart."""
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+b") as f:
+    with _THREAD_LOCKS_GUARD:
+        thread_lock = _THREAD_LOCKS.setdefault(os.path.abspath(lock_path), threading.Lock())
+    with thread_lock, lock_path.open("a+b") as f:
         try:
             import fcntl
         except ImportError:  # Windows
@@ -112,7 +122,9 @@ def _bundle_lock(lock_path: Path):
                 try:
                     msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
                     break
-                except OSError:  # LK_LOCK gives up after ~10 s; keep waiting
+                except OSError as exc:  # LK_LOCK gives up after ~10 s of contention
+                    if exc.errno not in (errno.EDEADLOCK, errno.EACCES):
+                        raise
                     time.sleep(1)
             try:
                 yield
@@ -177,26 +189,47 @@ def _parse_config(config: dict, required: set[str],
     return sorted(wanted, key=lambda name: files[name].get("size", 0))
 
 
+def _sidecars(local_dir: Path, kind: str) -> list[Path]:
+    """This bundle's own staging/backup directories. "~" never occurs in a bundle
+    directory name (`_path_component` percent-encodes it), so revision "v1" can never
+    match "v1-rc"'s directories."""
+    pattern = re.compile(rf"\.{kind}~{re.escape(local_dir.name)}~[0-9a-f]{{32}}")
+    return [p for p in local_dir.parent.glob(f".{kind}~*") if pattern.fullmatch(p.name)]
+
+
+def _sidecar(local_dir: Path, kind: str) -> Path:
+    return local_dir.parent / f".{kind}~{local_dir.name}~{uuid.uuid4().hex}"
+
+
 def _recover(local_dir: Path) -> None:
     """Under the bundle lock: undo a publish interrupted between its two renames, and
     remove staging/backup directories left behind by crashed processes."""
-    parent, name = local_dir.parent, local_dir.name
-    backups = sorted(parent.glob(f".old-{name}-*"), key=lambda p: p.stat().st_mtime)
+    backups = _sidecars(local_dir, "old")
     if not local_dir.exists() and backups:
-        os.rename(backups.pop(), local_dir)
-    for leftover in [*backups, *parent.glob(f".staging-{name}-*")]:
+        # Prefer a backup that still looks like a complete bundle (a crash during the
+        # backup's rmtree can leave a partial one behind).
+        complete = [b for b in backups
+                    if (b / "config.json").is_file() and (b / SNAPSHOT_METADATA).is_file()]
+        chosen = (complete or backups)[0]
+        os.rename(chosen, local_dir)
+        backups.remove(chosen)
+    for leftover in [*backups, *_sidecars(local_dir, "staging")]:
         shutil.rmtree(leftover, ignore_errors=True)
 
 
 def _publish(staging: Path, local_dir: Path) -> None:
     """Swap a complete, verified staging directory in for the published bundle."""
-    if local_dir.exists():
-        backup = local_dir.parent / f".old-{local_dir.name}-{uuid.uuid4().hex}"
-        os.rename(local_dir, backup)
+    if not local_dir.exists():
         os.rename(staging, local_dir)
-        shutil.rmtree(backup, ignore_errors=True)
-    else:
+        return
+    backup = _sidecar(local_dir, "old")
+    os.rename(local_dir, backup)
+    try:
         os.rename(staging, local_dir)
+    except BaseException:
+        os.rename(backup, local_dir)  # put the previous bundle straight back
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
 
 
 def download_verified(repo_id: str, required: set[str], *, revision: str | None = None,
@@ -255,21 +288,23 @@ def download_verified(repo_id: str, required: set[str], *, revision: str | None 
         reusable = _reuse_published(local_dir, record, required, select)
         if reusable is not None:
             return reusable
-        staging = local_dir.parent / f".staging-{local_dir.name}-{uuid.uuid4().hex}"
+        staging = _sidecar(local_dir, "staging")
         try:
             config_path = Path(hf_hub_download(repo_id, "config.json", revision=pinned,
                                                local_dir=staging))
             config = json.loads(config_path.read_text())
             wanted = _parse_config(config, required, select)
             files = config["files"]
+            carried = set()
             if local_dir.is_dir():
                 # Carry over every file the new config still vouches for (hardlinked, so
                 # unchanged multi-GB weights are not downloaded or copied again).
                 for filename, entry in files.items():
                     if _matches(local_dir / filename, entry):
                         _link_or_copy(local_dir / filename, staging / filename)
+                        carried.add(filename)
             for filename in wanted:
-                if not _matches(staging / filename, files[filename]):
+                if filename not in carried:
                     path = Path(hf_hub_download(repo_id, filename, revision=pinned,
                                                 local_dir=staging))
                     if not _matches(path, files[filename]):
