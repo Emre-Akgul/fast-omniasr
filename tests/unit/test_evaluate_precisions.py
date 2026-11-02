@@ -158,7 +158,8 @@ def test_load_rows_returns_raw_samples_and_rate(tmp_path):
     import numpy as np
 
     path, data = _wav(tmp_path)
-    rows = evaluate.load_rows(argparse.Namespace(dataset=None, audio=[f"{path}:eng_Latn"]))
+    rows = evaluate.load_rows(argparse.Namespace(dataset=None, audio=[f"{path}:eng_Latn"],
+                                                 limit=None))
     assert rows[0]["sample_rate"] == 16000 and rows[0]["lang"] == "eng_Latn"
     np.testing.assert_array_equal(rows[0]["wav"], data)  # not pre-normalized
 
@@ -197,7 +198,7 @@ def test_file_rows_reach_the_model_normalized_once(tmp_path, monkeypatch, kind):
     import fast_omniasr
 
     monkeypatch.setattr(fast_omniasr, "OmniASR", FakeCTC)
-    args = argparse.Namespace(dataset=None, audio=[str(path)], device="cpu", lang=None,
+    args = argparse.Namespace(dataset=None, audio=[str(path)], device="cpu", lang=None, limit=None,
                               llm=tmp_path if kind == "llm" else None,
                               ctc=None if kind == "llm" else tmp_path)
     row = evaluate.load_rows(args)[0]
@@ -216,4 +217,134 @@ def test_bad_files_are_rejected_while_loading_rows(tmp_path, kwargs, message):
 
     path, _ = _wav(tmp_path, **kwargs)
     with pytest.raises(ValueError, match=message):
-        evaluate.load_rows(argparse.Namespace(dataset=None, audio=[str(path)]))
+        evaluate.load_rows(argparse.Namespace(dataset=None, audio=[str(path)], limit=None))
+
+
+
+# --- inputs are validated before any model loads (issue #23) ---
+
+def _row(row_id, ref="hello", n=1600):
+    import numpy as np
+
+    return {"id": row_id, "ref": ref,
+            "wav": np.random.default_rng(len(str(row_id))).standard_normal(n).astype("float32")}
+
+
+def test_error_rates_rejects_mismatched_lengths():
+    with pytest.raises(ValueError, match="2 references but 1 hypotheses"):
+        error_rates(["a", "b"], ["a"])
+
+
+@pytest.mark.parametrize("rows, message", [
+    ([], "no evaluation inputs"),
+    ("not a list", "must be a list of rows"),
+    ([{"id": [1], "wav": []}], "unhashable id"),
+    ([{"wav": []}], "must be a dict with 'id' and 'wav'"),
+    ([_row("a"), _row("b"), _row("a")], "duplicate ids would overwrite"),
+    ([{**_row("a"), "ref": 3}], "has no 'ref'"),
+    ([_row("short", n=100)], "row 'short': At least 400 samples"),
+])
+def test_validate_rows_rejects_bad_datasets(rows, message):
+    with pytest.raises((ValueError, TypeError), match=message):
+        evaluate.validate_rows(rows, labelled=True)
+
+
+def test_validate_rows_accepts_unlabelled_audio_rows():
+    row = _row("a")
+    del row["ref"]
+    assert evaluate.validate_rows([row], labelled=False) == [row]
+
+
+def _dataset(tmp_path, rows):
+    import pickle
+
+    path = tmp_path / "data.pkl"
+    path.write_bytes(pickle.dumps(rows))
+    return path
+
+
+def test_load_rows_applies_limit_then_validates(tmp_path):
+    import argparse
+
+    rows = [_row("a"), _row("b"), _row("a")]  # the duplicate falls outside --limit 2
+    args = argparse.Namespace(dataset=_dataset(tmp_path, rows), audio=None, limit=2)
+    assert [r["id"] for r in evaluate.load_rows(args)] == ["a", "b"]
+    args.limit = None
+    with pytest.raises(ValueError, match="duplicate ids"):
+        evaluate.load_rows(args)
+
+
+def test_validate_rows_keeps_silence_refs_and_accepts_tuples():
+    rows = (_row("a", ref=None), _row("b"))
+    assert [r["id"] for r in evaluate.validate_rows(rows, labelled=True)] == ["a", "b"]
+    missing = _row("c")
+    del missing["ref"]
+    with pytest.raises(ValueError, match="has no 'ref'"):
+        evaluate.validate_rows([missing], labelled=True)
+
+
+def test_llm_runs_reject_clips_over_30_seconds_up_front():
+    long_row = _row("long", n=31 * 16000)
+    assert evaluate.validate_rows([long_row], labelled=True)  # fine for CTC
+    with pytest.raises(ValueError, match="row 'long' is longer than the LLM runtime's 30 s"):
+        evaluate.validate_rows([long_row], labelled=True, max_seconds=30)
+
+
+def test_limit_applies_before_audio_files_are_read(tmp_path):
+    import argparse
+
+    path, _ = _wav(tmp_path)
+    args = argparse.Namespace(dataset=None, audio=[str(path), str(tmp_path / "missing.wav")],
+                              limit=1)
+    assert len(evaluate.load_rows(args)) == 1
+
+
+def test_cli_reports_bad_inputs_without_a_traceback(tmp_path, monkeypatch):
+    import sys
+
+    path = _dataset(tmp_path, [])
+    monkeypatch.setattr(sys, "argv", ["evaluate_precisions.py", "--ctc", "x",
+                                      "--dataset", str(path)])
+    with pytest.raises(SystemExit, match="^error: no evaluation inputs"):
+        evaluate.main()
+
+
+def test_load_rows_rejects_non_list_pickles(tmp_path):
+    import argparse
+
+    args = argparse.Namespace(dataset=_dataset(tmp_path, {"a": 1}), audio=None, limit=None)
+    with pytest.raises(TypeError, match="must contain a list"):
+        evaluate.load_rows(args)
+
+
+def test_duplicate_audio_specs_are_rejected(tmp_path):
+    import argparse
+
+    path, _ = _wav(tmp_path)
+    args = argparse.Namespace(dataset=None, audio=[str(path), str(path)], limit=None)
+    with pytest.raises(ValueError, match="duplicate ids"):
+        evaluate.load_rows(args)
+
+
+@pytest.mark.parametrize("argv, message", [
+    (["--limit", "0"], "must be a positive integer"),
+    (["--limit", "-3"], "must be a positive integer"),
+    (["--precision", "fp32", "int8"], "invalid choice"),
+])
+def test_cli_rejects_bad_limits_and_precisions(monkeypatch, capsys, argv, message):
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["evaluate_precisions.py", "--ctc", "x", "--audio", "a.wav",
+                                      *argv])
+    with pytest.raises(SystemExit):
+        evaluate.main()
+    assert message in capsys.readouterr().err
+
+
+def test_cli_rejects_duplicate_precisions(monkeypatch):
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["evaluate_precisions.py", "--ctc", "x", "--audio", "a.wav",
+                                      "--precision", "fp32", "fp16", "fp16"])
+    with pytest.raises(SystemExit, match="lists a precision twice"):
+        evaluate.main()

@@ -57,6 +57,9 @@ def error_rates(references, hypotheses):
     are not dropped: output on silence adds insertions to the numerator and nothing to
     the denominator, so hallucinations stay visible. If every reference is empty the
     rates are undefined and reported as None, with the insertions still counted."""
+    references, hypotheses = list(references), list(hypotheses)
+    if len(references) != len(hypotheses):
+        raise ValueError(f"{len(references)} references but {len(hypotheses)} hypotheses")
     pairs = [(normalize(r), normalize(h)) for r, h in zip(references, hypotheses)]
     ref_words = sum(len(r.split()) for r, _ in pairs)
     ref_chars = sum(len(r) for r, _ in pairs)
@@ -99,22 +102,64 @@ def gpu_mib():
     return sum(int(mib) for pid, mib in rows if int(pid) == os.getpid())
 
 
-def load_rows(args):
-    if args.dataset:
-        return pickle.loads(args.dataset.read_bytes())[: args.limit]
-    import soundfile as sf
+LLM_MAX_SECONDS = 30  # OmniASRLLM.transcribe rejects longer clips
+
+
+def validate_rows(rows, labelled, max_seconds=None):
+    """Fail before any model loads: a non-empty sequence of rows with unique, hashable ids,
+    a reference for every labelled row (a string, or None for silence), and 16 kHz mono
+    audio that is long enough, finite and, with `max_seconds`, short enough."""
+    from collections.abc import Hashable
 
     from fast_omniasr.audio import prepare_audio
 
+    if isinstance(rows, (str, bytes)) or not isinstance(rows, (list, tuple)):
+        raise TypeError("evaluation inputs must be a list of rows")
+    rows = list(rows)
+    if not rows:
+        raise ValueError("no evaluation inputs: the dataset or --audio list is empty")
+    seen, duplicates = set(), []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or "id" not in row or "wav" not in row:
+            raise TypeError(f"row {index} must be a dict with 'id' and 'wav'")
+        if not isinstance(row["id"], Hashable):
+            raise TypeError(f"row {index} has an unhashable id {row['id']!r}")
+        if row["id"] in seen:
+            duplicates.append(row["id"])
+        seen.add(row["id"])
+        if labelled and not (row.get("ref") is None and "ref" in row
+                             or isinstance(row.get("ref"), str)):
+            raise ValueError(f"row {row['id']!r} has no 'ref' (reference transcript; "
+                             "None for silence)")
+        try:
+            audio = prepare_audio(row["wav"], row.get("sample_rate", 16000))
+        except ValueError as exc:
+            raise ValueError(f"row {row['id']!r}: {exc}") from exc
+        if max_seconds is not None and audio.shape[1] > max_seconds * 16000:
+            raise ValueError(f"row {row['id']!r} is longer than the LLM runtime's "
+                             f"{max_seconds} s limit")
+    if duplicates:
+        raise ValueError(f"duplicate ids would overwrite each other's results: {duplicates}")
+    return rows
+
+
+def load_rows(args):
+    max_seconds = LLM_MAX_SECONDS if getattr(args, "llm", None) else None
+    if args.dataset:
+        rows = pickle.loads(args.dataset.read_bytes())
+        if not isinstance(rows, (list, tuple)):
+            raise TypeError(f"{args.dataset} must contain a list of rows")
+        return validate_rows(rows[: args.limit], labelled=True, max_seconds=max_seconds)
+    import soundfile as sf
+
     rows = []
-    for spec in args.audio:
+    for spec in args.audio[: args.limit]:  # --limit before reading any file
         path, _, lang = spec.partition(":")
         # Raw samples: the transcribers normalize exactly once, like OmniASR.transcribe(path).
-        waveform, sample_rate = sf.read(path, dtype="float32")
-        prepare_audio(waveform, sample_rate)  # reject bad files before any model loads
+        waveform, sample_rate = sf.read(path, dtype="float32")  # validated in validate_rows
         rows.append({"id": spec, "wav": waveform, "sample_rate": sample_rate,
                      "lang": lang or None})
-    return rows
+    return validate_rows(rows, labelled=False, max_seconds=max_seconds)
 
 
 def transcriber(args, precision):
@@ -139,6 +184,13 @@ def transcriber(args, precision):
     )
 
 
+def _positive_int(text):
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     source = parser.add_mutually_exclusive_group(required=True)
@@ -148,14 +200,20 @@ def main():
     inputs.add_argument("--audio", nargs="+", help="Audio files, optionally `path:lang_code`")
     inputs.add_argument("--dataset", type=Path, help="Labelled pickle (adds WER/CER)")
     parser.add_argument("--lang", help="Default LLM language code (default: none)")
-    parser.add_argument("--precision", nargs="+", default=["fp32", "fp16", "bf16"])
+    parser.add_argument("--precision", nargs="+", choices=["fp32", "fp16", "bf16"],
+                        default=["fp32", "fp16", "bf16"])
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--limit", type=int)
+    parser.add_argument("--limit", type=_positive_int, help="first N inputs")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     if args.precision[0] != "fp32":
         raise SystemExit("Evaluate fp32 first; agreement is measured against it")
-    rows = load_rows(args)
+    if len(set(args.precision)) != len(args.precision):
+        raise SystemExit("--precision lists a precision twice; its results would be overwritten")
+    try:
+        rows = load_rows(args)
+    except (ValueError, TypeError) as exc:
+        raise SystemExit(f"error: {exc}") from exc
     results, baseline = {}, None
     for precision in args.precision:
         run = transcriber(args, precision)
