@@ -58,26 +58,32 @@ class TensorRTBackend:
         self.closed = True
         cudart = self._cudart
         stream = getattr(self, "stream", None)
-        try:
-            if stream is not None:
-                # Don't free buffers that queued work may still be reading or writing.
-                cudart.cudaStreamSynchronize(stream)
-            for name in ("input_ptr", "output_ptr"):
-                ptr = getattr(self, name, None)
-                setattr(self, name, None)
-                if ptr is not None:
-                    cudart.cudaFree(ptr)
-            self.stream = None
-            if stream is not None:
-                cudart.cudaStreamDestroy(stream)
-        finally:
-            # Drop TensorRT objects in dependency order: context -> engine -> runtime.
-            # The Python bindings free the underlying C++ objects (and the engine's
-            # device memory) when their last reference goes away. Done in `finally`
-            # so a failing CUDA call above cannot leave the engine resident.
-            self.context = None
-            self.engine = None
-            self.runtime = None
+        input_ptr = getattr(self, "input_ptr", None)
+        output_ptr = getattr(self, "output_ptr", None)
+        self.input_ptr = self.output_ptr = self.stream = None
+        # Every step is attempted even if an earlier one raises; the first error is
+        # re-raised at the end so a single failing CUDA call cannot leak the rest.
+        steps = []
+        if stream is not None:
+            # Don't free buffers that queued work may still be reading or writing.
+            steps.append((cudart.cudaStreamSynchronize, stream))
+        steps += [(cudart.cudaFree, ptr) for ptr in (input_ptr, output_ptr) if ptr is not None]
+        if stream is not None:
+            steps.append((cudart.cudaStreamDestroy, stream))
+        first_error = None
+        for func, arg in steps:
+            try:
+                func(arg)
+            except Exception as exc:  # noqa: BLE001 -- keep releasing, re-raise below
+                first_error = first_error or exc
+        # Drop TensorRT objects in dependency order: context -> engine -> runtime.
+        # The Python bindings free the underlying C++ objects (and the engine's
+        # device memory) when their last reference goes away.
+        self.context = None
+        self.engine = None
+        self.runtime = None
+        if first_error is not None:
+            raise first_error
 
     def __enter__(self):
         return self

@@ -181,9 +181,10 @@ def test_omniasr_close_releases_tensorrt_resources(fake_trt, monkeypatch):
     assert asr.backend.closed
 
 
-def test_close_drops_engine_even_if_a_cuda_call_fails(fake_trt, monkeypatch):
+def test_close_releases_everything_even_if_a_cuda_call_fails(fake_trt, monkeypatch):
     backend = TensorRTBackend(fake_trt.path)
     engine_ref = weakref.ref(backend.engine)
+    allocated = [c[1] for c in fake_trt.cudart.calls if isinstance(c, tuple) and c[0] == "malloc"]
 
     def broken_sync(stream):
         raise RuntimeError("simulated CUDA failure")
@@ -194,3 +195,6 @@ def test_close_drops_engine_even_if_a_cuda_call_fails(fake_trt, monkeypatch):
     gc.collect()
     assert engine_ref() is None
     assert backend.closed
+    freed = [c[1] for c in fake_trt.cudart.calls if isinstance(c, tuple) and c[0] == "free"]
+    assert sorted(freed) == sorted(allocated)
+    assert fake_trt.cudart.calls[-1] == "stream_destroy"
