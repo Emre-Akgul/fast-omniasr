@@ -76,6 +76,7 @@ class _FakeCudart:
 
     def cudaSetDevice(self, device):
         self.set_device_calls.append((threading.get_ident(), device))
+        self.current_device = device
         return (0,)
 
     def cudaStreamDestroy(self, stream):
@@ -398,7 +399,9 @@ def test_close_waits_for_in_flight_infer(fake_trt):
         target=lambda: result.update(out=backend.infer(np.full((1, 16000), 5.0, np.float32)))
     )
     worker.start()
+    deadline = time.monotonic() + 10
     while backend.engine.active == 0:  # wait until execution is in progress
+        assert time.monotonic() < deadline, "worker never started executing"
         time.sleep(0.001)
     backend.close()  # must block until the in-flight call has copied its output
     worker.join()
@@ -411,13 +414,37 @@ def test_close_waits_for_in_flight_infer(fake_trt):
         backend.infer(np.zeros((1, 16000), np.float32))
 
 
-def test_infer_from_another_thread_uses_the_load_device(fake_trt):
+def test_infer_uses_the_load_device_and_restores_the_callers(fake_trt):
     fake_trt.cudart.current_device = 3
     backend = TensorRTBackend(fake_trt.path)
     assert backend.device == 3
-    fake_trt.cudart.current_device = 0  # another thread's default device
+    fake_trt.cudart.current_device = 0  # another thread's current device
     worker = threading.Thread(target=backend.infer, args=(np.zeros((1, 16000), np.float32),))
     worker.start()
     worker.join()
-    assert fake_trt.cudart.set_device_calls == [(worker.ident, 3)]
+    assert fake_trt.cudart.set_device_calls == [(worker.ident, 3), (worker.ident, 0)]
+    assert fake_trt.cudart.current_device == 0  # caller's device restored
+    fake_trt.cudart.set_device_calls.clear()
+    backend.close()  # release also runs on the load device, then restores
+    assert [d for _, d in fake_trt.cudart.set_device_calls] == [3, 0]
+
+
+def test_infer_on_the_load_device_does_not_switch(fake_trt):
+    backend = TensorRTBackend(fake_trt.path)
+    backend.infer(np.zeros((1, 16000), np.float32))
     backend.close()
+    assert fake_trt.cudart.set_device_calls == []
+
+
+def test_finalizer_never_blocks_on_a_busy_lock(fake_trt):
+    backend = TensorRTBackend(fake_trt.path)
+    backend._lock.acquire()  # e.g. a daemon thread killed mid-infer at shutdown
+    try:
+        start = time.monotonic()
+        backend.__del__()
+        assert time.monotonic() - start < 1
+        assert not backend.closed  # skipped rather than waiting
+    finally:
+        backend._lock.release()
+    backend.__del__()
+    assert backend.closed
