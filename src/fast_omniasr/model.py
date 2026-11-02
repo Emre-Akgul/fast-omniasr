@@ -5,7 +5,7 @@ import numpy as np
 
 from .audio import load_audio, prepare_audio
 from .decoder import greedy_token_ids
-from .options import check_device, check_threads
+from .options import check_device, resolve_threads
 from .tensorrt_builder import DEFAULT_MAX_SAMPLES, DEFAULT_MIN_SAMPLES, DEFAULT_OPT_SAMPLES
 from .tokenizer import Tokenizer
 
@@ -25,7 +25,7 @@ def _check_backend_options(backend: str, device: str | None, threads: int | None
     thread setting, so device must be omitted or "cuda" and threads must be omitted."""
     if backend == "onnx":
         return (check_device("cpu" if device is None else device),
-                check_threads(4 if threads is None else threads))
+                resolve_threads(threads))
     if backend == "tensorrt":
         if device not in (None, "cuda"):
             raise ValueError(

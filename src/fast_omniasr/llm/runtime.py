@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from ..audio import load_audio, prepare_audio
-from ..options import check_device, check_flag, check_threads
+from ..options import check_device, check_flag, resolve_threads
 from ..tokenizer import Tokenizer
 from .models import LLM_MODEL_CARDS
 
@@ -54,7 +54,8 @@ class OmniASRLLM:
     ):
         """`threads` (default 4) and `low_memory` apply to backend="onnx"; the TorchScript
         baseline uses PyTorch's process-wide thread setting and loads one copy, so it
-        rejects both rather than silently ignoring them."""
+        rejects both rather than silently ignoring them. `cached` selects the TorchScript
+        baseline's decoder; the ONNX backend always decodes with an explicit KV cache."""
         self.closed = False
         self._lock = threading.Lock()
         self._language_lock = threading.Lock()
@@ -62,8 +63,9 @@ class OmniASRLLM:
             raise ValueError("backend must be torch or onnx")
         check_device(device)
         check_flag("low_memory", low_memory)
+        check_flag("cached", cached)
         if backend == "onnx":
-            threads = check_threads(4 if threads is None else threads)
+            threads = resolve_threads(threads)
         else:
             if precision != "fp32":
                 raise ValueError("The TorchScript baseline supports precision='fp32' only")
@@ -109,7 +111,7 @@ class OmniASRLLM:
         repo_id: str,
         *,
         device: str = "cpu",
-        threads: int = 4,
+        threads: int | None = None,
         low_memory: bool = False,
         precision: str = "fp32",
         revision: str | None = None,
@@ -131,7 +133,7 @@ class OmniASRLLM:
         bf16 needs device="cuda" and an Ampere or newer GPU.
         """
         check_device(device)
-        check_threads(threads)
+        threads = resolve_threads(threads)
         check_flag("low_memory", low_memory)
         from ..hub import download_verified
         from ..precision import asset_selector, check_precision

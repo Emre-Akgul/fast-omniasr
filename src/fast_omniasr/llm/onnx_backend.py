@@ -10,9 +10,11 @@ import onnxruntime as ort
 from .._memory import release_freed_memory
 
 
-def options(threads=4):
+def options(threads=None):
+    from ..options import resolve_threads
+
     result = ort.SessionOptions()
-    result.intra_op_num_threads = threads
+    result.intra_op_num_threads = resolve_threads(threads)
     # Decoder cache shapes grow every call. A shape-specific memory pattern can
     # retain stale CUDA allocations until this 5 GiB model exhausts a 6 GiB GPU.
     result.enable_mem_pattern = False
@@ -131,11 +133,11 @@ class ONNXLLMBackend:
     """
 
     def __init__(self, directory, device="cpu", threads=4, low_memory=False, precision="fp32"):
-        from ..options import check_device, check_flag, check_threads
+        from ..options import check_device, check_flag, resolve_threads
         from ..precision import check_precision
 
         check_device(device)
-        check_threads(threads)
+        threads = resolve_threads(threads)
         check_flag("low_memory", low_memory)
 
         self.closed = False
