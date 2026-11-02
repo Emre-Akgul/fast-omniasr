@@ -22,6 +22,11 @@ on:
       - src/fast_omniasr/audio.py
       - src/fast_omniasr/tokenizer.py
       - src/fast_omniasr/decoder.py
+      - src/fast_omniasr/precision.py
+      - src/fast_omniasr/_memory.py
+      - src/fast_omniasr/__init__.py
+      - src/fast_omniasr/backends/__init__.py
+      - pyproject.toml
       - tools/evaluate_precisions.py
 
 permissions:
