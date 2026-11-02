@@ -7,6 +7,9 @@ which adds WER and CER after Unicode normalization, lowercasing and punctuation 
 Utterances whose normalized reference is empty (silence, noise) are kept: any words
 emitted for them count as insertions, and they are also summarized separately.
 LLM inputs given as `clip.wav:eng_Latn` are transcribed with that language code.
+For LLM models each precision also reports why generation stopped: `eos` (complete),
+`max_new_tokens` or `context_limit` (truncated). Truncated transcripts are listed by id
+and flagged on stderr, since they are not comparable with complete ones.
 
   python tools/evaluate_precisions.py --llm /path/to/llm-export \\
       --audio en.wav en.wav:eng_Latn tr.wav:tur_Latn --report precision.json
@@ -19,6 +22,7 @@ import os
 import pickle
 import re
 import subprocess
+import sys
 import time
 import unicodedata
 from pathlib import Path
@@ -68,6 +72,21 @@ def error_rates(references, hypotheses):
     }
 
 
+LLM_STOP_REASONS = ("eos", "max_new_tokens", "context_limit")
+
+
+def stop_reason_summary(ids, reasons):
+    """Count LLM stop reasons and list the ids of transcripts that did not end at EOS."""
+    unknown = sorted({r for r in reasons if r not in LLM_STOP_REASONS}, key=str)
+    if unknown:
+        raise ValueError(f"unexpected stop reasons: {unknown}")
+    counts = {reason: 0 for reason in LLM_STOP_REASONS}
+    for reason in reasons:
+        counts[reason] += 1
+    truncated = [i for i, r in zip(ids, reasons) if r != "eos"]
+    return {"stop_reasons": counts, "truncated": len(truncated), "truncated_ids": truncated}
+
+
 def gpu_mib():
     """GPU memory held by this process (MiB), from nvidia-smi; 0 if unavailable."""
     try:
@@ -94,16 +113,22 @@ def load_rows(args):
 
 
 def transcriber(args, precision):
+    """Return row -> (text, stop_reason). CTC decoding has no stop reason (None)."""
     if args.llm:
         from fast_omniasr.llm import OmniASRLLM
 
         model = OmniASRLLM(args.llm, backend="onnx", device=args.device, precision=precision)
-        return lambda row: model.transcribe(row["wav"], lang=row.get("lang") or args.lang).text
+
+        def run_llm(row):
+            result = model.transcribe(row["wav"], lang=row.get("lang") or args.lang)
+            return result.text, result.stop_reason
+
+        return run_llm
     from fast_omniasr import OmniASR
 
     graph = args.ctc / ("model.onnx" if precision == "fp32" else f"{precision}/model.onnx")
     model = OmniASR(graph, args.ctc / "tokenizer.model", device=args.device, precision=precision)
-    return lambda row: model.transcribe_numpy(row["wav"]).text
+    return lambda row: (model.transcribe_numpy(row["wav"]).text, None)
 
 
 def main():
@@ -128,20 +153,31 @@ def main():
         run = transcriber(args, precision)
         run(rows[0])  # warm-up: weights load and CUDA kernels initialize
         start = time.perf_counter()
-        hypotheses = [run(row) for row in rows]
+        outputs = [run(row) for row in rows]
         seconds = time.perf_counter() - start
+        hypotheses = [text for text, _ in outputs]
+        reasons = [reason for _, reason in outputs]
+        ids = [row["id"] for row in rows]
         baseline = baseline or hypotheses
+        stops = stop_reason_summary(ids, reasons) if args.llm else {}
         results[precision] = {
             **(error_rates([row["ref"] for row in rows], hypotheses) if args.dataset else {}),
+            **stops,
             "inputs": len(rows),
             # Word-level: CTC can emit whitespace-only output that differs in length only.
             "identical_to_fp32": sum(a.split() == b.split() for a, b in zip(baseline, hypotheses)),
             "seconds": seconds,
             "gpu_mib": gpu_mib(),
-            "hypotheses": dict(zip((row["id"] for row in rows), hypotheses)),
+            "hypotheses": dict(zip(ids, hypotheses)),
+            **({"hypothesis_stop_reasons": dict(zip(ids, reasons))} if args.llm else {}),
         }
-        summary = {k: v for k, v in results[precision].items() if k != "hypotheses"}
+        per_utterance = ("hypotheses", "hypothesis_stop_reasons", "truncated_ids")
+        summary = {k: v for k, v in results[precision].items() if k not in per_utterance}
         print(json.dumps({"precision": precision, **summary}), flush=True)
+        if stops.get("truncated"):
+            print(f"warning: {precision}: {stops['truncated']}/{len(rows)} transcripts did not "
+                  f"end at EOS ({stops['stop_reasons']}); ids: {stops['truncated_ids']}",
+                  file=sys.stderr, flush=True)
         del run
     report = {
         "model": str(args.llm or args.ctc),
