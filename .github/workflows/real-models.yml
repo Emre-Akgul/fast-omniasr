@@ -1,0 +1,42 @@
+name: Real-model CPU validation
+# Downloads the pinned published CTC and LLM 300M v2 models (~8 GB) and runs them end to
+# end on CPU against the committed FLEURS fixtures (tests/fixtures/fleurs). Too heavy for
+# every push: runs weekly, on releases, on demand, and on PRs that change this validation.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1"
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - .github/workflows/real-models.yml
+      - tests/integration/test_real_models_cpu.py
+      - tests/fixtures/fleurs/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-models-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      OMNIASR_REAL_MODELS: "1"
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+    steps:
+      - name: Free disk space for the model downloads
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e ".[dev,onnx,hub]"
+      - name: Run the published models on the FLEURS fixtures
+        run: python -m pytest tests/integration/test_real_models_cpu.py tests/unit/test_fleurs_fixtures.py -v -rs

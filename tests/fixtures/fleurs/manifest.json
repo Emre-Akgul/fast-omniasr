@@ -1,0 +1,58 @@
+{
+  "dataset": "google/fleurs",
+  "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+  "split": "test",
+  "license": "CC-BY-4.0",
+  "conversion": "WAV 16 kHz mono from the FLEURS test tarball, re-encoded losslessly as 16-bit FLAC",
+  "models": {
+    "ctc": {
+      "repo": "EmreAkgul/omniASR-CTC-300M-v2-ONNX",
+      "revision": "6c1096d65763f1d268a7ed61fe8874596f0a4eb8"
+    },
+    "llm": {
+      "repo": "EmreAkgul/omniASR-LLM-300M-v2-ONNX",
+      "revision": "dfd02a38ca9050cc83411ff28317278c683df103"
+    }
+  },
+  "clips": [
+    {
+      "file": "en_us_10233995782544396174.flac",
+      "fleurs_language": "en_us",
+      "lang": "eng_Latn",
+      "source": "data/en_us/audio/test.tar.gz:test/10233995782544396174.wav",
+      "reference": "Many people don't think about them as dinosaurs because they have feathers and can fly.",
+      "seconds": 4.32,
+      "sha256": "04d715499167d7a45b8778c9af02558304f96cba46b812559f59539eec5c8eb0",
+      "max_cer": {
+        "ctc": 16.2,
+        "llm": 8.0
+      }
+    },
+    {
+      "file": "tr_tr_10147164563742619338.flac",
+      "fleurs_language": "tr_tr",
+      "lang": "tur_Latn",
+      "source": "data/tr_tr/audio/test.tar.gz:test/10147164563742619338.wav",
+      "reference": "Güreşçi arkadaşları da Luna'ya saygılarını sundular.",
+      "seconds": 4.2,
+      "sha256": "c9ea5347e657fb097fa531f38efa0b7b310395254133d36771b051fcf5b42dd0",
+      "max_cer": {
+        "ctc": 10.0,
+        "llm": 8.0
+      }
+    },
+    {
+      "file": "ckb_iq_10408759303206727468.flac",
+      "fleurs_language": "ckb_iq",
+      "lang": "ckb_Arab",
+      "source": "data/ckb_iq/audio/test.tar.gz:test/10408759303206727468.wav",
+      "reference": "ئەمە ماقووڵ دیارە، بەهۆی ئەوەی هەست ناکرێت زەوی بجووڵێت، وانیە؟",
+      "seconds": 5.52,
+      "sha256": "b4cd8a23371fe48b1aba7b7b9c6299f3fe6a526f30ecaa391a171783d21f5ef6",
+      "max_cer": {
+        "ctc": 14.7,
+        "llm": 11.3
+      }
+    }
+  ]
+}
