@@ -17,7 +17,9 @@ language to keep the CPU job under an hour. Mandarin is not space-delimited, so 
 is gated.
 
 **Metrics.** Corpus WER/CER after the normalization in `tools/evaluate_precisions.py` (NFKC,
-lowercase, punctuation and zero-width characters removed).
+lowercase, punctuation and zero-width characters removed). For Mandarin (gated on CER only)
+whitespace is also removed before scoring: normalization turns CJK punctuation into spaces,
+and spacing is not a recognition error.
 
 **Thresholds.** `max_wer = baseline + max(3 points, 15%)`, `max_cer = baseline + max(1.5
 points, 15%)`, where the baseline is the pinned model on CPU in fp32. The gate guards a fixed
@@ -32,9 +34,16 @@ python tools/fleurs_eval.py run --model llm --gate --report fleurs-llm.json
 python tools/fleurs_eval.py run --model ctc --repo <repo> --revision <sha>   # score another export
 ```
 
-Only the listed utterances are extracted from each pinned language tarball (about 3.6 GB
-across the 8 languages on first use), checked against the manifest's sha256, and kept under
-`--audio-dir` (default `.cache/fleurs`) for later runs.
+Only the listed utterances are extracted from each pinned language tarball, checked against
+the manifest's sha256, and kept under `--audio-dir` (default `.cache/fleurs`) for later runs.
+The tarballs themselves (about 3.6 GB across the 8 languages) stay in the Hugging Face cache,
+or under `--cache-dir` if given, which also holds the downloaded models. `--gate` only runs
+with each model's configured `per_language`, so results are compared like for like.
+
+**Gating a release.** The workflow's `release` trigger runs after a release is published, so
+it reports regressions rather than blocking them. To gate a release, dispatch the
+`Real-model CPU validation` workflow on the release commit before tagging and require all of
+its jobs (including `fleurs-ctc` and `fleurs-llm`) to pass.
 
 **Updating.** When a model is republished, update its `revision` in `thresholds.json`, run
 the tool with `--report`, and set the new baseline and limits with the policy above in the

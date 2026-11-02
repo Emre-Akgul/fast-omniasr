@@ -6,14 +6,16 @@ sha256. Thresholds per model and language live in benchmarks/fleurs/thresholds.j
 
   # score a model and fail if any language regresses past its threshold
   python tools/fleurs_eval.py run --model ctc --gate --report fleurs-ctc.json
-  python tools/fleurs_eval.py run --model llm --gate --per-language 8
+  python tools/fleurs_eval.py run --model llm --languages en_us tr_tr --per-language 2
 
   # maintainers: rebuild the manifest from downloaded FLEURS TSVs
   python tools/fleurs_eval.py build-manifest --per-language 20
 
 Only the listed utterances are extracted from each pinned language tarball; they are
 verified against the manifest and kept under --audio-dir, so later runs skip the
-download. Metrics are corpus WER/CER after the normalization in evaluate_precisions.py.
+download. Metrics are corpus WER/CER after the normalization in evaluate_precisions.py;
+for languages gated on CER (Mandarin) whitespace is removed first, because normalization
+turns CJK punctuation into spaces that would otherwise count as characters.
 """
 
 import argparse
@@ -21,6 +23,7 @@ import csv
 import hashlib
 import importlib.util
 import json
+import re
 import sys
 import tarfile
 import time
@@ -31,6 +34,7 @@ MANIFEST = ROOT / "benchmarks" / "fleurs" / "manifest.json"
 THRESHOLDS = ROOT / "benchmarks" / "fleurs" / "thresholds.json"
 DATASET = "google/fleurs"
 MAX_SECONDS = 20  # well inside the LLM runtime's 30 s clip limit
+_FILE_NAME = re.compile(r"[0-9]+\.wav")
 
 # FLEURS language -> (OmniASR language code, gated metric). Mandarin isn't space-delimited,
 # so its WER is meaningless and only CER is gated.
@@ -111,12 +115,16 @@ def validate_manifest(manifest: dict) -> None:
     if manifest.get("dataset") != DATASET or len(manifest.get("revision", "")) != 40:
         raise ValueError("manifest must pin google/fleurs to a 40-character commit")
     for fleurs, entry in manifest["languages"].items():
+        if fleurs not in LANGUAGES:  # keys become paths and Hub filenames
+            raise ValueError(f"unknown FLEURS language {fleurs!r}")
         if entry.get("metric") not in ("wer", "cer"):
             raise ValueError(f"{fleurs}: metric must be 'wer' or 'cer'")
         names = [u["file_name"] for u in entry["utterances"]]
         if not names or len(set(names)) != len(names):
             raise ValueError(f"{fleurs}: utterances must be non-empty and unique")
         for utterance in entry["utterances"]:
+            if not _FILE_NAME.fullmatch(utterance["file_name"]):  # it becomes a local path
+                raise ValueError(f"{fleurs}: unexpected file name {utterance['file_name']!r}")
             if len(utterance.get("sha256", "")) != 64 or not utterance.get("reference"):
                 raise ValueError(f"{fleurs}/{utterance.get('file_name')}: incomplete entry")
 
@@ -167,9 +175,23 @@ def extract_members(archive: Path, target: Path, utterances: list[dict]) -> None
 
 # --- evaluation -----------------------------------------------------------------------
 
-def score(references: list[str], hypotheses: list[str]) -> dict:
+def score(references: list[str], hypotheses: list[str], metric: str = "wer") -> dict:
+    """Corpus WER/CER. For CER-gated (unsegmented) languages, whitespace is dropped after
+    normalization, so punctuation-turned-spaces and spacing choices don't count as
+    errors, and WER is not reported."""
+    if metric == "cer":
+        def squash(texts):
+            return [_metrics.normalize(t).replace(" ", "") for t in texts]
+
+        rates = error_rates(squash(references), squash(hypotheses))
+        return {"wer": None, "cer": rates["cer"], "n": rates["n"]}
     rates = error_rates(references, hypotheses)
     return {"wer": rates["wer"], "cer": rates["cer"], "n": rates["n"]}
+
+
+def skipped_languages(results: dict, thresholds: dict) -> list[str]:
+    """Thresholded languages that this run did not measure (e.g. a --languages subset)."""
+    return sorted(set(thresholds.get("languages", {})) - set(results))
 
 
 def check(results: dict, thresholds: dict, manifest: dict) -> list[str]:
@@ -220,7 +242,13 @@ def evaluate(args) -> int:
     model = thresholds["models"][args.model]
     repo, revision = args.repo or model["repo"], args.revision or model["revision"]
     languages = args.languages or list(manifest["languages"])
+    unknown = sorted(set(languages) - set(manifest["languages"]))
+    if unknown:
+        raise SystemExit(f"unknown --languages {unknown}; choose from {list(manifest['languages'])}")
     per_language = args.per_language or model.get("per_language")
+    if args.gate and per_language != model.get("per_language"):
+        raise SystemExit(f"--gate compares against baselines measured on {model['per_language']} "
+                         f"utterances per language; don't pass --per-language {per_language}")
     paths = fetch_audio(manifest, args.audio_dir, languages, per_language, args.cache_dir)
     asr, run = transcriber(args.model, repo, revision, args.cache_dir)
     results, details = {}, {}
@@ -234,7 +262,7 @@ def evaluate(args) -> int:
                 hypotheses.append(text)
                 stops.append(stop)
             references = [u["reference"] for u in entry["utterances"][:len(hypotheses)]]
-            results[fleurs] = score(references, hypotheses)
+            results[fleurs] = score(references, hypotheses, entry["metric"])
             if args.model == "llm":
                 results[fleurs]["truncated"] = sum(s != "eos" for s in stops)
             results[fleurs]["seconds"] = round(time.perf_counter() - start, 1)
@@ -243,14 +271,20 @@ def evaluate(args) -> int:
     finally:
         asr.close()
     failures = check(results, model, manifest) if args.gate else []
+    skipped = skipped_languages(results, model) if args.gate else []
     report = {"model": args.model, "repo": repo, "revision": revision,
               "dataset": DATASET, "dataset_revision": manifest["revision"],
-              "per_language": per_language, "normalization": "evaluate_precisions.normalize",
-              "results": results, "failures": failures, "hypotheses": details}
+              "per_language": {fleurs: len(paths[fleurs]) for fleurs in languages},
+              "normalization": "evaluate_precisions.normalize; whitespace removed for CER-gated "
+                               "languages",
+              "results": results, "failures": failures, "skipped_gated_languages": skipped,
+              "hypotheses": details}
     if args.report:
         args.report.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     for failure in failures:
         print(f"REGRESSION {failure}", file=sys.stderr)
+    if skipped:
+        print(f"note: gated languages not measured in this run: {skipped}", file=sys.stderr)
     return 1 if failures else 0
 
 

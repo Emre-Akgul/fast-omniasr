@@ -141,13 +141,13 @@ def test_validate_manifest_rejects_bad_input(bad):
 def test_run_gate_exit_codes_and_report(tmp_path, monkeypatch):
     manifest = {"dataset": "google/fleurs", "revision": "f" * 40, "languages": {
         "en_us": {"lang": "eng_Latn", "metric": "wer", "utterances": [
-            {"file_name": "a.wav", "reference": "hello world", "sha256": "0" * 64}]}}}
+            {"file_name": "1.wav", "reference": "hello world", "sha256": "0" * 64}]}}}
     thresholds = {"models": {"ctc": {"repo": "o/ctc", "revision": "c" * 40, "per_language": 1,
                                      "languages": {"en_us": {"max_wer": 10.0, "max_cer": 5.0}}}}}
     (tmp_path / "m.json").write_text(json.dumps(manifest))
     (tmp_path / "t.json").write_text(json.dumps(thresholds))
     monkeypatch.setattr(fleurs_eval, "fetch_audio",
-                        lambda m, d, langs, n, c=None: {"en_us": [tmp_path / "a.wav"]})
+                        lambda m, d, langs, n, c=None: {"en_us": [tmp_path / "1.wav"]})
 
     def fake_transcriber(text):
         class Model:
@@ -167,9 +167,74 @@ def test_run_gate_exit_codes_and_report(tmp_path, monkeypatch):
     assert fleurs_eval.main(args) == 0 and model.closed
     report = json.loads((tmp_path / "r.json").read_text())
     assert report["results"]["en_us"]["wer"] == 0 and report["failures"] == []
+    assert report["per_language"] == {"en_us": 1} and report["skipped_gated_languages"] == []
     assert report["revision"] == "c" * 40 and report["dataset_revision"] == "f" * 40
     factory, _ = fake_transcriber("hello word")
     monkeypatch.setattr(fleurs_eval, "transcriber", factory)
     assert fleurs_eval.main(args) == 1
     assert json.loads((tmp_path / "r.json").read_text())["failures"] == [
         "en_us: WER 50.00 > 10.00", "en_us: CER 9.09 > 5.00"]
+
+
+
+def test_cer_languages_ignore_whitespace_and_cjk_punctuation():
+    reference = ["我们去吧，好吗？他说：“可以。”"]
+    for hypothesis in ("我们去吧好吗他说可以", "我们去吧 好吗 他说 可以"):
+        assert fleurs_eval.score(reference, [hypothesis], "cer") == {"wer": None, "cer": 0.0, "n": 1}
+    one_wrong = fleurs_eval.score(reference, ["我们去吧好吗他说可已"], "cer")["cer"]
+    assert one_wrong == pytest.approx(100 / 10)  # one substitution in 10 characters
+    # Space-delimited languages are unchanged: punctuation-only differences don't count.
+    assert fleurs_eval.score(["Hello, world."], ["hello world"])["wer"] == 0
+
+
+@pytest.mark.parametrize("name", ["../escape.wav", "/abs.wav", "a/b.wav", "x.flac", "1.wav.tmp"])
+def test_manifest_rejects_unsafe_file_names(name):
+    manifest = {"dataset": "google/fleurs", "revision": "f" * 40, "languages": {"en_us": {
+        "metric": "wer", "utterances": [{"file_name": name, "reference": "x", "sha256": "0" * 64}]}}}
+    with pytest.raises(ValueError, match="file name"):
+        fleurs_eval.validate_manifest(manifest)
+
+
+def test_manifest_rejects_unknown_language_keys():
+    manifest = {"dataset": "google/fleurs", "revision": "f" * 40, "languages": {"../x": {
+        "metric": "wer", "utterances": [{"file_name": "1.wav", "reference": "x", "sha256": "0" * 64}]}}}
+    with pytest.raises(ValueError, match="unknown FLEURS language"):
+        fleurs_eval.validate_manifest(manifest)
+
+
+def test_committed_thresholds_follow_the_stated_policy():
+    thresholds = json.loads(fleurs_eval.THRESHOLDS.read_text())
+    for model in thresholds["models"].values():
+        for fleurs, limits in model["languages"].items():
+            cer = limits["baseline_cer"]
+            assert limits["max_cer"] == pytest.approx(cer + max(1.5, 0.15 * cer), abs=0.01), fleurs
+            if limits["baseline_wer"] is None:
+                assert limits["max_wer"] is None
+            else:
+                wer = limits["baseline_wer"]
+                assert limits["max_wer"] == pytest.approx(wer + max(3, 0.15 * wer), abs=0.01), fleurs
+
+
+def _run_setup(tmp_path, monkeypatch):
+    manifest = json.loads(fleurs_eval.MANIFEST.read_text())
+    (tmp_path / "m.json").write_text(json.dumps(manifest))
+    monkeypatch.setattr(fleurs_eval, "fetch_audio", lambda *a, **k: pytest.fail("no download"))
+    monkeypatch.setattr(fleurs_eval, "transcriber", lambda *a: pytest.fail("no model"))
+    return ["run", "--model", "llm", "--manifest", str(tmp_path / "m.json")]
+
+
+def test_gate_refuses_a_different_sample_size(tmp_path, monkeypatch):
+    args = _run_setup(tmp_path, monkeypatch)
+    with pytest.raises(SystemExit, match="baselines measured on 5"):
+        fleurs_eval.main([*args, "--gate", "--per-language", "8"])
+
+
+def test_unknown_languages_are_rejected_cleanly(tmp_path, monkeypatch):
+    args = _run_setup(tmp_path, monkeypatch)
+    with pytest.raises(SystemExit, match="unknown --languages"):
+        fleurs_eval.main([*args, "--languages", "xx_yy"])
+
+
+def test_skipped_gated_languages_are_reported():
+    thresholds = {"languages": {"en_us": {}, "tr_tr": {}, "cmn_hans_cn": {}}}
+    assert fleurs_eval.skipped_languages({"en_us": {}}, thresholds) == ["cmn_hans_cn", "tr_tr"]

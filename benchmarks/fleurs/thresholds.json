@@ -48,10 +48,10 @@
           "max_cer": 7.07
         },
         "cmn_hans_cn": {
-          "baseline_wer": 98.91,
-          "baseline_cer": 27.8,
+          "baseline_wer": null,
+          "baseline_cer": 21.84,
           "max_wer": null,
-          "max_cer": 31.97
+          "max_cer": 25.11
         }
       }
     },
@@ -103,13 +103,13 @@
           "max_cer": 3.35
         },
         "cmn_hans_cn": {
-          "baseline_wer": 100.0,
-          "baseline_cer": 16.29,
+          "baseline_wer": null,
+          "baseline_cer": 7.58,
           "max_wer": null,
-          "max_cer": 18.73
+          "max_cer": 9.08
         }
       }
     }
   },
-  "policy": "max_wer = baseline + max(3 points, 15%); max_cer = baseline + max(1.5 points, 15%). Baselines: the pinned model on the first `per_language` utterances, CPU, fp32. WER is not gated for languages whose manifest metric is 'cer' (Mandarin)."
+  "policy": "max_wer = baseline + max(3 points, 15%); max_cer = baseline + max(1.5 points, 15%). Baselines: the pinned model on the first `per_language` utterances, CPU, fp32. For languages whose manifest metric is 'cer' (Mandarin) only CER is gated, computed with whitespace removed after normalization."
 }
