@@ -1,10 +1,13 @@
 """Download Hub assets declared by a repo's config.json and verify their sha256."""
 
+import contextlib
 import hashlib
 import json
 import os
 import re
+import shutil
 import tempfile
+import uuid
 import warnings
 from collections.abc import Callable
 from pathlib import Path
@@ -93,6 +96,109 @@ def _write_snapshot(local_dir: Path, record: dict) -> None:
         raise
 
 
+@contextlib.contextmanager
+def _bundle_lock(lock_path: Path):
+    """Exclusive cross-process lock (advisory; fcntl on POSIX, msvcrt on Windows)."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as f:
+        try:
+            import fcntl
+        except ImportError:  # Windows
+            import msvcrt
+            import time
+
+            f.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:  # LK_LOCK gives up after ~10 s; keep waiting
+                    time.sleep(1)
+            try:
+                yield
+            finally:
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            return
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _matches(path: Path, entry: dict) -> bool:
+    if not path.is_file():
+        return False
+    size = entry.get("size")
+    if isinstance(size, int) and path.stat().st_size != size:
+        return False  # cheap rejection before hashing
+    return _sha256(path) == entry.get("sha256")
+
+
+def _link_or_copy(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(source, target)  # same filesystem: no data copied
+    except OSError:
+        shutil.copy2(source, target)
+
+
+def _parse_config(config: dict, required: set[str],
+                  select: Callable[[str], bool] | None) -> list[str]:
+    """Validate config.json and return the files to materialize, smallest first."""
+    files = config.get("files")
+    if not isinstance(files, dict):
+        raise TypeError("config.json is missing a files map")
+    if not required.issubset(files):
+        missing = ", ".join(sorted(required - files.keys()))
+        raise ValueError(f"config.json is missing required file entries: {missing}")
+    for filename in files:
+        if not isinstance(files[filename], dict):
+            raise TypeError(f"config.json has an invalid entry for {filename}")
+        path = Path(filename)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"config.json contains an unsafe filename: {filename}")
+        if not files[filename].get("sha256"):
+            raise ValueError(f"config.json is missing a files.{filename}.sha256 entry")
+    wanted = [name for name in files if select is None or select(name)]
+    if not required.issubset(wanted):
+        missing = ", ".join(sorted(required - set(wanted)))
+        raise ValueError(f"required files are not selected for download: {missing}")
+    # Smallest file first so corruption is caught before larger downloads when possible.
+    return sorted(wanted, key=lambda name: files[name].get("size", 0))
+
+
+def _recover(local_dir: Path) -> None:
+    """Under the bundle lock: undo a publish interrupted between its two renames, and
+    remove staging/backup directories left behind by crashed processes."""
+    parent, name = local_dir.parent, local_dir.name
+    backups = sorted(parent.glob(f".old-{name}-*"), key=lambda p: p.stat().st_mtime)
+    if not local_dir.exists() and backups:
+        os.rename(backups.pop(), local_dir)
+    for leftover in [*backups, *parent.glob(f".staging-{name}-*")]:
+        shutil.rmtree(leftover, ignore_errors=True)
+
+
+def _publish(staging: Path, local_dir: Path) -> None:
+    """Swap a complete, verified staging directory in for the published bundle."""
+    if local_dir.exists():
+        backup = local_dir.parent / f".old-{local_dir.name}-{uuid.uuid4().hex}"
+        os.rename(local_dir, backup)
+        os.rename(staging, local_dir)
+        shutil.rmtree(backup, ignore_errors=True)
+    else:
+        os.rename(staging, local_dir)
+
+
 def download_verified(repo_id: str, required: set[str], *, revision: str | None = None,
                       cache_dir: str | Path | None = None,
                       select: Callable[[str], bool] | None = None
@@ -142,47 +248,62 @@ def download_verified(repo_id: str, required: set[str], *, revision: str | None 
                 stacklevel=2,
             )
     pinned = commit or requested  # one immutable commit for every file when known
+    record = {"repo_id": repo_id, "revision": requested, "commit": commit}
 
-    def fetch(filename: str) -> Path:
-        return Path(hf_hub_download(repo_id, filename, revision=pinned, local_dir=local_dir))
+    with _bundle_lock(local_dir.parent / f".{local_dir.name}.lock"):
+        _recover(local_dir)
+        reusable = _reuse_published(local_dir, record, required, select)
+        if reusable is not None:
+            return reusable
+        staging = local_dir.parent / f".staging-{local_dir.name}-{uuid.uuid4().hex}"
+        try:
+            config_path = Path(hf_hub_download(repo_id, "config.json", revision=pinned,
+                                               local_dir=staging))
+            config = json.loads(config_path.read_text())
+            wanted = _parse_config(config, required, select)
+            files = config["files"]
+            if local_dir.is_dir():
+                # Carry over every file the new config still vouches for (hardlinked, so
+                # unchanged multi-GB weights are not downloaded or copied again).
+                for filename, entry in files.items():
+                    if _matches(local_dir / filename, entry):
+                        _link_or_copy(local_dir / filename, staging / filename)
+            for filename in wanted:
+                if not _matches(staging / filename, files[filename]):
+                    path = Path(hf_hub_download(repo_id, filename, revision=pinned,
+                                                local_dir=staging))
+                    if not _matches(path, files[filename]):
+                        raise RuntimeError(
+                            f"{filename} checksum mismatch: downloaded asset does not match "
+                            f"{repo_id}/config.json"
+                        )
+            if commit is not None:
+                _write_snapshot(staging, record)
+            _publish(staging, local_dir)
+        except BaseException:
+            # The published bundle (if any) is untouched; drop the partial staging copy.
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+    return config, {filename: local_dir / filename for filename in wanted}
 
-    def fetch_and_verify(filename: str, config: dict) -> Path:
-        path = fetch(filename)
-        expected = config.get("files", {}).get(filename, {}).get("sha256")
-        if not expected:
-            raise ValueError(f"config.json is missing a files.{filename}.sha256 entry")
-        digest = hashlib.sha256()
-        with path.open("rb") as f:
-            for chunk in iter(lambda: f.read(1 << 20), b""):
-                digest.update(chunk)
-        if digest.hexdigest() != expected:
-            raise RuntimeError(
-                f"{filename} checksum mismatch: downloaded asset does not match {repo_id}/config.json"
-            )
-        return path
 
-    config = json.loads(fetch("config.json").read_text())
-    files = config.get("files")
-    if not isinstance(files, dict):
-        raise TypeError("config.json is missing a files map")
-    if not required.issubset(files):
-        missing = ", ".join(sorted(required - files.keys()))
-        raise ValueError(f"config.json is missing required file entries: {missing}")
-    for filename in files:
-        if not isinstance(files[filename], dict):
-            raise TypeError(f"config.json has an invalid entry for {filename}")
-        path = Path(filename)
-        if path.is_absolute() or ".." in path.parts:
-            raise ValueError(f"config.json contains an unsafe filename: {filename}")
-
-    wanted = [name for name in files if select is None or select(name)]
-    if not required.issubset(wanted):
-        missing = ", ".join(sorted(required - set(wanted)))
-        raise ValueError(f"required files are not selected for download: {missing}")
-    # Smallest file first so corruption is caught before larger downloads when possible.
-    verified = {}
-    for filename in sorted(wanted, key=lambda name: files[name].get("size", 0)):
-        verified[filename] = fetch_and_verify(filename, config)
-    if commit is not None:
-        _write_snapshot(local_dir, {"repo_id": repo_id, "revision": requested, "commit": commit})
-    return config, verified
+def _reuse_published(local_dir: Path, record: dict, required: set[str],
+                     select: Callable[[str], bool] | None):
+    """The published bundle as (config, paths) if it is the wanted commit and every
+    selected file verifies against its config.json; otherwise None."""
+    config_path = local_dir / "config.json"
+    if not config_path.is_file():
+        return None
+    if record["commit"] is not None:
+        recorded = _read_snapshot(local_dir)
+        if recorded.get("commit") != record["commit"]:
+            return None
+    try:
+        config = json.loads(config_path.read_text())
+        wanted = _parse_config(config, required, select)
+    except (ValueError, TypeError):
+        return None
+    files = config["files"]
+    if not all(_matches(local_dir / name, files[name]) for name in wanted):
+        return None
+    return config, {name: local_dir / name for name in wanted}

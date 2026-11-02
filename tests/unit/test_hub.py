@@ -1,9 +1,13 @@
 import builtins
 import hashlib
 import json
+import os
 import shutil
 import sys
+import threading
+import time
 import types
+from pathlib import Path
 
 import pytest
 
@@ -250,7 +254,7 @@ def test_offline_reuses_the_recorded_commit(monkeypatch, tmp_path):
     with pytest.warns(UserWarning, match=r"ConnectionError.*previously downloaded commit aaaa"):
         _, paths = hub.download_verified("owner/repo", {"tokenizer.model"},
                                          cache_dir=tmp_path)
-    assert {revision for _, revision in offline.requests} == {SHA_A}
+    assert offline.requests == []  # served from the verified local snapshot of commit A
     assert paths["tokenizer.model"].read_bytes() == b"tokenizer A"
 
 
@@ -303,8 +307,6 @@ def test_api_errors_are_reported_not_hidden(monkeypatch):
 
 
 def test_concurrent_snapshot_writes_do_not_collide(tmp_path):
-    import threading
-
     errors = []
 
     def writer(i):
@@ -347,4 +349,175 @@ def test_explicit_offline_mode_reuses_record_without_warning(monkeypatch, tmp_pa
     with warnings_module.catch_warnings():
         warnings_module.simplefilter("error")
         hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
-    assert {revision for _, revision in offline.requests} == {SHA_A}
+    assert offline.requests == []
+
+
+# --- staged, locked, atomic bundle materialization (issue #13) ---
+
+def _commit(files):
+    config = {"format": 1, "files": {
+        name: {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+        for name, data in files.items()}}
+    return {"config.json": json.dumps(config).encode(), **files}
+
+
+class VersionedHub:
+    """Fake Hub with explicit commits, a movable `main`, failure injection and a log."""
+
+    def __init__(self, commits, head):
+        self.commits, self.head = commits, head
+        self.requests, self.fail, self.corrupt = [], set(), set()
+        self.delay = 0.0
+        self.lock = threading.Lock()
+        self.active = self.max_active = 0
+
+    def module(self):
+        hub_self = self
+
+        class HfApi:
+            def model_info(self, repo_id, revision=None):
+                return types.SimpleNamespace(
+                    sha=revision if revision in hub_self.commits else hub_self.head)
+
+        def hf_hub_download(repo_id, filename, revision=None, local_dir=None):
+            with hub_self.lock:
+                hub_self.active += 1
+                hub_self.max_active = max(hub_self.max_active, hub_self.active)
+                hub_self.requests.append(filename)
+            try:
+                time.sleep(hub_self.delay)
+                if filename in hub_self.fail:
+                    raise ConnectionError(f"network dropped while fetching {filename}")
+                data = hub_self.commits[revision][filename]
+                if filename in hub_self.corrupt:
+                    data = b"corrupted " + data
+                target = Path(local_dir) / filename
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+                return str(target)
+            finally:
+                with hub_self.lock:
+                    hub_self.active -= 1
+
+        return types.SimpleNamespace(HfApi=HfApi, hf_hub_download=hf_hub_download)
+
+
+A_FILES = {"model.bin": b"weights" * 1000, "tokenizer.model": b"tok A",
+           "fp16/model.bin": b"half" * 1000}
+B_FILES = {"model.bin": b"weights" * 1000, "tokenizer.model": b"tok B",
+           "fp16/model.bin": b"half" * 1000}
+
+
+def _hub(monkeypatch, head=SHA_A):
+    fake = VersionedHub({SHA_A: _commit(A_FILES), SHA_B: _commit(B_FILES)}, head)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake.module())
+    return fake
+
+
+def _load(tmp_path, select=lambda name: "/" not in name):
+    return hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path,
+                                 select=select)
+
+
+def _bundle(tmp_path):
+    return tmp_path / "owner--repo" / "main"
+
+
+def _leftovers(tmp_path):
+    return sorted(p.name for p in (tmp_path / "owner--repo").iterdir()
+                  if p.name.startswith((".staging-", ".old-")))
+
+
+def test_published_bundle_is_reused_without_downloads(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    _load(tmp_path)
+    fake.requests.clear()
+    _, paths = _load(tmp_path)
+    assert fake.requests == []
+    assert paths["tokenizer.model"] == _bundle(tmp_path) / "tokenizer.model"
+
+
+@pytest.mark.parametrize("failure", ["fail", "corrupt"])
+def test_failed_update_preserves_the_existing_snapshot(monkeypatch, tmp_path, failure):
+    fake = _hub(monkeypatch)
+    _load(tmp_path)
+    fake.head = SHA_B  # a new commit, whose download goes wrong
+    getattr(fake, failure).add("tokenizer.model")
+    with pytest.raises((ConnectionError, RuntimeError)):
+        _load(tmp_path)
+    bundle = _bundle(tmp_path)
+    assert (bundle / "tokenizer.model").read_bytes() == b"tok A"
+    assert (bundle / "config.json").read_bytes() == _commit(A_FILES)["config.json"]
+    assert hub._read_snapshot(bundle)["commit"] == SHA_A
+    assert _leftovers(tmp_path) == []
+
+
+def test_commit_change_reuses_unchanged_files_by_hardlink(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    _load(tmp_path)
+    inode = (_bundle(tmp_path) / "model.bin").stat().st_ino
+    fake.head = SHA_B
+    fake.requests.clear()
+    _, paths = _load(tmp_path)
+    assert sorted(fake.requests) == ["config.json", "tokenizer.model"]  # not model.bin
+    assert paths["tokenizer.model"].read_bytes() == b"tok B"
+    assert (_bundle(tmp_path) / "model.bin").stat().st_ino == inode
+    assert hub._read_snapshot(_bundle(tmp_path))["commit"] == SHA_B
+    assert _leftovers(tmp_path) == []
+
+
+def test_new_selection_of_same_commit_keeps_existing_files(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    _load(tmp_path)  # fp32 only
+    fake.requests.clear()
+    _load(tmp_path, select=lambda name: name.startswith("fp16/") or name == "tokenizer.model")
+    assert sorted(fake.requests) == ["config.json", "fp16/model.bin"]
+    bundle = _bundle(tmp_path)
+    assert (bundle / "model.bin").is_file() and (bundle / "fp16" / "model.bin").is_file()
+
+
+def test_concurrent_loaders_download_once(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    fake.delay = 0.02
+    barrier, errors, results = threading.Barrier(6), [], []
+
+    def worker():
+        try:
+            barrier.wait()
+            results.append(_load(tmp_path)[1]["tokenizer.model"].read_bytes())
+        except Exception as exc:  # noqa: BLE001 -- surfaced below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == [] and results == [b"tok A"] * 6
+    assert sorted(fake.requests) == ["config.json", "model.bin", "tokenizer.model"]
+    assert fake.max_active == 1
+    assert _leftovers(tmp_path) == []
+
+
+def test_interrupted_publish_is_recovered(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    _load(tmp_path)
+    bundle = _bundle(tmp_path)
+    # Simulate a crash between the two renames of a publish, plus a dead staging dir.
+    os.rename(bundle, bundle.parent / ".old-main-deadbeef")
+    (bundle.parent / ".staging-main-cafebabe").mkdir()
+    fake.requests.clear()
+    _, paths = _load(tmp_path)
+    assert fake.requests == []  # the previous snapshot was restored, not re-downloaded
+    assert paths["tokenizer.model"].read_bytes() == b"tok A"
+    assert _leftovers(tmp_path) == []
+
+
+def test_corrupted_published_file_is_repaired(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    _load(tmp_path)
+    (_bundle(tmp_path) / "tokenizer.model").write_bytes(b"bit rot")
+    fake.requests.clear()
+    _, paths = _load(tmp_path)
+    assert sorted(fake.requests) == ["config.json", "tokenizer.model"]
+    assert paths["tokenizer.model"].read_bytes() == b"tok A"
