@@ -377,8 +377,8 @@ def _fake_cuda(monkeypatch, *, current=1, runtime=12080, fail=None):
     import sys
     import types
 
-    devices = {0: _Prop(b"NVIDIA GeForce RTX 2070\x00\x00", 7, 5),
-               1: _Prop("NVIDIA A100-SXM4-40GB", 8, 0)}
+    devices = {0: _Prop(b"Example GPU A\x00\x00", 7, 5),
+               1: _Prop("Example GPU B", 8, 0)}
     queried = []
 
     def result(name, value):
@@ -411,14 +411,14 @@ def test_environment_queries_the_current_device_not_device_zero(monkeypatch):
         "tensorrt_version": "10.16.1.11",
         "cuda_runtime_version": "12.8",
         "compute_capability": "8.0",
-        "device_name": "NVIDIA A100-SXM4-40GB",
+        "device_name": "Example GPU B",
     }
 
 
 def test_environment_decodes_device_name_and_cuda_version(monkeypatch):
     _fake_cuda(monkeypatch, current=0, runtime=13040)
     env = tensorrt_cache._local_environment()
-    assert env["device_name"] == "NVIDIA GeForce RTX 2070"
+    assert env["device_name"] == "Example GPU A"
     assert env["compute_capability"] == "7.5"
     assert env["cuda_runtime_version"] == "13.4"
 
@@ -445,13 +445,13 @@ def test_switching_device_or_cuda_version_uses_a_different_engine(monkeypatch, o
     monkeypatch.setattr(tensorrt_cache, "build_engine", fake_build_engine)
     cache = tmp_path / "cache"
     _fake_cuda(monkeypatch, current=0)
-    on_2070 = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    on_gpu_a = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
     _fake_cuda(monkeypatch, current=1)
-    on_a100 = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    on_gpu_b = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
     _fake_cuda(monkeypatch, current=1, runtime=13000)
-    on_a100_cuda13 = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
+    on_gpu_b_cuda13 = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
     _fake_cuda(monkeypatch, current=1)
     again = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache)
-    assert len({on_2070, on_a100, on_a100_cuda13}) == 3
-    assert again == on_a100
+    assert len({on_gpu_a, on_gpu_b, on_gpu_b_cuda13}) == 3
+    assert again == on_gpu_b
     assert len(builds) == 3
