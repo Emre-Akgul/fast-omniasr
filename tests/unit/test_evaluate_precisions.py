@@ -208,13 +208,12 @@ def test_file_rows_reach_the_model_normalized_once(tmp_path, monkeypatch, kind):
     assert not np.array_equal(received[0], prepare_audio(load_audio(path)[0]))
 
 
-def test_non_16k_and_stereo_files_still_fail_clearly(tmp_path):
+@pytest.mark.parametrize("kwargs, message", [({"rate": 8000}, "16 kHz"),
+                                             ({"channels": 2}, "mono")])
+def test_bad_files_are_rejected_while_loading_rows(tmp_path, kwargs, message):
+    """Before any model is loaded, as load_audio() used to do."""
     import argparse
 
-    from fast_omniasr.audio import prepare_audio
-
-    for kwargs, message in (({"rate": 8000}, "16 kHz"), ({"channels": 2}, "mono")):
-        path, _ = _wav(tmp_path, **kwargs)
-        row = evaluate.load_rows(argparse.Namespace(dataset=None, audio=[str(path)]))[0]
-        with pytest.raises(ValueError, match=message):
-            prepare_audio(row["wav"], row["sample_rate"])
+    path, _ = _wav(tmp_path, **kwargs)
+    with pytest.raises(ValueError, match=message):
+        evaluate.load_rows(argparse.Namespace(dataset=None, audio=[str(path)]))

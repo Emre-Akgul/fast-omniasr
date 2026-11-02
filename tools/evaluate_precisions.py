@@ -104,11 +104,14 @@ def load_rows(args):
         return pickle.loads(args.dataset.read_bytes())[: args.limit]
     import soundfile as sf
 
+    from fast_omniasr.audio import prepare_audio
+
     rows = []
     for spec in args.audio:
         path, _, lang = spec.partition(":")
         # Raw samples: the transcribers normalize exactly once, like OmniASR.transcribe(path).
         waveform, sample_rate = sf.read(path, dtype="float32")
+        prepare_audio(waveform, sample_rate)  # reject bad files before any model loads
         rows.append({"id": spec, "wav": waveform, "sample_rate": sample_rate,
                      "lang": lang or None})
     return rows
