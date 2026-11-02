@@ -1,4 +1,5 @@
 """TensorRT engine inference. No PyTorch, ONNX Runtime, or training-framework imports."""
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -70,6 +71,14 @@ def _validate_contract(trt, engine, context):
 
 
 class TensorRTBackend:
+    """Batch-one TensorRT engine runner.
+
+    Thread-safe: one instance owns a single execution context, CUDA stream and pair of
+    device buffers, so concurrent `infer()` calls are serialized by a per-instance lock
+    (they never overlap or mix requests). For parallel GPU throughput, create one
+    instance per worker. `close()` waits for an in-flight `infer()` to finish.
+    """
+
     def __init__(self, path: str | Path):
         try:
             import tensorrt as trt
@@ -82,7 +91,11 @@ class TensorRTBackend:
         except ImportError as exc:
             raise ImportError("Install fast-omniasr[tensorrt] for the cuda-python dependency") from exc
         self._cudart = cudart
+        self._lock = threading.Lock()
         self.closed = False  # set early so close()/__del__ can clean up a partial init
+        # The engine lives on the device current at load time; the current device is
+        # per-thread, so infer() re-selects it for callers on other threads.
+        self.device = self._check(cudart.cudaGetDevice())
         logger = trt.Logger(trt.Logger.WARNING)
         # Kept on the instance: the runtime must outlive the engine it deserialized.
         self.runtime = runtime = trt.Runtime(logger)
@@ -118,7 +131,13 @@ class TensorRTBackend:
         (or to the OmniASR wrapping it); later infer() calls raise RuntimeError."""
         if getattr(self, "closed", True):
             return
-        self.closed = True
+        with self._lock:  # wait for an in-flight infer() before releasing its buffers
+            if self.closed:
+                return
+            self.closed = True
+            self._release()
+
+    def _release(self) -> None:
         cudart = self._cudart
         stream = getattr(self, "stream", None)
         input_ptr = getattr(self, "input_ptr", None)
@@ -171,7 +190,6 @@ class TensorRTBackend:
     def infer(self, waveform: np.ndarray) -> np.ndarray:
         if self.closed:
             raise RuntimeError("TensorRTBackend is closed")
-        cudart = self._cudart
         waveform = np.asarray(waveform)
         if waveform.dtype != np.float32 or waveform.ndim != 2 or waveform.shape[0] != 1:
             raise ValueError("Expected normalized float32 waveform [1, samples]")
@@ -182,6 +200,14 @@ class TensorRTBackend:
                 f"[{self.min_samples}, {self.max_samples}]"
             )
         waveform = np.ascontiguousarray(waveform)
+        with self._lock:  # the context, stream and buffers are shared per instance
+            if self.closed:
+                raise RuntimeError("TensorRTBackend is closed")
+            return self._infer_locked(waveform, samples)
+
+    def _infer_locked(self, waveform: np.ndarray, samples: int) -> np.ndarray:
+        cudart = self._cudart
+        self._check(cudart.cudaSetDevice(self.device))
         if not self.context.set_input_shape("audio", (1, samples)):
             raise RuntimeError("Failed to set the dynamic input shape")
         output_shape = tuple(self.context.get_tensor_shape("logits"))

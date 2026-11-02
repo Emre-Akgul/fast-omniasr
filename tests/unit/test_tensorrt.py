@@ -1,6 +1,9 @@
 import builtins
+import ctypes
 import gc
 import sys
+import threading
+import time
 import types
 import weakref
 
@@ -34,6 +37,9 @@ class _FakeCudart:
     def __init__(self):
         self.calls = []
         self._next = 100
+        self.memory = {}  # fake device memory: pointer -> bytes
+        self.current_device = 0
+        self.set_device_calls = []
 
     def _ptr(self):
         self._next += 1
@@ -58,6 +64,18 @@ class _FakeCudart:
 
     def cudaMemcpyAsync(self, dst, src, nbytes, kind, stream):
         self.calls.append("memcpy")
+        if kind == self.cudaMemcpyKind.cudaMemcpyHostToDevice:
+            self.memory[dst] = ctypes.string_at(src, nbytes)
+        else:
+            data = self.memory.get(src, b"")[:nbytes].ljust(nbytes, b"\0")
+            ctypes.memmove(dst, data, nbytes)
+        return (0,)
+
+    def cudaGetDevice(self):
+        return 0, self.current_device
+
+    def cudaSetDevice(self, device):
+        self.set_device_calls.append((threading.get_ident(), device))
         return (0,)
 
     def cudaStreamDestroy(self, stream):
@@ -77,6 +95,22 @@ class _FakeContext:
         return self.engine.logits_shape(self.shape[1])
 
     def set_tensor_address(self, name, ptr):
+        self.addresses = getattr(self, "addresses", {})
+        self.addresses[name] = ptr
+        return True
+
+    def execute_async_v3(self, stream):
+        """Logits filled with the first input sample, written after a delay so that
+        unsynchronized concurrent callers would observe each other's data."""
+        engine = self.engine
+        engine.active += 1
+        engine.max_active = max(engine.max_active, engine.active)
+        memory = engine.cudart.memory
+        first = np.frombuffer(memory[self.addresses["audio"]][:4], dtype=np.float32)[0]
+        time.sleep(engine.execute_delay)
+        count = int(np.prod(self.get_tensor_shape("logits")))
+        memory[self.addresses["logits"]] = np.full(count, first, np.float32).tobytes()
+        engine.active -= 1
         return True
 
 
@@ -90,6 +124,9 @@ class _FakeEngine:
         self.num_optimization_profiles = 1
         self.profile = ((1, 400), (1, 16000), (1, 32000))
         self.logits_shape = lambda samples: (1, samples // 320, 8)
+        self.cudart = None  # set by the fixture so execute can reach fake device memory
+        self.active = self.max_active = 0
+        self.execute_delay = 0.0
 
     @property
     def num_io_tensors(self):
@@ -124,7 +161,9 @@ class _FakeRuntime:
         pass
 
     def deserialize_cuda_engine(self, data):
-        return self.engine_factory()
+        engine = self.engine_factory()
+        engine.cudart = sys.modules["cuda.bindings"].runtime
+        return engine
 
 
 @pytest.fixture
@@ -309,4 +348,76 @@ def test_infer_refuses_output_larger_than_buffer(fake_trt, monkeypatch):
     with pytest.raises(RuntimeError, match="does not fit"):
         backend.infer(np.zeros((1, 16000), dtype=np.float32))
     assert not any(c for c in fake_trt.cudart.calls if c == "memcpy")
+    backend.close()
+
+
+# --- concurrent callers are serialized and never mix requests (issue #1) ---
+
+def _run_concurrently(backend, values, calls_per_thread=4):
+    results, errors = {}, []
+    barrier = threading.Barrier(len(values))
+
+    def worker(value):
+        try:
+            barrier.wait()
+            for i in range(calls_per_thread):
+                samples = 16000 + 320 * (int(value) % 7)  # varied lengths per caller
+                out = backend.infer(np.full((1, samples), value, np.float32))
+                results[(value, i)] = out
+        except Exception as exc:  # noqa: BLE001 -- surfaced by the assertion below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(v,)) for v in values]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    return results
+
+
+def test_concurrent_infer_matches_sequential(fake_trt):
+    backend = TensorRTBackend(fake_trt.path)
+    backend.engine.execute_delay = 0.002
+    values = [float(v) for v in range(1, 9)]
+    sequential = {v: backend.infer(np.full((1, 16000 + 320 * (int(v) % 7)), v, np.float32))
+                  for v in values}
+    concurrent = _run_concurrently(backend, values)
+    assert backend.engine.max_active == 1  # executions never overlapped
+    for (value, _), out in concurrent.items():
+        assert out.shape == sequential[value].shape
+        assert np.array_equal(out, sequential[value])  # no request saw another's data
+    backend.close()
+
+
+def test_close_waits_for_in_flight_infer(fake_trt):
+    backend = TensorRTBackend(fake_trt.path)
+    backend.engine.execute_delay = 0.2
+    result = {}
+    worker = threading.Thread(
+        target=lambda: result.update(out=backend.infer(np.full((1, 16000), 5.0, np.float32)))
+    )
+    worker.start()
+    while backend.engine.active == 0:  # wait until execution is in progress
+        time.sleep(0.001)
+    backend.close()  # must block until the in-flight call has copied its output
+    worker.join()
+    assert np.all(result["out"] == 5.0)
+    calls = fake_trt.cudart.calls
+    last_memcpy = max(i for i, c in enumerate(calls) if c == "memcpy")
+    first_free = min(i for i, c in enumerate(calls) if isinstance(c, tuple) and c[0] == "free")
+    assert last_memcpy < first_free
+    with pytest.raises(RuntimeError, match="closed"):
+        backend.infer(np.zeros((1, 16000), np.float32))
+
+
+def test_infer_from_another_thread_uses_the_load_device(fake_trt):
+    fake_trt.cudart.current_device = 3
+    backend = TensorRTBackend(fake_trt.path)
+    assert backend.device == 3
+    fake_trt.cudart.current_device = 0  # another thread's default device
+    worker = threading.Thread(target=backend.infer, args=(np.zeros((1, 16000), np.float32),))
+    worker.start()
+    worker.join()
+    assert fake_trt.cudart.set_device_calls == [(worker.ident, 3)]
     backend.close()
