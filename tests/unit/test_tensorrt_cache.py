@@ -593,7 +593,7 @@ def _from_pretrained_with(monkeypatch, tmp_path, failures):
     rebuilds = []
 
     def fake_cache(onnx_path, **kwargs):
-        rebuilds.append(kwargs["rebuild"])
+        rebuilds.append({k: kwargs[k] for k in ("rebuild", "discard_sha256") if k in kwargs})
         return tmp_path / "e.engine"
 
     monkeypatch.setattr(tensorrt_cache, "get_or_build_engine", fake_cache)
@@ -616,17 +616,59 @@ def _from_pretrained_with(monkeypatch, tmp_path, failures):
         monkeypatch.setattr(model.OmniASR, "__init__", real_init)
 
 
+def _deserialize_error():
+    from fast_omniasr.backends.tensorrt import EngineDeserializationError
+
+    return EngineDeserializationError("Failed to deserialize TensorRT engine")
+
+
 def test_undeserializable_engine_is_rebuilt_once(monkeypatch, tmp_path):
-    failures = [RuntimeError("Failed to deserialize TensorRT engine")]
-    _, rebuilds, caught = _from_pretrained_with(monkeypatch, tmp_path, failures)
-    assert rebuilds == [False, True]
-    assert any("could not be deserialized" in str(w.message) for w in caught)
+    _, rebuilds, caught = _from_pretrained_with(monkeypatch, tmp_path, [_deserialize_error()])
+    assert rebuilds == [{}, {"rebuild": True}]  # no recorded checksum for this engine
+    assert any("could not be deserialized" in str(w.message) and "transient" in str(w.message)
+               for w in caught)
 
 
-@pytest.mark.parametrize("failures", [
-    [RuntimeError("Failed to deserialize TensorRT engine")] * 2,   # rebuilt engine also bad
-    [RuntimeError("Failed to create TensorRT execution context")],  # not a corrupt file
+def test_rebuild_targets_the_engine_that_failed(monkeypatch, tmp_path):
+    (tmp_path / "metadata.json").write_text(json.dumps({"engine": {"sha256": "bad"}}))
+    _, rebuilds, _ = _from_pretrained_with(monkeypatch, tmp_path, [_deserialize_error()])
+    assert rebuilds == [{}, {"discard_sha256": "bad"}]
+
+
+@pytest.mark.parametrize("make_failures", [
+    lambda: [_deserialize_error(), _deserialize_error()],              # rebuilt engine also bad
+    lambda: [RuntimeError("Failed to create TensorRT execution context")],  # not a bad file
+    lambda: [RuntimeError("something about deserialize, but not the engine")],
 ])
-def test_other_or_repeated_failures_are_raised(monkeypatch, tmp_path, failures):
+def test_other_or_repeated_failures_are_raised(monkeypatch, tmp_path, make_failures):
     with pytest.raises(RuntimeError):
-        _from_pretrained_with(monkeypatch, tmp_path, list(failures))
+        _from_pretrained_with(monkeypatch, tmp_path, make_failures())
+
+
+def test_discard_reuses_an_engine_another_process_already_rebuilt(counting_builder, onnx_a,
+                                                                  tmp_path):
+    from fast_omniasr.tensorrt_cache import recorded_engine_sha256
+
+    cache = tmp_path / "c"
+    engine = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
+    failed = recorded_engine_sha256(engine)
+    get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache, discard_sha256=failed)
+    assert len(counting_builder) == 2  # it was still the failed engine: rebuilt
+    engine.write_bytes(b"rebuilt by another process")
+    metadata = json.loads((engine.parent / "metadata.json").read_text())
+    metadata["engine"] = tensorrt_cache._engine_record(engine)
+    (engine.parent / "metadata.json").write_text(json.dumps(metadata))
+    get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache, discard_sha256=failed)
+    assert len(counting_builder) == 2  # someone else already replaced it: reused
+
+
+@pytest.mark.parametrize("record", ["not a dict", {"size": "x"}, {"sha256": "y"}])
+def test_malformed_engine_record_triggers_a_rebuild(counting_builder, onnx_a, tmp_path, record):
+    cache = tmp_path / "c"
+    engine = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
+    metadata = json.loads((engine.parent / "metadata.json").read_text())
+    metadata["engine"] = record
+    (engine.parent / "metadata.json").write_text(json.dumps(metadata))
+    with pytest.warns(UserWarning, match="recorded checksum"):
+        get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
+    assert len(counting_builder) == 2
