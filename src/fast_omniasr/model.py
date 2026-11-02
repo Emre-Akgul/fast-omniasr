@@ -34,9 +34,19 @@ class OmniASR:
             self.backend = TensorRTBackend(model_path)
         else:
             raise ValueError("backend must be 'onnx' or 'tensorrt'")
-        self.tokenizer = Tokenizer(tokenizer_path)
+        try:
+            self.tokenizer = Tokenizer(tokenizer_path)
+        except BaseException:
+            self.backend.close()  # don't leave a loaded session/engine behind
+            raise
+
+    @property
+    def closed(self) -> bool:
+        return getattr(self.backend, "closed", False)
 
     def _transcribe(self, audio: np.ndarray) -> Transcription:
+        if self.closed:
+            raise RuntimeError("This OmniASR model is closed")
         logits = self.backend.infer(audio)
         ids = greedy_token_ids(logits)
         return Transcription(self.tokenizer.decode(ids), tuple(ids), tuple(logits.shape))
@@ -48,11 +58,10 @@ class OmniASR:
         return self._transcribe(prepare_audio(waveform, sample_rate))
 
     def close(self) -> None:
-        """Release backend resources (e.g. the TensorRT CUDA stream/buffers). Safe to call
-        more than once; a no-op for backends (like ONNX) that don't hold explicit GPU state."""
-        close = getattr(self.backend, "close", None)
-        if close is not None:
-            close()
+        """Release backend resources: the ONNX Runtime session, or the TensorRT engine,
+        context, stream and buffers. Idempotent; `transcribe*()` afterwards raises
+        RuntimeError. Also called on leaving a `with OmniASR(...) as model:` block."""
+        self.backend.close()
 
     def __enter__(self):
         return self

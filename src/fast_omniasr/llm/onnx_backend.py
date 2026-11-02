@@ -7,6 +7,8 @@ from pathlib import Path
 import numpy as np
 import onnxruntime as ort
 
+from .._memory import release_freed_memory
+
 
 def options(threads=4):
     result = ort.SessionOptions()
@@ -130,6 +132,7 @@ class ONNXLLMBackend:
     def __init__(self, directory, device="cpu", threads=4, low_memory=False, precision="fp32"):
         from ..precision import check_precision
 
+        self.closed = False
         self.directory = Path(directory)
         self.device = device
         self.threads = threads
@@ -158,15 +161,31 @@ class ONNXLLMBackend:
     def bound(self):
         return self.device == "cuda" and not self.low_memory
 
-    def close(self):
+    def _unload(self):
+        """Drop every loaded session; they are re-created lazily on the next call.
+        low_memory mode uses this to keep a single session resident at a time."""
         self.encoder_session = self.prefill_session = self.step_session = None
         self.decoder = None
         self.keepalive = []
         gc.collect()
 
+    def close(self):
+        """Permanently release all sessions and their memory. Idempotent; later calls
+        raise RuntimeError instead of silently reloading the graphs."""
+        if getattr(self, "closed", False):
+            return
+        self.closed = True
+        self._unload()
+        release_freed_memory()
+
+    def _check_open(self):
+        if self.closed:
+            raise RuntimeError("ONNXLLMBackend is closed")
+
     def encode(self, audio):
+        self._check_open()
         if self.low_memory:
-            self.close()
+            self._unload()
         if self.encoder_session is None:
             self.encoder_session = session(
                 self.graphs / "encoder.onnx", self.device, options(self.threads), self.arena
@@ -197,6 +216,7 @@ class ONNXLLMBackend:
             self.empty_cache = [np.zeros((1, 0, heads, dim), np.float32)] * 24
 
     def initialize_decoder(self):
+        self._check_open()
         if self.unified:
             self._initialize_unified()
             return
@@ -262,6 +282,7 @@ class ONNXLLMBackend:
         return outputs[0], outputs[1:]
 
     def prefill(self, context, bos):
+        self._check_open()
         if self.unified:
             return self._run_unified(context, bos, None)
         self.initialize_decoder()
@@ -280,6 +301,7 @@ class ONNXLLMBackend:
         return outputs[0], outputs[1:]
 
     def decode_step(self, token, cache):
+        self._check_open()
         if token.shape != (1, 1) or token.dtype != np.int64 or len(cache) != 24:
             raise ValueError("Expected one int64 token and 24 K/V tensors")
         if self.unified:
