@@ -4,6 +4,8 @@ For each precision this reports how many transcripts are identical to the fp32 o
 the decode time and the process's peak GPU memory. Inputs are audio files (agreement
 only) or a labelled pickle of [{"id", "ref", "wav"}] with mono 16 kHz float32 waveforms,
 which adds WER and CER after Unicode normalization, lowercasing and punctuation removal.
+Utterances whose normalized reference is empty (silence, noise) are kept: any words
+emitted for them count as insertions, and they are also summarized separately.
 LLM inputs given as `clip.wav:eng_Latn` are transcribed with that language code.
 
   python tools/evaluate_precisions.py --llm /path/to/llm-export \\
@@ -44,13 +46,25 @@ def edits(reference, hypothesis):
 
 
 def error_rates(references, hypotheses):
-    pairs = [(normalize(r), normalize(h)) for r, h in zip(references, hypotheses) if normalize(r)]
+    """Corpus WER/CER over every utterance, sclite/jiwer-style: errors summed over all
+    pairs divided by the total reference length. Empty references (after normalization)
+    are not dropped: output on silence adds insertions to the numerator and nothing to
+    the denominator, so hallucinations stay visible. If every reference is empty the
+    rates are undefined and reported as None, with the insertions still counted."""
+    pairs = [(normalize(r), normalize(h)) for r, h in zip(references, hypotheses)]
+    ref_words = sum(len(r.split()) for r, _ in pairs)
+    ref_chars = sum(len(r) for r, _ in pairs)
     words = sum(edits(r.split(), h.split()) for r, h in pairs)
     chars = sum(edits(r, h) for r, h in pairs)
+    silent = [h for r, h in pairs if not r]
     return {
-        "wer": 100 * words / sum(len(r.split()) for r, _ in pairs),
-        "cer": 100 * chars / sum(len(r) for r, _ in pairs),
+        "wer": 100 * words / ref_words if ref_words else None,
+        "cer": 100 * chars / ref_chars if ref_chars else None,
         "n": len(pairs),
+        "empty_references": len(silent),
+        # Utterances with an empty reference that still produced (normalized) text.
+        "empty_reference_nonempty_hypotheses": sum(bool(h) for h in silent),
+        "empty_reference_inserted_words": sum(len(h.split()) for h in silent),
     }
 
 
