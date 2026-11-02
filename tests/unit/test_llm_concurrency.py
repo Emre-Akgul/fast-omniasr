@@ -51,6 +51,8 @@ class SharedStateBackend:
         return self._logits(token), []
 
     def decode_step(self, token, cache):
+        if self.closed:  # like the real low_memory backend unloading mid-decode
+            raise RuntimeError("backend closed during decode")
         self._enter()
         self.steps += 1
         out = EOS if self.steps >= 3 else self.request
@@ -69,6 +71,8 @@ class Tokens:
 def make_model(backend, directory=None, config=None):
     model = object.__new__(OmniASRLLM)
     model.closed = False
+    model._lock = threading.Lock()  # as __init__ creates them
+    model._language_lock = threading.Lock()
     model.backend = "onnx"
     model.onnx = backend
     model.tokenizer = Tokens()
@@ -166,3 +170,20 @@ def test_concurrent_first_use_loads_language_table_once(tmp_path, monkeypatch):
     for code, row in results:
         expected = np.arange(8, dtype=np.float32) + (0 if code == "eng_Latn" else 8)
         np.testing.assert_array_equal(row, expected)
+
+
+def test_lazily_created_lock_is_shared_by_concurrent_first_users():
+    model = object.__new__(OmniASRLLM)  # no __init__: locks are created on first use
+    barrier = threading.Barrier(16)
+    locks = []
+
+    def worker():
+        barrier.wait()
+        locks.append(model._ensure_lock("_lock"))
+
+    threads = [threading.Thread(target=worker) for _ in range(16)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len({id(lock) for lock in locks}) == 1

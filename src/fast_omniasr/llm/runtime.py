@@ -29,14 +29,16 @@ class OmniASRLLM:
     The default baseline recomputes the prefix. Set cached=True to load the
     explicit-cache decoder, which processes the prefix once per transcription.
     It supports one mono 16 kHz clip, up to 30 seconds, without language conditioning.
-    
+
     Thread-safe: an instance may be shared across threads. Its sessions, lazily created
     graphs, low_memory phasing and device buffers are per-instance state, so concurrent
     `transcribe()` calls are serialized -- each request runs encode and the whole decode
     loop alone, and results never mix. For parallel throughput use one instance per
     worker (each holds its own copy of the weights). `close()` waits for an in-flight
-    transcription to finish.
-    """
+    transcription to finish. The guarantee covers `transcribe()`, `close()` and
+    `language_embedding()`; the backend object in `.onnx` is not itself thread-safe, so
+    don't call its methods directly while the model is in use.
+"""
 
     def __init__(
         self,
@@ -167,11 +169,9 @@ class OmniASRLLM:
         return np.array(self._lang_embeddings[index], dtype=np.float32)
 
     def _ensure_lock(self, name):
-        lock = getattr(self, name, None)
-        if lock is None:  # instances built without __init__ (tests, subclasses)
-            lock = threading.Lock()
-            setattr(self, name, lock)
-        return lock
+        # Instances built without __init__ (tests, subclasses) get their lock lazily;
+        # dict.setdefault is atomic under the GIL, so concurrent first use shares one.
+        return self.__dict__.setdefault(name, threading.Lock())
 
     def close(self) -> None:
         """Release the model: the ONNX Runtime sessions (ONNX backend) or the TorchScript
