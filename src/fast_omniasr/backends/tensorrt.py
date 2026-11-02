@@ -19,7 +19,8 @@ class TensorRTBackend:
         self._cudart = cudart
         self.closed = False  # set early so close()/__del__ can clean up a partial init
         logger = trt.Logger(trt.Logger.WARNING)
-        runtime = trt.Runtime(logger)
+        # Kept on the instance: the runtime must outlive the engine it deserialized.
+        self.runtime = runtime = trt.Runtime(logger)
         engine = runtime.deserialize_cuda_engine(Path(path).read_bytes())
         if engine is None:
             raise RuntimeError("Failed to deserialize TensorRT engine")
@@ -46,21 +47,37 @@ class TensorRTBackend:
             raise RuntimeError("Failed to bind the logits tensor address")
 
     def close(self) -> None:
-        """Free the CUDA stream and device buffers. Safe to call more than once, and
-        safe on a partially-constructed instance (e.g. if __init__ raised partway through)."""
+        """Release all GPU resources: device buffers, the CUDA stream, the execution context,
+        the engine, and the runtime. Safe to call more than once, and safe on a
+        partially-constructed instance (e.g. if __init__ raised partway through).
+
+        Resources are released even if callers still hold a reference to this backend
+        (or to the OmniASR wrapping it); later infer() calls raise RuntimeError."""
         if getattr(self, "closed", True):
             return
         self.closed = True
         cudart = self._cudart
-        input_ptr = getattr(self, "input_ptr", None)
-        if input_ptr is not None:
-            cudart.cudaFree(input_ptr)
-        output_ptr = getattr(self, "output_ptr", None)
-        if output_ptr is not None:
-            cudart.cudaFree(output_ptr)
         stream = getattr(self, "stream", None)
-        if stream is not None:
-            cudart.cudaStreamDestroy(stream)
+        try:
+            if stream is not None:
+                # Don't free buffers that queued work may still be reading or writing.
+                cudart.cudaStreamSynchronize(stream)
+            for name in ("input_ptr", "output_ptr"):
+                ptr = getattr(self, name, None)
+                setattr(self, name, None)
+                if ptr is not None:
+                    cudart.cudaFree(ptr)
+            self.stream = None
+            if stream is not None:
+                cudart.cudaStreamDestroy(stream)
+        finally:
+            # Drop TensorRT objects in dependency order: context -> engine -> runtime.
+            # The Python bindings free the underlying C++ objects (and the engine's
+            # device memory) when their last reference goes away. Done in `finally`
+            # so a failing CUDA call above cannot leave the engine resident.
+            self.context = None
+            self.engine = None
+            self.runtime = None
 
     def __enter__(self):
         return self
