@@ -3,6 +3,71 @@ from pathlib import Path
 
 import numpy as np
 
+_INPUT, _OUTPUT = "audio", "logits"
+
+
+def _validate_contract(trt, engine, context):
+    """Check the engine matches the batch-one CTC contract this backend assumes:
+    exactly one float32 device input `audio` [1, samples] with a usable optimization
+    profile, and one float32 device output `logits` [1, frames, vocabulary] whose shape
+    fully resolves. Returns (min_samples, max_samples, logits shape at max_samples).
+    Raises ValueError naming the first mismatch."""
+    names = [engine.get_tensor_name(i) for i in range(engine.num_io_tensors)]
+    if sorted(names) != [_INPUT, _OUTPUT]:
+        raise ValueError(f"Expected I/O tensors {[_INPUT, _OUTPUT]}, engine has {names}")
+    for name, mode in ((_INPUT, trt.TensorIOMode.INPUT), (_OUTPUT, trt.TensorIOMode.OUTPUT)):
+        if engine.get_tensor_mode(name) != mode:
+            raise ValueError(f"Expected {name!r} to be an {mode.name.lower()} tensor")
+        dtype = engine.get_tensor_dtype(name)
+        if dtype != trt.float32:
+            raise ValueError(
+                f"Expected {name!r} to be float32, engine has {getattr(dtype, 'name', dtype)}"
+            )
+        if engine.get_tensor_location(name) != trt.TensorLocation.DEVICE:
+            raise ValueError(f"Expected {name!r} to live in device memory")
+    for name, rank in ((_INPUT, 2), (_OUTPUT, 3)):
+        shape = tuple(engine.get_tensor_shape(name))
+        if len(shape) != rank or shape[0] not in (1, -1):
+            raise ValueError(
+                f"Expected {name!r} to have rank {rank} with batch dimension 1, got {shape}"
+            )
+    if engine.num_optimization_profiles < 1:
+        raise ValueError("Engine has no optimization profile")
+    # Only profile 0 is validated and used: it is the execution context's default, and
+    # the project's builder creates exactly one. Additional profiles are ignored.
+    min_shape, opt_shape, max_shape = (
+        tuple(shape) for shape in engine.get_tensor_profile_shape(_INPUT, 0)
+    )
+    if any(len(shape) != 2 or shape[0] != 1 for shape in (min_shape, opt_shape, max_shape)):
+        raise ValueError(
+            f"Expected a batch-one [1, samples] profile, got min {min_shape}, "
+            f"opt {opt_shape}, max {max_shape}"
+        )
+    if not 1 <= min_shape[1] <= opt_shape[1] <= max_shape[1]:
+        raise ValueError(f"Invalid profile sample bounds {min_shape}/{opt_shape}/{max_shape}")
+    resolved = {}
+    for label, shape in (("minimum", min_shape), ("maximum", max_shape)):
+        if not context.set_input_shape(_INPUT, shape):
+            raise RuntimeError(f"Failed to size the execution context to the profile {label}")
+        logits = tuple(context.get_tensor_shape(_OUTPUT))
+        if len(logits) == 3 and logits[0] == 1 and logits[1] == 0 and logits[2] >= 1:
+            raise ValueError(
+                f"Engine produces zero frames at the profile {label} of {shape[1]} samples; "
+                "rebuild it with a larger min_samples"
+            )
+        if len(logits) != 3 or logits[0] != 1 or min(logits) < 1:
+            raise ValueError(
+                f"Logits shape {logits} at the profile {label} is not a resolved "
+                "[1, frames, vocabulary] shape"
+            )
+        resolved[label] = logits
+    if resolved["minimum"][2] != resolved["maximum"][2]:
+        raise ValueError(
+            f"Vocabulary size changes with input length: {resolved['minimum'][2]} at the "
+            f"minimum vs {resolved['maximum'][2]} at the maximum"
+        )
+    return min_shape[1], max_shape[1], resolved["maximum"]
+
 
 class TensorRTBackend:
     def __init__(self, path: str | Path):
@@ -28,16 +93,14 @@ class TensorRTBackend:
         self.context = engine.create_execution_context()
         if self.context is None:
             raise RuntimeError("Failed to create TensorRT execution context")
-        if engine.get_tensor_dtype("audio") != trt.float32 or engine.get_tensor_dtype("logits") != trt.float32:
-            raise ValueError("Expected a float32 audio input and a float32 logits output")
-        min_shape, _, max_shape = engine.get_tensor_profile_shape("audio", 0)
-        self.min_samples, self.max_samples = min_shape[1], max_shape[1]
-        if not self.context.set_input_shape("audio", tuple(max_shape)):
-            raise RuntimeError("Failed to size the execution context to the profile maximum")
-        max_output_shape = tuple(self.context.get_tensor_shape("logits"))
+        # Validate the whole I/O contract before allocating anything on the device.
+        self.min_samples, self.max_samples, max_output_shape = _validate_contract(
+            trt, engine, self.context
+        )
         self.stream = self._check(cudart.cudaStreamCreate())
-        self.input_ptr = self._check(cudart.cudaMalloc(max_shape[1] * np.dtype(np.float32).itemsize))
+        self.input_ptr = self._check(cudart.cudaMalloc(self.max_samples * np.dtype(np.float32).itemsize))
         max_output_elements = int(np.prod(max_output_shape))
+        self.max_output_elements = max_output_elements
         self.output_ptr = self._check(
             cudart.cudaMalloc(max_output_elements * np.dtype(np.float32).itemsize)
         )
@@ -122,6 +185,13 @@ class TensorRTBackend:
         if not self.context.set_input_shape("audio", (1, samples)):
             raise RuntimeError("Failed to set the dynamic input shape")
         output_shape = tuple(self.context.get_tensor_shape("logits"))
+        if (len(output_shape) != 3 or output_shape[0] != 1 or min(output_shape) < 1
+                or int(np.prod(output_shape)) > self.max_output_elements):
+            # Never copy more than the buffer sized at load time.
+            raise RuntimeError(
+                f"Engine resolved logits shape {output_shape} for {samples} samples, which "
+                f"does not fit the {self.max_output_elements}-element output buffer"
+            )
         output = np.empty(output_shape, dtype=np.float32)
         self._check(
             cudart.cudaMemcpyAsync(
