@@ -56,6 +56,10 @@ class _FakeCudart:
         self.calls.append("stream_sync")
         return (0,)
 
+    def cudaMemcpyAsync(self, dst, src, nbytes, kind, stream):
+        self.calls.append("memcpy")
+        return (0,)
+
     def cudaStreamDestroy(self, stream):
         self.calls.append("stream_destroy")
         return (0,)
@@ -70,24 +74,47 @@ class _FakeContext:
         return True
 
     def get_tensor_shape(self, name):
-        return (1, self.shape[1] // 320, 8)
+        return self.engine.logits_shape(self.shape[1])
 
     def set_tensor_address(self, name, ptr):
         return True
 
 
 class _FakeEngine:
+    """A well-formed batch-one CTC engine; tests override attributes to break it."""
+
     def __init__(self, fail_context=False):
         self.fail_context = fail_context
+        self.io = {"audio": ("INPUT", "float32", "DEVICE", (1, -1)),
+                   "logits": ("OUTPUT", "float32", "DEVICE", (1, -1, 8))}
+        self.num_optimization_profiles = 1
+        self.profile = ((1, 400), (1, 16000), (1, 32000))
+        self.logits_shape = lambda samples: (1, samples // 320, 8)
+
+    @property
+    def num_io_tensors(self):
+        return len(self.io)
+
+    def get_tensor_name(self, index):
+        return list(self.io)[index]
+
+    def get_tensor_mode(self, name):
+        return self.io[name][0]
+
+    def get_tensor_dtype(self, name):
+        return self.io[name][1]
+
+    def get_tensor_location(self, name):
+        return self.io[name][2]
+
+    def get_tensor_shape(self, name):
+        return self.io[name][3]
 
     def create_execution_context(self):
         return None if self.fail_context else _FakeContext(self)
 
-    def get_tensor_dtype(self, name):
-        return "float32"
-
     def get_tensor_profile_shape(self, name, profile):
-        return (1, 400), (1, 16000), (1, 32000)
+        return self.profile
 
 
 class _FakeRuntime:
@@ -104,6 +131,14 @@ class _FakeRuntime:
 def fake_trt(monkeypatch, tmp_path):
     trt = types.ModuleType("tensorrt")
     trt.float32 = "float32"
+
+    class _Mode(str):
+        @property
+        def name(self):
+            return str(self)
+
+    trt.TensorIOMode = types.SimpleNamespace(INPUT=_Mode("INPUT"), OUTPUT=_Mode("OUTPUT"))
+    trt.TensorLocation = types.SimpleNamespace(DEVICE="DEVICE", HOST="HOST")
     trt.Logger = type("Logger", (), {"WARNING": 0, "__init__": lambda self, level: None})
     trt.Runtime = _FakeRuntime
     cudart = _FakeCudart()
@@ -198,3 +233,77 @@ def test_close_releases_everything_even_if_a_cuda_call_fails(fake_trt, monkeypat
     freed = [c[1] for c in fake_trt.cudart.calls if isinstance(c, tuple) and c[0] == "free"]
     assert sorted(freed) == sorted(allocated)
     assert fake_trt.cudart.calls[-1] == "stream_destroy"
+
+
+# --- engine I/O contract is validated before any device allocation (issue #5) ---
+
+def _break(monkeypatch, mutate):
+    def factory():
+        engine = _FakeEngine()
+        mutate(engine)
+        return engine
+
+    monkeypatch.setattr(_FakeRuntime, "engine_factory", staticmethod(factory))
+
+
+def _device_allocations(cudart):
+    return [c for c in cudart.calls if c == "stream_create" or (isinstance(c, tuple)
+                                                                 and c[0] == "malloc")]
+
+
+def _io(**changes):
+    def mutate(engine):
+        for name, value in changes.items():
+            if value is None:
+                del engine.io[name]
+            else:
+                engine.io[name] = value
+    return mutate
+
+
+@pytest.mark.parametrize("mutate, message", [
+    (_io(extra=("INPUT", "float32", "DEVICE", (1, -1))), "Expected I/O tensors"),
+    (_io(logits=None), "Expected I/O tensors"),
+    (_io(audio=None, wav=("INPUT", "float32", "DEVICE", (1, -1))), "Expected I/O tensors"),
+    (_io(audio=("OUTPUT", "float32", "DEVICE", (1, -1))), "'audio' to be an input"),
+    (_io(logits=("INPUT", "float32", "DEVICE", (1, -1, 8))), "'logits' to be an output"),
+    (_io(logits=("OUTPUT", "float16", "DEVICE", (1, -1, 8))), "float32"),
+    (_io(audio=("INPUT", "float32", "HOST", (1, -1))), "device memory"),
+    (_io(audio=("INPUT", "float32", "DEVICE", (-1,))), "'audio' to have rank 2"),
+    (_io(logits=("OUTPUT", "float32", "DEVICE", (1, -1))), "'logits' to have rank 3"),
+    (_io(audio=("INPUT", "float32", "DEVICE", (4, -1))), "batch dimension 1"),
+    (lambda e: setattr(e, "num_optimization_profiles", 0), "no optimization profile"),
+    (lambda e: setattr(e, "profile", ((2, 400), (2, 16000), (2, 32000))), "batch-one"),
+    (lambda e: setattr(e, "profile", ((1, 400, 1),) * 3), "batch-one"),
+    (lambda e: setattr(e, "profile", ((1, 32000), (1, 16000), (1, 400))), "sample bounds"),
+    (lambda e: setattr(e, "logits_shape", lambda n: (1, -1, 8)), "not a resolved"),
+    (lambda e: setattr(e, "logits_shape", lambda n: (2, n // 320, 8)), "not a resolved"),
+    (lambda e: setattr(e, "logits_shape", lambda n: (1, n // 320)), "not a resolved"),
+    (lambda e: setattr(e, "logits_shape", lambda n: (1, n // 320, 8 if n < 1000 else 9)),
+     "Vocabulary size changes"),
+])
+def test_invalid_engine_contract_rejected_before_allocation(fake_trt, monkeypatch, mutate,
+                                                            message):
+    _break(monkeypatch, mutate)
+    with pytest.raises(ValueError, match=message):
+        TensorRTBackend(fake_trt.path)
+    assert _device_allocations(fake_trt.cudart) == []
+
+
+def test_valid_engine_contract_sizes_buffers_from_profile(fake_trt):
+    backend = TensorRTBackend(fake_trt.path)
+    assert (backend.min_samples, backend.max_samples) == (400, 32000)
+    mallocs = [c for c in fake_trt.cudart.calls if isinstance(c, tuple) and c[0] == "malloc"]
+    assert len(mallocs) == 2
+    assert backend.max_output_elements == 1 * (32000 // 320) * 8
+    backend.close()
+
+
+def test_infer_refuses_output_larger_than_buffer(fake_trt, monkeypatch):
+    backend = TensorRTBackend(fake_trt.path)
+    # A misbehaving engine that resolves a bigger output for a shorter input.
+    backend.engine.logits_shape = lambda n: (1, 10_000, 8)
+    with pytest.raises(RuntimeError, match="does not fit"):
+        backend.infer(np.zeros((1, 16000), dtype=np.float32))
+    assert not any(c for c in fake_trt.cudart.calls if c == "memcpy")
+    backend.close()
