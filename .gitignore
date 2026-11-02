@@ -19,6 +19,8 @@ dist/
 *.npz
 *.wav
 *.flac
+# Committed test fixtures (CC BY 4.0 FLEURS clips; see tests/fixtures/fleurs/README.md)
+!tests/fixtures/fleurs/*.flac
 *.parquet
 results/
 

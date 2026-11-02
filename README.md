@@ -184,6 +184,8 @@ python -m pytest tests/unit
 
 Integration tests need real assets via env vars and skip otherwise: `OMNIASR_ONNX`/`OMNIASR_TOKENIZER`/`OMNIASR_TEST_WAV` for ONNX, `OMNIASR_TRT_FP32_ENGINE` (+ same tokenizer/WAV) and `OMNIASR_TRT_FP16_ENGINE`/`OMNIASR_TRT_FP16_TEST_WAV` for TensorRT. `tests/integration/test_hub.py` needs only `OMNIASR_TEST_WAV` but hits the real Hub repo over the network.
 
+`tests/integration/test_real_models_cpu.py` runs the pinned published CTC and LLM 300M v2 models end to end on CPU against three committed [FLEURS](https://huggingface.co/datasets/google/fleurs) clips (English, Turkish, Central Kurdish; CC BY 4.0, see `tests/fixtures/fleurs/`), checking per-clip CER ceilings, determinism and clean shutdown. The ceilings are each model's measured CER plus 8 points: a smoke signal that catches a broken model or runtime, not small accuracy regressions. It downloads about 8 GB, so it is opt-in locally (`OMNIASR_REAL_MODELS=1 pytest tests/integration/test_real_models_cpu.py`) and runs in the `Real-model CPU validation` workflow weekly, after each release is published (reporting, not gating), on demand, and on PRs that change it or the runtime code it exercises.
+
 ## LLM-ASR models
 
 `fast_omniasr.llm.OmniASRLLM` runs the wav2vec2 encoder + LLaMA decoder LLM-ASR models with
