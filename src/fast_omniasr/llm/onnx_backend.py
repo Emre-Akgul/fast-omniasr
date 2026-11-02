@@ -25,8 +25,9 @@ def providers(device, arena="kSameAsRequested"):
     """`arena` is the CUDA arena extend strategy. kSameAsRequested suits phased, shrinking
     sessions; resident sessions use kNextPowerOfTwo so freed cache chunks coalesce and are
     reused as the cache grows instead of stranding one exact-size chunk per length."""
-    if device not in {"cpu", "cuda"}:
-        raise ValueError("device must be cpu or cuda")
+    from ..options import check_device
+
+    check_device(device)
     name = "CUDAExecutionProvider" if device == "cuda" else "CPUExecutionProvider"
     if device == "cuda":
         ort.preload_dlls(directory="")
@@ -130,7 +131,12 @@ class ONNXLLMBackend:
     """
 
     def __init__(self, directory, device="cpu", threads=4, low_memory=False, precision="fp32"):
+        from ..options import check_device, check_flag, check_threads
         from ..precision import check_precision
+
+        check_device(device)
+        check_threads(threads)
+        check_flag("low_memory", low_memory)
 
         self.closed = False
         self.directory = Path(directory)

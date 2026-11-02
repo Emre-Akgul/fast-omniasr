@@ -5,6 +5,7 @@ import numpy as np
 
 from .audio import load_audio, prepare_audio
 from .decoder import greedy_token_ids
+from .options import check_device, check_threads
 from .tensorrt_builder import DEFAULT_MAX_SAMPLES, DEFAULT_MIN_SAMPLES, DEFAULT_OPT_SAMPLES
 from .tokenizer import Tokenizer
 
@@ -16,24 +17,51 @@ class Transcription:
     logits_shape: tuple[int, ...]
 
 
+def _check_backend_options(backend: str, device: str | None, threads: int | None):
+    """Resolve `device`/`threads` for a backend; reject options it would ignore.
+
+    ONNX: device "cpu" (default) or "cuda", threads >= 1 (default 4). TensorRT runs on the
+    current CUDA device (select it with CUDA_VISIBLE_DEVICES or cudaSetDevice) and has no
+    thread setting, so device must be omitted or "cuda" and threads must be omitted."""
+    if backend == "onnx":
+        return (check_device("cpu" if device is None else device),
+                check_threads(4 if threads is None else threads))
+    if backend == "tensorrt":
+        if device not in (None, "cuda"):
+            raise ValueError(
+                f"backend='tensorrt' runs on the current CUDA device; got device={device!r}. "
+                "Omit device (or pass 'cuda') and select the GPU with CUDA_VISIBLE_DEVICES"
+            )
+        if threads is not None:
+            raise ValueError("threads only applies to backend='onnx'; TensorRT has no "
+                             "CPU thread setting")
+        return "cuda", None
+    raise ValueError("backend must be 'onnx' or 'tensorrt'")
+
+
 class OmniASR:
     """Load explicitly supplied ONNX/tokenizer assets; no implicit downloads."""
 
     def __init__(self, model_path: str | Path, tokenizer_path: str | Path,
-                 *, backend: str = "onnx", device: str = "cpu", threads: int = 4,
-                 precision: str = "fp32"):
-        """`precision` describes an ONNX graph at `model_path` (an fp16/bf16 variant from
-        tools/convert_precision.py); TensorRT engines carry their precision themselves."""
+                 *, backend: str = "onnx", device: str | None = None,
+                 threads: int | None = None, precision: str = "fp32"):
+        """`device` ("cpu" by default, or "cuda") and `threads` (default 4) apply to the
+        ONNX backend; TensorRT runs on the current CUDA device and rejects them.
+        `precision` describes an ONNX graph at `model_path` (an fp16/bf16 variant from
+        tools/convert_precision.py); TensorRT engines carry their precision themselves, so
+        only the default is accepted there."""
+        device, threads = _check_backend_options(backend, device, threads)
         if backend == "onnx":
             from .backends.onnx import ONNXBackend
             self.backend = ONNXBackend(
                 model_path, device=device, threads=threads, precision=precision
             )
-        elif backend == "tensorrt":
+        else:
+            if precision != "fp32":
+                raise ValueError("precision describes ONNX graphs; a TensorRT engine carries "
+                                 "its own precision (choose it when building the engine)")
             from .backends.tensorrt import TensorRTBackend
             self.backend = TensorRTBackend(model_path)
-        else:
-            raise ValueError("backend must be 'onnx' or 'tensorrt'")
         try:
             self.tokenizer = Tokenizer(tokenizer_path)
         except BaseException:
@@ -76,7 +104,7 @@ class OmniASR:
                          min_samples: int | None = None,
                          opt_samples: int | None = None,
                          max_samples: int | None = None,
-                         device: str = "cpu", threads: int = 4):
+                         device: str | None = None, threads: int | None = None):
         """Download and verify model/tokenizer assets from a Hugging Face Hub repo.
 
         The repo must publish `model.onnx`, `tokenizer.model` and a `config.json`
@@ -100,9 +128,11 @@ class OmniASR:
         """
         if backend not in ("onnx", "tensorrt"):
             raise ValueError("backend must be 'onnx' or 'tensorrt'")
+        # Reject inapplicable device/threads before any download or engine build.
+        resolved_device, _ = _check_backend_options(backend, device, threads)
         from .precision import asset_selector, check_precision
         if backend == "onnx":
-            precision = check_precision(precision or "fp32", device)
+            precision = check_precision(precision or "fp32", resolved_device)
         if backend == "onnx" and any(
             value is not None for value in (min_samples, opt_samples, max_samples)
         ):

@@ -80,7 +80,7 @@ def test_from_pretrained_rejects_checksum_mismatch(monkeypatch, tmp_path):
 
 
 def test_from_pretrained_rejects_unknown_device_before_download():
-    with pytest.raises(ValueError, match="device must be cpu or cuda"):
+    with pytest.raises(ValueError, match="device must be 'cpu' or 'cuda'"):
         OmniASRLLM.from_pretrained("EmreAkgul/omniASR-LLM-1B-v2-ONNX", device="tpu")
 
 

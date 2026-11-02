@@ -9,12 +9,11 @@ class ONNXBackend:
     def __init__(self, path: str | Path, device: str = "cpu", threads: int = 4,
                  precision: str = "fp32"):
         self.closed = False
-        if device not in {"cpu", "cuda"}:
-            raise ValueError("device must be 'cpu' or 'cuda'")
+        from ..options import check_device, check_threads
         from ..precision import check_precision
+        check_device(device)
         check_precision(precision, device)
-        if threads < 1:
-            raise ValueError("threads must be positive")
+        check_threads(threads)
         try:
             import onnxruntime as ort
         except ImportError as exc:
