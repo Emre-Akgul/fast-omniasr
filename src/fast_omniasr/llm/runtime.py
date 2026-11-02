@@ -38,7 +38,7 @@ class OmniASRLLM:
     transcription to finish. The guarantee covers `transcribe()`, `close()` and
     `language_embedding()`; the backend object in `.onnx` is not itself thread-safe, so
     don't call its methods directly while the model is in use.
-"""
+    """
 
     def __init__(
         self,
