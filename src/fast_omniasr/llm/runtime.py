@@ -1,6 +1,7 @@
 """Greedy decoding with full-prefix or explicit-cache OmniASR LLM-ASR graphs."""
 
 import json
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,6 +29,13 @@ class OmniASRLLM:
     The default baseline recomputes the prefix. Set cached=True to load the
     explicit-cache decoder, which processes the prefix once per transcription.
     It supports one mono 16 kHz clip, up to 30 seconds, without language conditioning.
+    
+    Thread-safe: an instance may be shared across threads. Its sessions, lazily created
+    graphs, low_memory phasing and device buffers are per-instance state, so concurrent
+    `transcribe()` calls are serialized -- each request runs encode and the whole decode
+    loop alone, and results never mix. For parallel throughput use one instance per
+    worker (each holds its own copy of the weights). `close()` waits for an in-flight
+    transcription to finish.
     """
 
     def __init__(
@@ -42,6 +50,8 @@ class OmniASRLLM:
         precision: str = "fp32",
     ):
         self.closed = False
+        self._lock = threading.Lock()
+        self._language_lock = threading.Lock()
         if backend not in {"torch", "onnx"}:
             raise ValueError("backend must be torch or onnx")
         if backend == "torch" and precision != "fp32":
@@ -143,15 +153,25 @@ class OmniASRLLM:
         languages = self.config.get("languages")
         if not languages:
             raise ValueError("These model assets do not include language conditioning")
-        if not hasattr(self, "_languages"):
-            self._languages = json.loads((self.directory / languages["mapping"]).read_text())
-            self._lang_embeddings = np.load(
-                self.directory / languages["embeddings"], mmap_mode="r"
-            )
+        if not hasattr(self, "_lang_embeddings"):
+            with self._ensure_lock("_language_lock"):
+                if not hasattr(self, "_lang_embeddings"):  # loaded once, even concurrently
+                    mapping = json.loads((self.directory / languages["mapping"]).read_text())
+                    embeddings = np.load(self.directory / languages["embeddings"],
+                                         mmap_mode="r")
+                    self._languages = mapping
+                    self._lang_embeddings = embeddings  # published last: readers check it
         index = self._languages.get(lang.lower())
         if index is None:
             raise ValueError(f"Unknown language code {lang!r}; expected e.g. 'eng_Latn'")
         return np.array(self._lang_embeddings[index], dtype=np.float32)
+
+    def _ensure_lock(self, name):
+        lock = getattr(self, name, None)
+        if lock is None:  # instances built without __init__ (tests, subclasses)
+            lock = threading.Lock()
+            setattr(self, name, lock)
+        return lock
 
     def close(self) -> None:
         """Release the model: the ONNX Runtime sessions (ONNX backend) or the TorchScript
@@ -159,11 +179,14 @@ class OmniASRLLM:
         RuntimeError. Also called on leaving a `with OmniASRLLM(...) as model:` block."""
         if getattr(self, "closed", False):
             return
-        self.closed = True
-        onnx = getattr(self, "onnx", None)
-        if onnx is not None:
-            onnx.close()
-        self.encoder = self.decoder = None
+        with self._ensure_lock("_lock"):  # wait for an in-flight transcription
+            if getattr(self, "closed", False):
+                return
+            self.closed = True
+            onnx = getattr(self, "onnx", None)
+            if onnx is not None:
+                onnx.close()
+            self.encoder = self.decoder = None
 
     def __enter__(self):
         return self
@@ -205,8 +228,14 @@ class OmniASRLLM:
                 stacklevel=2,
             )
         language = None if lang is None else self.language_embedding(lang)
-        if getattr(self, "backend", "torch") == "onnx":
-            return self._transcribe_onnx(waveform, max_new_tokens, language)
+        with self._ensure_lock("_lock"):  # one request at a time per instance
+            if getattr(self, "closed", False):
+                raise RuntimeError("This OmniASRLLM model is closed")
+            if getattr(self, "backend", "torch") == "onnx":
+                return self._transcribe_onnx(waveform, max_new_tokens, language)
+            return self._transcribe_torch(waveform, max_new_tokens, language)
+
+    def _transcribe_torch(self, waveform, max_new_tokens, language=None):
         import torch
 
         with torch.inference_mode():
