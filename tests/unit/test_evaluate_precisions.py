@@ -101,7 +101,7 @@ def _fake_llm_main(monkeypatch, tmp_path, reasons_by_precision):
         def __init__(self, path, backend, device, precision):
             self.reasons = iter(reasons_by_precision[precision])
 
-        def transcribe(self, wav, lang=None):
+        def transcribe(self, wav, sample_rate=16000, lang=None):
             return FakeResult("some text", next(self.reasons))
 
     monkeypatch.setitem(sys.modules, "fast_omniasr.llm", types.SimpleNamespace(OmniASRLLM=FakeLLM))
@@ -136,3 +136,84 @@ def test_main_reports_llm_truncation(monkeypatch, tmp_path, capsys):
     assert "fp32" not in err
     # stdout summary lines carry counts but not the per-utterance maps
     assert '"truncated": 2' in out and "hypothesis_stop_reasons" not in out
+
+
+
+# --- file inputs are normalized exactly once, like the public API (issue #22) ---
+
+def _wav(tmp_path, rate=16000, channels=1):
+    import numpy as np
+    import soundfile as sf
+
+    rng = np.random.default_rng(0)
+    data = (0.2 * rng.standard_normal((8000, channels) if channels > 1 else 8000) + 0.05)
+    path = tmp_path / "clip.wav"
+    sf.write(path, data.astype("float32"), rate, subtype="FLOAT")
+    return path, data.astype("float32")
+
+
+def test_load_rows_returns_raw_samples_and_rate(tmp_path):
+    import argparse
+
+    import numpy as np
+
+    path, data = _wav(tmp_path)
+    rows = evaluate.load_rows(argparse.Namespace(dataset=None, audio=[f"{path}:eng_Latn"]))
+    assert rows[0]["sample_rate"] == 16000 and rows[0]["lang"] == "eng_Latn"
+    np.testing.assert_array_equal(rows[0]["wav"], data)  # not pre-normalized
+
+
+@pytest.mark.parametrize("kind", ["ctc", "llm"])
+def test_file_rows_reach_the_model_normalized_once(tmp_path, monkeypatch, kind):
+    import argparse
+    import sys
+    import types
+
+    import numpy as np
+
+    from fast_omniasr.audio import load_audio, prepare_audio
+
+    path, _ = _wav(tmp_path)
+    received = []
+
+    class FakeCTC:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def transcribe_numpy(self, waveform, sample_rate=16000):
+            received.append(prepare_audio(waveform, sample_rate))
+            return types.SimpleNamespace(text="x")
+
+    class FakeLLM:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def transcribe(self, audio, *, sample_rate=16000, lang=None):
+            received.append(prepare_audio(audio, sample_rate))
+            return types.SimpleNamespace(text="x", stop_reason="eos")
+
+    monkeypatch.setitem(sys.modules, "fast_omniasr.llm",
+                        types.SimpleNamespace(OmniASRLLM=FakeLLM))
+    import fast_omniasr
+
+    monkeypatch.setattr(fast_omniasr, "OmniASR", FakeCTC)
+    args = argparse.Namespace(dataset=None, audio=[str(path)], device="cpu", lang=None,
+                              llm=tmp_path if kind == "llm" else None,
+                              ctc=None if kind == "llm" else tmp_path)
+    row = evaluate.load_rows(args)[0]
+    evaluate.transcriber(args, "fp32")(row)
+    # Exactly what the public file API feeds the model (one normalization) ...
+    np.testing.assert_array_equal(received[0], load_audio(path))
+    # ... which differs from normalizing twice, the old behaviour.
+    assert not np.array_equal(received[0], prepare_audio(load_audio(path)[0]))
+
+
+@pytest.mark.parametrize("kwargs, message", [({"rate": 8000}, "16 kHz"),
+                                             ({"channels": 2}, "mono")])
+def test_bad_files_are_rejected_while_loading_rows(tmp_path, kwargs, message):
+    """Before any model is loaded, as load_audio() used to do."""
+    import argparse
+
+    path, _ = _wav(tmp_path, **kwargs)
+    with pytest.raises(ValueError, match=message):
+        evaluate.load_rows(argparse.Namespace(dataset=None, audio=[str(path)]))
