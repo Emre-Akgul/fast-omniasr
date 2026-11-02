@@ -11,6 +11,19 @@ _THREAD_LOCKS: dict[str, threading.Lock] = {}
 _THREAD_LOCKS_GUARD = threading.Lock()
 
 
+def _reset_after_fork() -> None:
+    """A forked child inherits these locks in whatever state the parent's threads left
+    them, and no thread in the child could ever release one held at fork time; start the
+    child with fresh locks (the file locks still exclude it from the parent)."""
+    global _THREAD_LOCKS_GUARD
+    _THREAD_LOCKS.clear()
+    _THREAD_LOCKS_GUARD = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):  # POSIX
+    os.register_at_fork(after_in_child=_reset_after_fork)
+
+
 @contextlib.contextmanager
 def file_lock(lock_path: Path):
     """Exclusive lock on `lock_path` across threads and processes (advisory).
@@ -53,4 +66,7 @@ def _msvcrt_locked(f):
         yield
     finally:
         f.seek(0)
-        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        # Closing the handle releases the lock anyway, so an unlock failure must not mask
+        # an exception raised inside the locked block.
+        with contextlib.suppress(OSError):
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)

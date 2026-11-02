@@ -23,16 +23,21 @@ def _hold(lock_path, log_path, tag):
             log.write(f"{tag}-end\n")
 
 
-@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX flock path")
 def test_processes_never_hold_the_lock_together(tmp_path):
+    # flock on POSIX, the real msvcrt.locking on Windows (see the windows CI job).
     ctx = multiprocessing.get_context("spawn")
     procs = [ctx.Process(target=_hold, args=(tmp_path / "x.lock", tmp_path / "log", t))
              for t in ("a", "b")]
-    for proc in procs:
-        proc.start()
-    for proc in procs:
-        proc.join(30)
-        assert proc.exitcode == 0
+    try:
+        for proc in procs:
+            proc.start()
+        for proc in procs:
+            proc.join(60)
+            assert proc.exitcode == 0
+    finally:
+        for proc in procs:
+            if proc.is_alive():
+                proc.kill()
     events = (tmp_path / "log").read_text().split()
     assert len(events) == 4
     assert events[0].split("-")[0] == events[1].split("-")[0]  # first holder finished first
@@ -89,7 +94,8 @@ def test_windows_locks_and_unlocks_one_byte(windows, tmp_path):
 
 
 def test_windows_retries_while_contended(windows, tmp_path):
-    windows.failures.extend([OSError(errno.EDEADLOCK, "busy"), OSError(errno.EACCES, "busy")])
+    deadlock = getattr(errno, "EDEADLOCK", errno.EDEADLK)  # not defined on every platform
+    windows.failures.extend([OSError(deadlock, "busy"), OSError(errno.EACCES, "busy")])
     with file_lock(tmp_path / "w.lock"):
         pass
     assert windows.calls == [("LK_LOCK", 1), ("LK_UNLCK", 1)]
@@ -119,3 +125,36 @@ def test_tensorrt_cache_works_without_fcntl(windows, tmp_path, monkeypatch):
     again = tensorrt_cache.get_or_build_engine(onnx, precision="fp16", cache_dir=tmp_path / "c")
     assert first == again and len(builds) == 1
     assert windows.calls.count(("LK_LOCK", 1)) == 2  # the engine cache took the msvcrt lock
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "register_at_fork"), reason="POSIX fork")
+def test_forked_child_does_not_inherit_a_held_thread_lock(tmp_path):
+    import os
+
+    lock_path = tmp_path / "f.lock"
+    held, release = threading.Event(), threading.Event()
+
+    def holder():
+        with file_lock(lock_path):
+            held.set()
+            release.wait(10)
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    held.wait(10)
+    read_fd, write_fd = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # child: the parent's thread lock must not be inherited as held
+        os.close(read_fd)
+        acquired = _locking._THREAD_LOCKS_GUARD.acquire(timeout=2)
+        fresh = acquired and not _locking._THREAD_LOCKS
+        os.write(write_fd, b"1" if fresh else b"0")
+        os._exit(0)
+    os.close(write_fd)
+    try:
+        assert os.read(read_fd, 1) == b"1"
+    finally:
+        os.close(read_fd)
+        os.waitpid(pid, 0)
+        release.set()
+        thread.join()
