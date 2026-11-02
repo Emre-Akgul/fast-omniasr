@@ -141,15 +141,18 @@ def test_forked_child_does_not_inherit_a_held_thread_lock(tmp_path):
 
     thread = threading.Thread(target=holder)
     thread.start()
-    held.wait(10)
+    assert held.wait(10), "holder thread never took the lock"
     read_fd, write_fd = os.pipe()
     pid = os.fork()
     if pid == 0:  # child: the parent's thread lock must not be inherited as held
-        os.close(read_fd)
-        acquired = _locking._THREAD_LOCKS_GUARD.acquire(timeout=2)
-        fresh = acquired and not _locking._THREAD_LOCKS
-        os.write(write_fd, b"1" if fresh else b"0")
-        os._exit(0)
+        result = b"0"
+        try:
+            os.close(read_fd)
+            acquired = _locking._THREAD_LOCKS_GUARD.acquire(timeout=2)
+            result = b"1" if acquired and not _locking._THREAD_LOCKS else b"0"
+        finally:
+            os.write(write_fd, result)
+            os._exit(0)  # never fall back into the pytest session
     os.close(write_fd)
     try:
         assert os.read(read_fd, 1) == b"1"
