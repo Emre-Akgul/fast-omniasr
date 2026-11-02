@@ -84,8 +84,11 @@ class OmniASR:
         files must also be listed in that map (see
         EmreAkgul/omniASR-CTC-300M-v2-ONNX for the reference layout).
 
-        `backend="tensorrt"` requires an explicit `precision` ("fp32" or "fp16" — there is
-        no "auto", so the FP16 accuracy caveat is never silently opted into) and builds a
+        `backend="tensorrt"` requires an explicit `precision`: "fp32", "fp16" (fastest; a
+        few transcripts differ slightly from FP32) or "mixed" (FP16 with the
+        precision-sensitive convolutional front end kept in FP32: closest to FP32 at about
+        twice the FP16 latency). There is no "auto", so a precision trade-off is never
+        silently opted into and builds a
         local engine on first use using the requested min/opt/max sample profile, cached under
         `engine_cache_dir` (default
         `~/.cache/fast-omniasr/tensorrt`) keyed by the ONNX content, precision, profile and
@@ -107,8 +110,10 @@ class OmniASR:
                 "min_samples, opt_samples and max_samples are only used with "
                 "backend='tensorrt'"
             )
-        if backend == "tensorrt" and precision not in ("fp32", "fp16"):
-            raise ValueError("backend='tensorrt' requires precision='fp32' or precision='fp16'")
+        if backend == "tensorrt" and precision not in ("fp32", "fp16", "mixed"):
+            raise ValueError(
+                "backend='tensorrt' requires precision='fp32', 'fp16' or 'mixed'"
+            )
         from .hub import download_verified
 
         # TensorRT builds its engine from the float32 graph whatever the engine precision.
@@ -127,8 +132,9 @@ class OmniASR:
         if precision == "fp16":
             import warnings
             warnings.warn(
-                "TensorRT FP16 may produce different transcripts from FP32. "
-                "See the project's accuracy documentation.",
+                "TensorRT FP16 can change a few transcripts slightly compared with FP32; "
+                "precision='mixed' keeps the sensitive layers in FP32. See the project's "
+                "accuracy documentation.",
                 stacklevel=2,
             )
         from .tensorrt_cache import get_or_build_engine

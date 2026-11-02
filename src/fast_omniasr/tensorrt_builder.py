@@ -12,6 +12,42 @@ DEFAULT_MIN_SAMPLES = MIN_AUDIO_SAMPLES
 DEFAULT_OPT_SAMPLES = 80000
 DEFAULT_MAX_SAMPLES = 480000
 
+PRECISIONS = ("fp32", "fp16", "mixed")
+# The precision-sensitive part of the OmniASR CTC graph under FP16 is its convolutional
+# front end: the 7-block waveform feature extractor and the positional convolution.
+# Keeping exactly these layers in FP32 brought FP16 engines much closer to FP32 on the
+# FLEURS sample (median logit error 2.1 -> 0.5, 141 -> 150/160 identical transcripts) at
+# ~2x the FP16 latency; normalization, softmax, attention, residuals, the final projection
+# and every encoder block made no measurable difference (benchmarks/
+# tensorrt_fp16_sensitivity.json).
+MIXED_FP32_LAYER_PREFIXES = ("/model/feature_extractor/",)
+MIXED_FP32_LAYER_NAMES = frozenset({"/model/pos_encoder/conv/Conv"})
+
+
+def _is_precision_sensitive(name: str) -> bool:
+    return name in MIXED_FP32_LAYER_NAMES or name.startswith(MIXED_FP32_LAYER_PREFIXES)
+
+
+def pin_sensitive_layers(trt, network) -> int:
+    """Force the precision-sensitive layers' compute and floating-point outputs to FP32.
+    Returns how many layers were pinned (constants and shape layers are skipped)."""
+    skip = {trt.LayerType.CONSTANT, trt.LayerType.SHAPE}
+    floating = (trt.float32, trt.float16)
+    pinned = 0
+    for index in range(network.num_layers):
+        layer = network.get_layer(index)
+        if layer.type in skip or not _is_precision_sensitive(layer.name):
+            continue
+        outputs = [i for i in range(layer.num_outputs)
+                   if layer.get_output(i).dtype in floating]
+        if not outputs:
+            continue
+        layer.precision = trt.float32
+        for i in outputs:
+            layer.set_output_type(i, trt.float32)
+        pinned += 1
+    return pinned
+
 
 def validate_profile(min_samples: int, opt_samples: int, max_samples: int) -> tuple[int, int, int]:
     try:
@@ -34,8 +70,11 @@ def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: s
                   min_samples: int = DEFAULT_MIN_SAMPLES,
                   opt_samples: int = DEFAULT_OPT_SAMPLES,
                   max_samples: int = DEFAULT_MAX_SAMPLES) -> Path:
-    if precision not in ("fp32", "fp16"):
-        raise ValueError("precision must be 'fp32' or 'fp16'")
+    """`precision`: "fp32"; "fp16" (fastest, small transcript differences from FP32); or
+    "mixed" (FP16 with the precision-sensitive convolutional front end kept in FP32:
+    closest to FP32, about twice the FP16 latency)."""
+    if precision not in PRECISIONS:
+        raise ValueError("precision must be 'fp32', 'fp16' or 'mixed'")
     min_samples, opt_samples, max_samples = validate_profile(
         min_samples, opt_samples, max_samples
     )
@@ -54,8 +93,16 @@ def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: s
     config = builder.create_builder_config()
     config.clear_flag(trt.BuilderFlag.TF32)
     config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 1024**3)
-    if precision == "fp16":
+    if precision in ("fp16", "mixed"):
         config.set_flag(trt.BuilderFlag.FP16)
+    if precision == "mixed":
+        if pin_sensitive_layers(trt, network) == 0:
+            raise ValueError(
+                "precision='mixed' found none of the expected OmniASR front-end layers "
+                "(/model/feature_extractor/..., /model/pos_encoder/conv/Conv) in this graph; "
+                "use precision='fp16' or 'fp32'"
+            )
+        config.set_flag(trt.BuilderFlag.OBEY_PRECISION_CONSTRAINTS)
     profile = builder.create_optimization_profile()
     shapes = [(1, min_samples), (1, opt_samples), (1, max_samples)]
     profile.set_shape("audio", *shapes)

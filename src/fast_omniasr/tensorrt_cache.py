@@ -20,6 +20,7 @@ from .tensorrt_builder import (
     DEFAULT_MAX_SAMPLES,
     DEFAULT_MIN_SAMPLES,
     DEFAULT_OPT_SAMPLES,
+    PRECISIONS,
     build_engine,
     validate_profile,
 )
@@ -264,8 +265,8 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
                          opt_samples: int = DEFAULT_OPT_SAMPLES,
                          max_samples: int = DEFAULT_MAX_SAMPLES,
                          cache_dir: str | Path | None = None) -> Path:
-    if precision not in ("fp32", "fp16"):
-        raise ValueError("precision must be 'fp32' or 'fp16'")
+    if precision not in PRECISIONS:
+        raise ValueError("precision must be 'fp32', 'fp16' or 'mixed'")
     min_samples, opt_samples, max_samples = validate_profile(
         min_samples, opt_samples, max_samples
     )

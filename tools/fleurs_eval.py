@@ -8,6 +8,9 @@ sha256. Thresholds per model and language live in benchmarks/fleurs/thresholds.j
   python tools/fleurs_eval.py run --model ctc --gate --report fleurs-ctc.json
   python tools/fleurs_eval.py run --model llm --languages en_us tr_tr --per-language 2
 
+  # GPU: gate a TensorRT engine of the CTC model against the same FP32 baselines
+  python tools/fleurs_eval.py run --model ctc --backend tensorrt --precision mixed --gate
+
   # maintainers: rebuild the manifest from downloaded FLEURS TSVs
   python tools/fleurs_eval.py build-manifest --per-language 20
 
@@ -211,13 +214,23 @@ def check(results: dict, thresholds: dict, manifest: dict) -> list[str]:
     return failures
 
 
-def transcriber(model: str, repo: str, revision: str, cache_dir: Path | None):
+def transcriber(model: str, repo: str, revision: str, cache_dir: Path | None,
+                backend: str = "onnx", precision: str = "fp32"):
     import soundfile as sf
 
     if model == "ctc":
         from fast_omniasr import OmniASR
 
-        asr = OmniASR.from_pretrained(repo, revision=revision, device="cpu", cache_dir=cache_dir)
+        if backend == "tensorrt":
+            import warnings
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")  # the fp16 caveat is what is being measured
+                asr = OmniASR.from_pretrained(repo, revision=revision, backend="tensorrt",
+                                              precision=precision, cache_dir=cache_dir)
+        else:
+            asr = OmniASR.from_pretrained(repo, revision=revision, device="cpu",
+                                          cache_dir=cache_dir)
 
         def run(path, lang):
             waveform, rate = sf.read(path, dtype="float32")
@@ -245,12 +258,17 @@ def evaluate(args) -> int:
     unknown = sorted(set(languages) - set(manifest["languages"]))
     if unknown:
         raise SystemExit(f"unknown --languages {unknown}; choose from {list(manifest['languages'])}")
+    if args.backend == "tensorrt" and args.model != "ctc":
+        raise SystemExit("--backend tensorrt is only available for --model ctc")
+    if args.backend == "onnx" and args.precision != "fp32":
+        raise SystemExit("--precision applies to --backend tensorrt; the ONNX baseline is fp32")
     per_language = args.per_language or model.get("per_language")
     if args.gate and per_language != model.get("per_language"):
         raise SystemExit(f"--gate compares against baselines measured on {model['per_language']} "
                          f"utterances per language; don't pass --per-language {per_language}")
     paths = fetch_audio(manifest, args.audio_dir, languages, per_language, args.cache_dir)
-    asr, run = transcriber(args.model, repo, revision, args.cache_dir)
+    asr, run = transcriber(args.model, repo, revision, args.cache_dir, args.backend,
+                           args.precision)
     results, details = {}, {}
     try:
         for fleurs in languages:
@@ -273,6 +291,7 @@ def evaluate(args) -> int:
     failures = check(results, model, manifest) if args.gate else []
     skipped = skipped_languages(results, model) if args.gate else []
     report = {"model": args.model, "repo": repo, "revision": revision,
+              "backend": args.backend, "precision": args.precision,
               "dataset": DATASET, "dataset_revision": manifest["revision"],
               "per_language": {fleurs: len(paths[fleurs]) for fleurs in languages},
               "normalization": "evaluate_precisions.normalize; whitespace removed for CER-gated "
@@ -303,6 +322,10 @@ def main(argv=None) -> int:
     run.add_argument("--thresholds", type=Path, default=THRESHOLDS)
     run.add_argument("--audio-dir", type=Path, default=Path(".cache/fleurs"))
     run.add_argument("--cache-dir", type=Path, help="model and dataset download cache")
+    run.add_argument("--backend", choices=["onnx", "tensorrt"], default="onnx",
+                     help="onnx: CPU fp32 (the baseline); tensorrt: GPU engine (CTC only)")
+    run.add_argument("--precision", choices=["fp32", "fp16", "mixed"], default="fp32",
+                     help="TensorRT engine precision; gated against the same FP32 baselines")
     run.add_argument("--gate", action="store_true", help="exit 1 if a threshold is exceeded")
     run.add_argument("--report", type=Path)
     build = sub.add_parser("build-manifest", help="maintainers: regenerate the manifest")

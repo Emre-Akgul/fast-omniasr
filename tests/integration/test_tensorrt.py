@@ -17,14 +17,6 @@ def assets():
     return [os.environ[name] for name in names]
 
 
-@pytest.fixture
-def fp16_assets():
-    names = ["OMNIASR_TRT_FP16_ENGINE", "OMNIASR_TOKENIZER", "OMNIASR_TRT_FP16_TEST_WAV"]
-    if not all(os.environ.get(name) for name in names):
-        pytest.skip("Set OMNIASR_TRT_FP16_ENGINE, OMNIASR_TOKENIZER and OMNIASR_TRT_FP16_TEST_WAV")
-    return [os.environ[name] for name in names]
-
-
 def test_real_transcript_without_training_frameworks(assets):
     code = """
 import sys
@@ -77,16 +69,6 @@ def test_buffers_are_reused_not_reallocated(assets):
     for n in [16000, 480000, 80000, 240000]:
         model.transcribe_numpy(np.zeros(n, dtype=np.float32))
         assert (model.backend.input_ptr, model.backend.output_ptr) == pointers
-
-
-def test_fp16_known_experimental_transcript(fp16_assets):
-    from fast_omniasr import OmniASR
-    model = OmniASR(fp16_assets[0], fp16_assets[1], backend="tensorrt")
-    result = model.transcribe(fp16_assets[2])
-    assert result.text == (
-        "  t   consen o mcnc   penulm   at w  k  lit it  mt c   m  o ng     "
-        "iceae  tl n o    l  il t fal  w  convt"
-    )
 
 
 def test_close_is_idempotent_and_blocks_further_use(assets):
