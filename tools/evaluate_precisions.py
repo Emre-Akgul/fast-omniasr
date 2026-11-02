@@ -27,6 +27,8 @@ import time
 import unicodedata
 from pathlib import Path
 
+from fast_omniasr.llm.runtime import STOP_REASONS as LLM_STOP_REASONS
+
 _PUNCT = re.compile(r"[^\w\s]|_")
 
 
@@ -70,9 +72,6 @@ def error_rates(references, hypotheses):
         "empty_reference_nonempty_hypotheses": sum(bool(h) for h in silent),
         "empty_reference_inserted_words": sum(len(h.split()) for h in silent),
     }
-
-
-LLM_STOP_REASONS = ("eos", "max_new_tokens", "context_limit")
 
 
 def stop_reason_summary(ids, reasons):

@@ -10,12 +10,16 @@ from ..audio import load_audio, prepare_audio
 from ..tokenizer import Tokenizer
 from .models import LLM_MODEL_CARDS
 
+# Every value LLMTranscription.stop_reason can take: "eos" means the transcript is
+# complete; the other two mean generation was cut off.
+STOP_REASONS = ("eos", "max_new_tokens", "context_limit")
+
 
 @dataclass(frozen=True)
 class LLMTranscription:
     text: str
     token_ids: list[int]
-    stop_reason: str
+    stop_reason: str  # one of STOP_REASONS
 
 
 class OmniASRLLM:

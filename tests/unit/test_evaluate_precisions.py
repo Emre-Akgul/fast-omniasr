@@ -1,5 +1,4 @@
 import importlib.util
-import re
 from pathlib import Path
 
 import pytest
@@ -82,12 +81,11 @@ def test_stop_reason_summary_rejects_unknown_reasons():
         evaluate.stop_reason_summary(["a", "b"], ["eos", None])
 
 
-def test_stop_reasons_match_runtime_values():
-    # Every reason the LLM runtime can emit must be one the evaluator understands.
-    runtime = (SCRIPT.parents[1] / "src" / "fast_omniasr" / "llm" / "runtime.py").read_text()
-    emitted = set(re.findall(r'reason = "(\w+)"', runtime))
-    emitted |= set(re.findall(r'"(\w+)" if budget == max_new_tokens else "(\w+)"', runtime)[0])
-    assert emitted == set(evaluate.LLM_STOP_REASONS)
+def test_stop_reasons_come_from_the_runtime():
+    from fast_omniasr.llm import STOP_REASONS
+
+    assert evaluate.LLM_STOP_REASONS is STOP_REASONS
+    assert STOP_REASONS[0] == "eos"
 
 
 def _fake_llm_main(monkeypatch, tmp_path, reasons_by_precision):
