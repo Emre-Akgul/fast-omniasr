@@ -102,47 +102,64 @@ def gpu_mib():
     return sum(int(mib) for pid, mib in rows if int(pid) == os.getpid())
 
 
-def validate_rows(rows, labelled):
-    """Fail before any model loads: non-empty, unique ids, a reference for every labelled
-    row, and audio that every runtime accepts (16 kHz mono, long enough, finite)."""
+LLM_MAX_SECONDS = 30  # OmniASRLLM.transcribe rejects longer clips
+
+
+def validate_rows(rows, labelled, max_seconds=None):
+    """Fail before any model loads: a non-empty sequence of rows with unique, hashable ids,
+    a reference for every labelled row (a string, or None for silence), and 16 kHz mono
+    audio that is long enough, finite and, with `max_seconds`, short enough."""
+    from collections.abc import Hashable
+
     from fast_omniasr.audio import prepare_audio
 
-    if not isinstance(rows, list) or not rows:
+    if isinstance(rows, (str, bytes)) or not isinstance(rows, (list, tuple)):
+        raise TypeError("evaluation inputs must be a list of rows")
+    rows = list(rows)
+    if not rows:
         raise ValueError("no evaluation inputs: the dataset or --audio list is empty")
     seen, duplicates = set(), []
     for index, row in enumerate(rows):
         if not isinstance(row, dict) or "id" not in row or "wav" not in row:
-            raise ValueError(f"row {index} must be a dict with 'id' and 'wav'")
+            raise TypeError(f"row {index} must be a dict with 'id' and 'wav'")
+        if not isinstance(row["id"], Hashable):
+            raise TypeError(f"row {index} has an unhashable id {row['id']!r}")
         if row["id"] in seen:
             duplicates.append(row["id"])
         seen.add(row["id"])
-        if labelled and not isinstance(row.get("ref"), str):
-            raise ValueError(f"row {row['id']!r} has no string 'ref' (reference transcript)")
+        if labelled and not (row.get("ref") is None and "ref" in row
+                             or isinstance(row.get("ref"), str)):
+            raise ValueError(f"row {row['id']!r} has no 'ref' (reference transcript; "
+                             "None for silence)")
         try:
-            prepare_audio(row["wav"], row.get("sample_rate", 16000))
+            audio = prepare_audio(row["wav"], row.get("sample_rate", 16000))
         except ValueError as exc:
             raise ValueError(f"row {row['id']!r}: {exc}") from exc
+        if max_seconds is not None and audio.shape[1] > max_seconds * 16000:
+            raise ValueError(f"row {row['id']!r} is longer than the LLM runtime's "
+                             f"{max_seconds} s limit")
     if duplicates:
         raise ValueError(f"duplicate ids would overwrite each other's results: {duplicates}")
     return rows
 
 
 def load_rows(args):
+    max_seconds = LLM_MAX_SECONDS if getattr(args, "llm", None) else None
     if args.dataset:
         rows = pickle.loads(args.dataset.read_bytes())
-        if not isinstance(rows, list):
-            raise ValueError(f"{args.dataset} must contain a list of rows")
-        return validate_rows(rows[: args.limit], labelled=True)
+        if not isinstance(rows, (list, tuple)):
+            raise TypeError(f"{args.dataset} must contain a list of rows")
+        return validate_rows(rows[: args.limit], labelled=True, max_seconds=max_seconds)
     import soundfile as sf
 
     rows = []
-    for spec in args.audio:
+    for spec in args.audio[: args.limit]:  # --limit before reading any file
         path, _, lang = spec.partition(":")
         # Raw samples: the transcribers normalize exactly once, like OmniASR.transcribe(path).
         waveform, sample_rate = sf.read(path, dtype="float32")  # validated in validate_rows
         rows.append({"id": spec, "wav": waveform, "sample_rate": sample_rate,
                      "lang": lang or None})
-    return validate_rows(rows[: args.limit], labelled=False)
+    return validate_rows(rows, labelled=False, max_seconds=max_seconds)
 
 
 def transcriber(args, precision):
@@ -193,7 +210,10 @@ def main():
         raise SystemExit("Evaluate fp32 first; agreement is measured against it")
     if len(set(args.precision)) != len(args.precision):
         raise SystemExit("--precision lists a precision twice; its results would be overwritten")
-    rows = load_rows(args)
+    try:
+        rows = load_rows(args)
+    except (ValueError, TypeError) as exc:
+        raise SystemExit(f"error: {exc}") from exc
     results, baseline = {}, None
     for precision in args.precision:
         run = transcriber(args, precision)

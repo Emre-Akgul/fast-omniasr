@@ -237,14 +237,15 @@ def test_error_rates_rejects_mismatched_lengths():
 
 @pytest.mark.parametrize("rows, message", [
     ([], "no evaluation inputs"),
-    ("not a list", "no evaluation inputs"),
+    ("not a list", "must be a list of rows"),
+    ([{"id": [1], "wav": []}], "unhashable id"),
     ([{"wav": []}], "must be a dict with 'id' and 'wav'"),
     ([_row("a"), _row("b"), _row("a")], "duplicate ids would overwrite"),
-    ([_row("a", ref=None)], "has no string 'ref'"),
+    ([{**_row("a"), "ref": 3}], "has no 'ref'"),
     ([_row("short", n=100)], "row 'short': At least 400 samples"),
 ])
 def test_validate_rows_rejects_bad_datasets(rows, message):
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises((ValueError, TypeError), match=message):
         evaluate.validate_rows(rows, labelled=True)
 
 
@@ -273,11 +274,46 @@ def test_load_rows_applies_limit_then_validates(tmp_path):
         evaluate.load_rows(args)
 
 
+def test_validate_rows_keeps_silence_refs_and_accepts_tuples():
+    rows = (_row("a", ref=None), _row("b"))
+    assert [r["id"] for r in evaluate.validate_rows(rows, labelled=True)] == ["a", "b"]
+    missing = _row("c")
+    del missing["ref"]
+    with pytest.raises(ValueError, match="has no 'ref'"):
+        evaluate.validate_rows([missing], labelled=True)
+
+
+def test_llm_runs_reject_clips_over_30_seconds_up_front():
+    long_row = _row("long", n=31 * 16000)
+    assert evaluate.validate_rows([long_row], labelled=True)  # fine for CTC
+    with pytest.raises(ValueError, match="row 'long' is longer than the LLM runtime's 30 s"):
+        evaluate.validate_rows([long_row], labelled=True, max_seconds=30)
+
+
+def test_limit_applies_before_audio_files_are_read(tmp_path):
+    import argparse
+
+    path, _ = _wav(tmp_path)
+    args = argparse.Namespace(dataset=None, audio=[str(path), str(tmp_path / "missing.wav")],
+                              limit=1)
+    assert len(evaluate.load_rows(args)) == 1
+
+
+def test_cli_reports_bad_inputs_without_a_traceback(tmp_path, monkeypatch):
+    import sys
+
+    path = _dataset(tmp_path, [])
+    monkeypatch.setattr(sys, "argv", ["evaluate_precisions.py", "--ctc", "x",
+                                      "--dataset", str(path)])
+    with pytest.raises(SystemExit, match="^error: no evaluation inputs"):
+        evaluate.main()
+
+
 def test_load_rows_rejects_non_list_pickles(tmp_path):
     import argparse
 
     args = argparse.Namespace(dataset=_dataset(tmp_path, {"a": 1}), audio=None, limit=None)
-    with pytest.raises(ValueError, match="must contain a list"):
+    with pytest.raises(TypeError, match="must contain a list"):
         evaluate.load_rows(args)
 
 
