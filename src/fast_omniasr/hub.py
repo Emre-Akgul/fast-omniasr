@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 import re
+import tempfile
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote
@@ -53,18 +55,21 @@ _COMMIT = re.compile(r"[0-9a-f]{40}")
 SNAPSHOT_METADATA = ".fast-omniasr-snapshot.json"
 
 
-def _resolve_commit(repo_id: str, revision: str | None) -> str | None:
-    """The immutable commit SHA a branch/tag currently points to, or None if it can't be
-    resolved right now (offline mode, network error, or an hub client without HfApi)."""
-    if revision is not None and _COMMIT.fullmatch(revision):
-        return revision  # already immutable
+def _resolve_commit(repo_id: str, revision: str | None) -> tuple[str | None, str | None]:
+    """(commit SHA the branch/tag currently points to, None) or (None, reason) when it
+    can't be resolved right now -- offline mode, a network error, or an API failure."""
+    revision = revision or "main"  # what downloads have always used, not the default branch
+    if _COMMIT.fullmatch(revision):
+        return revision, None  # already immutable
     try:
         from huggingface_hub import HfApi
 
         sha = HfApi().model_info(repo_id, revision=revision).sha
-    except Exception:  # noqa: BLE001 -- offline/network/auth: fall back to the local record
-        return None
-    return sha if isinstance(sha, str) and _COMMIT.fullmatch(sha) else None
+    except Exception as exc:  # noqa: BLE001 -- reported by the caller, never swallowed silently
+        return None, f"{type(exc).__name__}: {exc}"
+    if isinstance(sha, str) and _COMMIT.fullmatch(sha):
+        return sha, None
+    return None, f"unexpected commit {sha!r} from the Hub API"
 
 
 def _read_snapshot(local_dir: Path) -> dict:
@@ -77,9 +82,15 @@ def _read_snapshot(local_dir: Path) -> dict:
 
 def _write_snapshot(local_dir: Path, record: dict) -> None:
     local_dir.mkdir(parents=True, exist_ok=True)
-    tmp = local_dir / (SNAPSHOT_METADATA + ".tmp")
-    tmp.write_text(json.dumps(record, indent=2) + "\n")
-    os.replace(tmp, local_dir / SNAPSHOT_METADATA)
+    # A unique temporary name: concurrent writers must not replace each other's file.
+    fd, tmp = tempfile.mkstemp(prefix=SNAPSHOT_METADATA + ".", dir=local_dir)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(record, indent=2) + "\n")
+        os.replace(tmp, local_dir / SNAPSHOT_METADATA)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def download_verified(repo_id: str, required: set[str], *, revision: str | None = None,
@@ -110,13 +121,27 @@ def download_verified(repo_id: str, required: set[str], *, revision: str | None 
 
     local_dir = _bundle_dir(Path(cache_dir or DEFAULT_CACHE), repo_id, revision)
     requested = revision or "main"
-    commit = _resolve_commit(repo_id, revision)
+    commit, reason = _resolve_commit(repo_id, revision)
     if commit is None:
         recorded = _read_snapshot(local_dir)
         if (recorded.get("repo_id") == repo_id and recorded.get("revision") == requested
                 and _COMMIT.fullmatch(str(recorded.get("commit", "")))):
             commit = recorded["commit"]
-    pinned = commit or revision  # one immutable commit for every file when known
+        if commit is not None and not reason.startswith("OfflineModeIsEnabled"):
+            # Explicit offline mode (HF_HUB_OFFLINE=1) is intentional; anything else may
+            # be a transient failure that leaves an older snapshot in use.
+            warnings.warn(
+                f"Could not resolve {repo_id}@{requested} ({reason}); using the previously "
+                f"downloaded commit {commit[:12]}, which may not be the latest",
+                stacklevel=2,
+            )
+        elif commit is None:
+            warnings.warn(
+                f"Could not resolve {repo_id}@{requested} to a commit ({reason}); "
+                "downloading files by revision name without pinning",
+                stacklevel=2,
+            )
+    pinned = commit or requested  # one immutable commit for every file when known
 
     def fetch(filename: str) -> Path:
         return Path(hf_hub_download(repo_id, filename, revision=pinned, local_dir=local_dir))

@@ -234,9 +234,10 @@ def test_unpinned_download_would_mix_commits(monkeypatch, tmp_path):
     # Documents the bug: fetching by branch name lets config and files diverge.
     fake = MovingHub(resolvable=False)
     _install(monkeypatch, fake)
-    with pytest.raises(RuntimeError, match="checksum mismatch"):
+    with pytest.raises(RuntimeError, match="checksum mismatch"), \
+            pytest.warns(UserWarning, match="without pinning"):
         hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
-    assert {revision for _, revision in fake.requests} == {None}
+    assert {revision for _, revision in fake.requests} == {"main"}
 
 
 def test_offline_reuses_the_recorded_commit(monkeypatch, tmp_path):
@@ -246,7 +247,9 @@ def test_offline_reuses_the_recorded_commit(monkeypatch, tmp_path):
     offline = MovingHub(resolvable=False)
     offline.head = SHA_B  # the branch has moved since
     _install(monkeypatch, offline)
-    _, paths = hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    with pytest.warns(UserWarning, match=r"ConnectionError.*previously downloaded commit aaaa"):
+        _, paths = hub.download_verified("owner/repo", {"tokenizer.model"},
+                                         cache_dir=tmp_path)
     assert {revision for _, revision in offline.requests} == {SHA_A}
     assert paths["tokenizer.model"].read_bytes() == b"tokenizer A"
 
@@ -266,8 +269,9 @@ def test_record_for_another_revision_is_ignored(monkeypatch, tmp_path):
     hub._write_snapshot(local_dir, {"repo_id": "owner/repo", "revision": "v2", "commit": SHA_B})
     fake = MovingHub(resolvable=False, moves=False)
     _install(monkeypatch, fake)
-    hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
-    assert {revision for _, revision in fake.requests} == {None}
+    with pytest.warns(UserWarning, match="without pinning"):
+        hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    assert {revision for _, revision in fake.requests} == {"main"}
 
 
 @pytest.mark.parametrize("bad_sha", [None, "", "main", "A" * 40, "a" * 39])
@@ -275,4 +279,72 @@ def test_unusable_resolved_sha_falls_back(monkeypatch, bad_sha):
     fake = types.SimpleNamespace(HfApi=lambda: types.SimpleNamespace(
         model_info=lambda repo_id, revision=None: types.SimpleNamespace(sha=bad_sha)))
     monkeypatch.setitem(sys.modules, "huggingface_hub", fake)
-    assert hub._resolve_commit("owner/repo", "main") is None
+    commit, reason = hub._resolve_commit("owner/repo", "main")
+    assert commit is None and "unexpected commit" in reason
+
+
+def test_default_revision_resolves_main_not_the_default_branch(monkeypatch):
+    asked = []
+    fake = types.SimpleNamespace(HfApi=lambda: types.SimpleNamespace(
+        model_info=lambda repo_id, revision=None: asked.append(revision)
+        or types.SimpleNamespace(sha=SHA_A)))
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake)
+    assert hub._resolve_commit("owner/repo", None) == (SHA_A, None)
+    assert asked == ["main"]
+
+
+def test_api_errors_are_reported_not_hidden(monkeypatch):
+    def broken():
+        raise TypeError("future API change")
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(HfApi=broken))
+    commit, reason = hub._resolve_commit("owner/repo", "main")
+    assert commit is None and reason == "TypeError: future API change"
+
+
+def test_concurrent_snapshot_writes_do_not_collide(tmp_path):
+    import threading
+
+    errors = []
+
+    def writer(i):
+        try:
+            for _ in range(50):
+                hub._write_snapshot(tmp_path, {"repo_id": "o/r", "revision": "main",
+                                               "commit": SHA_A if i % 2 else SHA_B})
+        except Exception as exc:  # noqa: BLE001 -- surfaced below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    assert hub._read_snapshot(tmp_path)["commit"] in (SHA_A, SHA_B)
+    assert [p.name for p in tmp_path.iterdir()] == [hub.SNAPSHOT_METADATA]
+
+
+def test_explicit_offline_mode_reuses_record_without_warning(monkeypatch, tmp_path):
+    import warnings as warnings_module
+
+    online = MovingHub()
+    _install(monkeypatch, online)
+    hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    offline = MovingHub()
+    module = offline.module()
+
+    class OfflineModeIsEnabled(ConnectionError):
+        pass
+
+    def offline_api():
+        def model_info(repo_id, revision=None):
+            raise OfflineModeIsEnabled("HF_HUB_OFFLINE=1")
+        return types.SimpleNamespace(model_info=model_info)
+
+    module.HfApi = offline_api
+    monkeypatch.setitem(sys.modules, "huggingface_hub", module)
+    with warnings_module.catch_warnings():
+        warnings_module.simplefilter("error")
+        hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
+    assert {revision for _, revision in offline.requests} == {SHA_A}
