@@ -18,8 +18,11 @@ def _validate_contract(trt, engine, context):
     for name, mode in ((_INPUT, trt.TensorIOMode.INPUT), (_OUTPUT, trt.TensorIOMode.OUTPUT)):
         if engine.get_tensor_mode(name) != mode:
             raise ValueError(f"Expected {name!r} to be an {mode.name.lower()} tensor")
-        if engine.get_tensor_dtype(name) != trt.float32:
-            raise ValueError("Expected a float32 audio input and a float32 logits output")
+        dtype = engine.get_tensor_dtype(name)
+        if dtype != trt.float32:
+            raise ValueError(
+                f"Expected {name!r} to be float32, engine has {getattr(dtype, 'name', dtype)}"
+            )
         if engine.get_tensor_location(name) != trt.TensorLocation.DEVICE:
             raise ValueError(f"Expected {name!r} to live in device memory")
     for name, rank in ((_INPUT, 2), (_OUTPUT, 3)):
@@ -30,6 +33,8 @@ def _validate_contract(trt, engine, context):
             )
     if engine.num_optimization_profiles < 1:
         raise ValueError("Engine has no optimization profile")
+    # Only profile 0 is validated and used: it is the execution context's default, and
+    # the project's builder creates exactly one. Additional profiles are ignored.
     min_shape, opt_shape, max_shape = (
         tuple(shape) for shape in engine.get_tensor_profile_shape(_INPUT, 0)
     )
@@ -45,6 +50,11 @@ def _validate_contract(trt, engine, context):
         if not context.set_input_shape(_INPUT, shape):
             raise RuntimeError(f"Failed to size the execution context to the profile {label}")
         logits = tuple(context.get_tensor_shape(_OUTPUT))
+        if len(logits) == 3 and logits[0] == 1 and logits[1] == 0 and logits[2] >= 1:
+            raise ValueError(
+                f"Engine produces zero frames at the profile {label} of {shape[1]} samples; "
+                "rebuild it with a larger min_samples"
+            )
         if len(logits) != 3 or logits[0] != 1 or min(logits) < 1:
             raise ValueError(
                 f"Logits shape {logits} at the profile {label} is not a resolved "
