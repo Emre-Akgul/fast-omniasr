@@ -102,12 +102,15 @@ def gpu_mib():
 def load_rows(args):
     if args.dataset:
         return pickle.loads(args.dataset.read_bytes())[: args.limit]
-    from fast_omniasr.audio import load_audio
+    import soundfile as sf
 
     rows = []
     for spec in args.audio:
         path, _, lang = spec.partition(":")
-        rows.append({"id": spec, "wav": load_audio(path)[0], "lang": lang or None})
+        # Raw samples: the transcribers normalize exactly once, like OmniASR.transcribe(path).
+        waveform, sample_rate = sf.read(path, dtype="float32")
+        rows.append({"id": spec, "wav": waveform, "sample_rate": sample_rate,
+                     "lang": lang or None})
     return rows
 
 
@@ -119,7 +122,8 @@ def transcriber(args, precision):
         model = OmniASRLLM(args.llm, backend="onnx", device=args.device, precision=precision)
 
         def run_llm(row):
-            result = model.transcribe(row["wav"], lang=row.get("lang") or args.lang)
+            result = model.transcribe(row["wav"], sample_rate=row.get("sample_rate", 16000),
+                                      lang=row.get("lang") or args.lang)
             return result.text, result.stop_reason
 
         return run_llm
@@ -127,7 +131,9 @@ def transcriber(args, precision):
 
     graph = args.ctc / ("model.onnx" if precision == "fp32" else f"{precision}/model.onnx")
     model = OmniASR(graph, args.ctc / "tokenizer.model", device=args.device, precision=precision)
-    return lambda row: (model.transcribe_numpy(row["wav"]).text, None)
+    return lambda row: (
+        model.transcribe_numpy(row["wav"], row.get("sample_rate", 16000)).text, None
+    )
 
 
 def main():
