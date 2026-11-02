@@ -143,15 +143,23 @@ class TensorRTBackend:
             self._release()
 
     @contextlib.contextmanager
-    def _on_device(self):
-        """Run on this engine's device, restoring the caller thread's current device."""
+    def _on_device(self, *, best_effort: bool = False):
+        """Run on this engine's device, restoring the caller thread's current device.
+        With `best_effort` (used when releasing), a failed device query runs the body on
+        the current device instead of raising, so cleanup is still attempted."""
         device = getattr(self, "device", None)
         if device is None:  # partial init: nothing was created on a device yet
             yield
             return
-        previous = self._check(self._cudart.cudaGetDevice())
-        if previous != device:
-            self._check(self._cudart.cudaSetDevice(device))
+        try:
+            previous = self._check(self._cudart.cudaGetDevice())
+            if previous != device:
+                self._check(self._cudart.cudaSetDevice(device))
+        except RuntimeError:
+            if not best_effort:
+                raise
+            yield
+            return
         try:
             yield
         finally:
@@ -160,15 +168,22 @@ class TensorRTBackend:
 
     def _release(self) -> None:
         try:
-            with self._on_device():
-                self._release_on_device()
+            with self._on_device(best_effort=True):
+                try:
+                    self._release_on_device()
+                finally:
+                    # Inside the device switch so TensorRT's destructors free the
+                    # engine's device memory on its own device.
+                    self._drop_tensorrt_objects()
         finally:
-            # Drop TensorRT objects in dependency order: context -> engine -> runtime.
-            # The Python bindings free the underlying C++ objects (and the engine's
-            # device memory) when their last reference goes away.
-            self.context = None
-            self.engine = None
-            self.runtime = None
+            self._drop_tensorrt_objects()  # no-op unless the device switch itself failed
+
+    def _drop_tensorrt_objects(self) -> None:
+        # Dependency order: context -> engine -> runtime. The Python bindings free the
+        # underlying C++ objects (and the engine's device memory) on the last reference.
+        self.context = None
+        self.engine = None
+        self.runtime = None
 
     def _release_on_device(self) -> None:
         cudart = self._cudart

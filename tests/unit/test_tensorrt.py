@@ -448,3 +448,34 @@ def test_finalizer_never_blocks_on_a_busy_lock(fake_trt):
         backend._lock.release()
     backend.__del__()
     assert backend.closed
+
+
+def test_close_still_releases_if_device_query_fails(fake_trt, monkeypatch):
+    fake_trt.cudart.current_device = 3
+    backend = TensorRTBackend(fake_trt.path)
+    engine_ref = weakref.ref(backend.engine)
+    allocated = [c[1] for c in fake_trt.cudart.calls if isinstance(c, tuple) and c[0] == "malloc"]
+    monkeypatch.setattr(fake_trt.cudart, "cudaGetDevice", lambda: (1, None))
+    backend.close()  # e.g. CUDA partly torn down: release on the current device instead
+    gc.collect()
+    freed = [c[1] for c in fake_trt.cudart.calls if isinstance(c, tuple) and c[0] == "free"]
+    assert sorted(freed) == sorted(allocated)
+    assert fake_trt.cudart.calls[-1] == "stream_destroy"
+    assert engine_ref() is None
+
+
+def test_tensorrt_objects_are_dropped_on_the_load_device(fake_trt, monkeypatch):
+    fake_trt.cudart.current_device = 3
+    backend = TensorRTBackend(fake_trt.path)
+    fake_trt.cudart.current_device = 0
+    seen = []
+    real_drop = backend._drop_tensorrt_objects
+
+    def recording_drop():
+        seen.append(fake_trt.cudart.current_device)
+        real_drop()
+
+    monkeypatch.setattr(backend, "_drop_tensorrt_objects", recording_drop)
+    backend.close()
+    assert seen[0] == 3  # engine/context/runtime destroyed while on the load device
+    assert fake_trt.cudart.current_device == 0
