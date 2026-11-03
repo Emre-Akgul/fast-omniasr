@@ -11,6 +11,7 @@ import json
 import mmap
 import os
 import re
+import warnings
 from importlib import metadata
 from pathlib import Path
 
@@ -253,7 +254,18 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
                          min_samples: int = DEFAULT_MIN_SAMPLES,
                          opt_samples: int = DEFAULT_OPT_SAMPLES,
                          max_samples: int = DEFAULT_MAX_SAMPLES,
-                         cache_dir: str | Path | None = None) -> Path:
+                         cache_dir: str | Path | None = None,
+                         rebuild: bool = False,
+                         discard_sha256: str | None = None) -> Path:
+    """Path of a cached engine for this ONNX model and config, building it if needed.
+
+    The engine's size and sha256 are recorded beside the cache metadata (not in the key)
+    and checked before reuse (size first, then a full hash: about a second per GB); a
+    corrupted or replaced engine is rebuilt with a warning. `rebuild=True` always
+    rebuilds. `discard_sha256` rebuilds only if the cached engine is still that one, so
+    when several processes fail to load the same engine, the first rebuild is reused by
+    the others instead of being thrown away.
+    """
     if precision not in PRECISIONS:
         raise ValueError("precision must be 'fp32', 'fp16' or 'mixed'")
     min_samples, opt_samples, max_samples = validate_profile(
@@ -277,16 +289,56 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
     metadata_path = entry_dir / "metadata.json"
 
     with file_lock(root / f"{key}.lock"):
-        if engine_path.exists() and metadata_path.exists():
+        if not rebuild and engine_path.exists() and metadata_path.exists():
             try:
                 cached = json.loads(metadata_path.read_text())
             except (OSError, json.JSONDecodeError):
                 cached = None
-            if cached == metadata:
-                return engine_path
+            if isinstance(cached, dict):
+                recorded = cached.pop("engine", None)
+                discarded = (discard_sha256 is not None and isinstance(recorded, dict)
+                             and recorded.get("sha256") == discard_sha256)
+                if cached == metadata and not discarded:
+                    if recorded is None:
+                        # Cached before checksums were recorded: adopt on first use (an
+                        # engine that then fails to deserialize is still rebuilt).
+                        _write_metadata(metadata_path,
+                                        {**metadata, "engine": _engine_record(engine_path)})
+                        return engine_path
+                    if _engine_matches(engine_path, recorded):
+                        return engine_path
+                    warnings.warn(f"Cached TensorRT engine {engine_path} does not match its "
+                                  "recorded checksum (corrupted or replaced); rebuilding",
+                                  stacklevel=2)
+        # A crash mid-build must not leave a record that vouches for a partial engine.
+        metadata_path.unlink(missing_ok=True)
         build_engine(onnx_path, engine_path, precision=precision, min_samples=min_samples,
                      opt_samples=opt_samples, max_samples=max_samples)
-        tmp_metadata_path = metadata_path.with_name(metadata_path.name + ".tmp")
-        tmp_metadata_path.write_text(json.dumps(metadata, indent=2))
-        os.replace(tmp_metadata_path, metadata_path)
+        _write_metadata(metadata_path, {**metadata, "engine": _engine_record(engine_path)})
     return engine_path
+
+
+def _engine_record(engine_path: Path) -> dict:
+    return {"size": engine_path.stat().st_size, "sha256": _sha256_file(engine_path)}
+
+
+def _engine_matches(engine_path: Path, recorded) -> bool:
+    if not isinstance(recorded, dict) or recorded.get("size") != engine_path.stat().st_size:
+        return False  # malformed record or truncated/extended file: no need to hash
+    return recorded.get("sha256") == _sha256_file(engine_path)
+
+
+def recorded_engine_sha256(engine_path: str | Path) -> str | None:
+    """The sha256 the cache recorded for this engine, if any."""
+    try:
+        record = json.loads((Path(engine_path).parent / "metadata.json").read_text())
+    except (OSError, ValueError):
+        return None
+    engine = record.get("engine") if isinstance(record, dict) else None
+    return engine.get("sha256") if isinstance(engine, dict) else None
+
+
+def _write_metadata(metadata_path: Path, record: dict) -> None:
+    tmp_metadata_path = metadata_path.with_name(metadata_path.name + ".tmp")
+    tmp_metadata_path.write_text(json.dumps(record, indent=2))
+    os.replace(tmp_metadata_path, metadata_path)

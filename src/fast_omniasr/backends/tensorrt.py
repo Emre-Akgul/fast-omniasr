@@ -9,6 +9,11 @@ import numpy as np
 _INPUT, _OUTPUT = "audio", "logits"
 
 
+class EngineDeserializationError(RuntimeError):
+    """TensorRT could not deserialize the engine file (corrupt, from another TensorRT
+    version, or transiently out of GPU memory)."""
+
+
 def _validate_contract(trt, engine, context):
     """Check the engine matches the batch-one CTC contract this backend assumes:
     exactly one float32 device input `audio` [1, samples] with a usable optimization
@@ -106,7 +111,7 @@ class TensorRTBackend:
         self.runtime = runtime = trt.Runtime(logger)
         engine = runtime.deserialize_cuda_engine(Path(path).read_bytes())
         if engine is None:
-            raise RuntimeError("Failed to deserialize TensorRT engine")
+            raise EngineDeserializationError("Failed to deserialize TensorRT engine")
         self.engine = engine
         self.context = engine.create_execution_context()
         if self.context is None:

@@ -479,3 +479,13 @@ def test_tensorrt_objects_are_dropped_on_the_load_device(fake_trt, monkeypatch):
     backend.close()
     assert seen[0] == 3  # engine/context/runtime destroyed while on the load device
     assert fake_trt.cudart.current_device == 0
+
+
+
+def test_undeserializable_engine_raises_the_dedicated_error(fake_trt, monkeypatch):
+    from fast_omniasr.backends.tensorrt import EngineDeserializationError
+
+    monkeypatch.setattr(_FakeRuntime, "deserialize_cuda_engine", lambda self, data: None)
+    with pytest.raises(EngineDeserializationError, match="Failed to deserialize"):
+        TensorRTBackend(fake_trt.path)
+    assert issubclass(EngineDeserializationError, RuntimeError)  # still a RuntimeError
