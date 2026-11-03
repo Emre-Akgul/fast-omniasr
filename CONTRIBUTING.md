@@ -75,8 +75,11 @@ request which tiers you ran and which you could not (e.g. no GPU available).
 - **TensorRT precision** (the README's "Performance and accuracy" table):
   `python tools/fleurs_eval.py run --model ctc --backend tensorrt --precision mixed --gate`
   on a GPU, repeated for `fp32` and `fp16`.
-- **Latency**: `python benchmarks/benchmark.py speech.wav --model model.onnx --tokenizer
-  tokenizer.model --runs 10` (add `--device cuda`, or `--backend tensorrt` with an engine).
+- **Latency**: `python benchmarks/benchmark.py speech.wav --repo <repo> --precision fp16
+  --device cuda --runs 20 --output report.json` (or `--model`/`--tokenizer` for local
+  assets, `--backend tensorrt` for an engine). The report records the model identity,
+  settings, versions, latency percentiles, real-time factor and peak memory; commit it with
+  the numbers it supports.
 - **Precision variants** (fp32/fp16/bf16 agreement, WER/CER and peak GPU memory):
   `python tools/evaluate_precisions.py --ctc <export dir> --dataset eval.jsonl` (JSONL
   manifest format in the tool's docstring).

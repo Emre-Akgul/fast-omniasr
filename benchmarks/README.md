@@ -1,12 +1,29 @@
 # Benchmark
 
 ```bash
-python benchmarks/benchmark.py speech.wav --model dynamic.onnx --tokenizer omniASR_tokenizer_written_v2.model --runs 10
+# a published model, by repo (records the resolved commit)
+python benchmarks/benchmark.py speech.wav --repo EmreAkgul/omniASR-CTC-300M-v2-ONNX \
+    --precision fp16 --device cuda --runs 20 --output report.json
+# local assets (records their sha256)
+python benchmarks/benchmark.py speech.wav --model model.onnx --tokenizer tokenizer.model --runs 10
+python benchmarks/benchmark.py speech.wav --model fp16.engine --tokenizer tokenizer.model --backend tensorrt
 ```
 
-Use `--device cuda` for ONNX Runtime CUDA. This measures the public API end to end: file loading, normalization, inference and decoding. Model load, first call and warmed samples are reported separately.
+This measures the public API end to end: file loading, normalization, inference and
+decoding. The JSON report (`report_version` 1) records everything needed to reproduce it:
 
-These times are not directly comparable to the forward-only exploratory TensorRT measurements in the main README. The packaged benchmark supports ONNX; TensorRT inference benchmarking is not part of the public API yet.
+| field | contents |
+|---|---|
+| `model` | `repo`, `revision` and resolved `commit`, or local `model_path`/`model_sha256` and `tokenizer_path`/`tokenizer_sha256` |
+| `backend`, `precision`, `device`, `threads` | how it ran (`--precision` fp32/fp16/bf16 for ONNX; fp32/fp16/mixed for TensorRT with `--repo`; a local engine carries its own) |
+| `audio` | path, sha256, duration, sample rate, channels |
+| `load_seconds`, `first_seconds` | model load and the first (cold) call |
+| `latency_seconds` | over `--runs` warm calls after `--warmup` unmeasured ones (default 2): mean, stdev, min, max, p50/p90/p95/p99, and the real-time factor `rtf_p50`/`rtf_mean` (seconds of compute per second of audio) |
+| `memory` | peak process RSS, and peak GPU memory sampled from nvidia-smi on CUDA |
+| `environment` | Python, platform, CPU count, versions of the relevant packages, and the GPU(s) on CUDA runs |
+
+These times are not directly comparable to the forward-only exploratory TensorRT
+measurements in the main README.
 
 ## Explicit LLM KV cache (CPU)
 
