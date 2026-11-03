@@ -1,0 +1,248 @@
+{
+  "description": "Which tests cover which supported configuration. Every model card, backend, device and precision the runtime supports is listed with the tiers that exercise it. Cheap tiers run on every change; expensive ones are reserved for specific events instead of running every combination on every PR. Rendered into docs/test-matrix.md by tools/test_matrix.py.",
+  "tiers": {
+    "unit": {
+      "when": "every push and PR (Lint and CPU unit tests; Package)",
+      "runs": "pytest tests/unit, against fakes and tiny generated graphs; no real weights",
+      "command": "python -m pytest tests/unit"
+    },
+    "real-cpu": {
+      "when": "weekly, on each published release, on demand, and on PRs touching the runtime (Real-model CPU validation)",
+      "runs": "the pinned published model end to end on CPU (FLEURS fixtures, CER ceilings, determinism) plus the per-language FLEURS regression gate",
+      "command": "OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_cpu.py && python tools/fleurs_eval.py run --model {family} --gate"
+    },
+    "gpu": {
+      "when": "manually on a CUDA machine, before merging changes to GPU, precision, TensorRT or export code (no hosted GPU runner)",
+      "runs": "ONNX CUDA precision agreement and TensorRT engines of the pinned model on the FLEURS fixtures and gate",
+      "command": "python tools/evaluate_precisions.py --{family} <export> --device cuda --precision fp32 fp16 bf16 --dataset <eval.jsonl>; OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_tensorrt_fleurs.py; python tools/fleurs_eval.py run --model ctc --backend tensorrt --precision mixed --gate"
+    },
+    "release": {
+      "when": "once per model, when it is exported or republished",
+      "runs": "the precision-agreement report published in the model card (measured with CUDA; tools/publish_precisions.py); for LLMs, step-by-step fp32 logit parity with fairseq2 on CPU and CUDA (tools/validate_llm_fairseq2.py)",
+      "command": "python tools/evaluate_precisions.py --{family} <export> --device cuda --precision fp32 fp16 bf16 --audio <clips> --report <report>; python tools/publish_precisions.py {repo} <export> --report <report> [--upload]; for LLMs also python tools/validate_llm_fairseq2.py compare <reference> --directory <export> --device cpu|cuda"
+    }
+  },
+  "families": {
+    "ctc": {
+      "cards": [
+        "omniASR_CTC_300M",
+        "omniASR_CTC_1B",
+        "omniASR_CTC_3B",
+        "omniASR_CTC_7B",
+        "omniASR_CTC_300M_v2",
+        "omniASR_CTC_1B_v2",
+        "omniASR_CTC_3B_v2",
+        "omniASR_CTC_7B_v2"
+      ],
+      "pinned": "omniASR_CTC_300M_v2"
+    },
+    "llm": {
+      "cards": [
+        "omniASR_LLM_300M",
+        "omniASR_LLM_1B",
+        "omniASR_LLM_3B",
+        "omniASR_LLM_7B",
+        "omniASR_LLM_300M_v2",
+        "omniASR_LLM_1B_v2",
+        "omniASR_LLM_3B_v2",
+        "omniASR_LLM_7B_v2"
+      ],
+      "pinned": "omniASR_LLM_300M_v2"
+    }
+  },
+  "configurations": [
+    {
+      "family": "ctc",
+      "backend": "onnx",
+      "device": "cpu",
+      "precision": "fp32",
+      "pinned": [
+        "unit",
+        "real-cpu"
+      ],
+      "other": [
+        "unit"
+      ]
+    },
+    {
+      "family": "ctc",
+      "backend": "onnx",
+      "device": "cpu",
+      "precision": "fp16",
+      "pinned": [
+        "unit"
+      ],
+      "other": [
+        "unit"
+      ]
+    },
+    {
+      "family": "ctc",
+      "backend": "onnx",
+      "device": "cuda",
+      "precision": "fp32",
+      "pinned": [
+        "unit",
+        "gpu",
+        "release"
+      ],
+      "other": [
+        "unit",
+        "release"
+      ]
+    },
+    {
+      "family": "ctc",
+      "backend": "onnx",
+      "device": "cuda",
+      "precision": "fp16",
+      "pinned": [
+        "unit",
+        "gpu",
+        "release"
+      ],
+      "other": [
+        "unit",
+        "release"
+      ]
+    },
+    {
+      "family": "ctc",
+      "backend": "onnx",
+      "device": "cuda",
+      "precision": "bf16",
+      "pinned": [
+        "unit",
+        "gpu",
+        "release"
+      ],
+      "other": [
+        "unit",
+        "release"
+      ]
+    },
+    {
+      "family": "ctc",
+      "backend": "tensorrt",
+      "device": "cuda",
+      "precision": "fp32",
+      "pinned": [
+        "unit",
+        "gpu"
+      ],
+      "other": [
+        "unit"
+      ]
+    },
+    {
+      "family": "ctc",
+      "backend": "tensorrt",
+      "device": "cuda",
+      "precision": "fp16",
+      "pinned": [
+        "unit",
+        "gpu"
+      ],
+      "other": [
+        "unit"
+      ]
+    },
+    {
+      "family": "ctc",
+      "backend": "tensorrt",
+      "device": "cuda",
+      "precision": "mixed",
+      "pinned": [
+        "unit",
+        "gpu"
+      ],
+      "other": [
+        "unit"
+      ]
+    },
+    {
+      "family": "llm",
+      "backend": "onnx",
+      "device": "cpu",
+      "precision": "fp32",
+      "pinned": [
+        "unit",
+        "real-cpu",
+        "release"
+      ],
+      "other": [
+        "unit",
+        "release"
+      ]
+    },
+    {
+      "family": "llm",
+      "backend": "onnx",
+      "device": "cpu",
+      "precision": "fp16",
+      "pinned": [
+        "unit"
+      ],
+      "other": [
+        "unit"
+      ]
+    },
+    {
+      "family": "llm",
+      "backend": "onnx",
+      "device": "cuda",
+      "precision": "fp32",
+      "pinned": [
+        "unit",
+        "gpu",
+        "release"
+      ],
+      "other": [
+        "unit",
+        "release"
+      ]
+    },
+    {
+      "family": "llm",
+      "backend": "onnx",
+      "device": "cuda",
+      "precision": "fp16",
+      "pinned": [
+        "unit",
+        "gpu",
+        "release"
+      ],
+      "other": [
+        "unit",
+        "release"
+      ]
+    },
+    {
+      "family": "llm",
+      "backend": "onnx",
+      "device": "cuda",
+      "precision": "bf16",
+      "pinned": [
+        "unit",
+        "gpu",
+        "release"
+      ],
+      "other": [
+        "unit",
+        "release"
+      ]
+    },
+    {
+      "family": "llm",
+      "backend": "torch",
+      "device": "cpu",
+      "precision": "fp32",
+      "pinned": [
+        "unit"
+      ],
+      "other": [
+        "unit"
+      ]
+    }
+  ]
+}

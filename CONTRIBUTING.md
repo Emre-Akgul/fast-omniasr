@@ -48,6 +48,10 @@ Exporting models additionally needs `fairseq2`/`omnilingual-asr` and `onnx`; see
 | FLEURS gates | `python tools/fleurs_eval.py run --model ctc --gate` (and `--model llm`) | `dev,onnx,hub` | same workflow (`fleurs-ctc`, `fleurs-llm`) |
 | GPU / TensorRT | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_tensorrt_fleurs.py`, plus `test_tensorrt*.py`/`test_onnx.py` with the `OMNIASR_*` variables below | a CUDA GPU, `cuda`/`tensorrt` | not in CI: run locally for GPU changes |
 
+Which tier covers which model, backend, device and precision is laid out in the
+[test matrix](docs/test-matrix.md) (source: `tests/matrix.json`; regenerate the page with
+`python tools/test_matrix.py --write` after editing it).
+
 Unit tests must not need a GPU, model downloads or the network. Integration tests skip
 unless their inputs are provided:
 
