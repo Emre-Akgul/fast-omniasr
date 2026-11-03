@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "description": "Exact outputs the integration tests expect. Keys under `expected` are `<repo id>@<commit>`; each maps backend/precision to the transcript, measured on the published model. Clips are identified by sha256, so a different file at the same path is never compared against these.",
+  "clips": {
+    "fleurs/en_us_10233995782544396174.flac": {
+      "sha256": "04d715499167d7a45b8778c9af02558304f96cba46b812559f59539eec5c8eb0",
+      "samples": 69120,
+      "sample_rate": 16000,
+      "expected": {
+        "EmreAkgul/omniASR-CTC-300M-v2-ONNX@6c1096d65763f1d268a7ed61fe8874596f0a4eb8": {
+          "frames": 215,
+          "vocabulary_size": 10288,
+          "transcripts": {
+            "onnx-cpu-fp32": "many people don't think about them as diner storis because they have feathers and canfly",
+            "onnx-cuda-fp32": "many people don't think about them as diner storis because they have feathers and canfly",
+            "tensorrt-fp32": "many people don't think about them as diner storis because they have feathers and canfly",
+            "tensorrt-fp16": "many people don't think about them as diner storis because they have feathers and canfly",
+            "tensorrt-mixed": "many people don't think about them as diner storis because they have feathers and canfly"
+          }
+        }
+      }
+    }
+  }
+}
