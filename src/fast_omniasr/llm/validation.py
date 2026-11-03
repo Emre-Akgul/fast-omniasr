@@ -15,7 +15,11 @@ from .models import LLM_MODEL_CARDS
 
 # The ONNX runtime feeds and reads the K/V cache of exactly this many decoder layers.
 SUPPORTED_LAYERS = 12
-_MIN_CONTEXT = 4  # bos + at least one generated token + upstream's 3-position margin
+# A 30 s clip (the runtime's limit) encodes to ~1500 positions (320-sample frames) plus the
+# LID marker and language rows; decoding needs bos, one generated token and upstream's
+# 3-position margin on top.
+MAX_CLIP_POSITIONS = 30 * 16000 // 320 + 2
+_MIN_CONTEXT = MAX_CLIP_POSITIONS + 1 + 1 + 3
 
 
 class InvalidArtifactError(ValueError):
@@ -52,11 +56,15 @@ def validate_config(config: dict, directory: Path) -> None:
                      f"{', '.join(LLM_MODEL_CARDS)}")
     vocab = _integer(config, "vocab_size", where, low=1)
     ids = {key: _integer(config, key, where, high=vocab) for key in ("bos_idx", "eos_idx")}
-    for key in ("pad_idx", "lid_marker_idx"):
-        ids[key] = _integer(config, key, where, high=vocab, required=False)
+    _integer(config, "pad_idx", where, high=vocab, required=False)
+    # Indexes the input embedding (baked into the encoder graph), which can be larger than
+    # the output vocabulary; the runtime itself never reads it.
+    _integer(config, "lid_marker_idx", where, required=False)
     if ids["bos_idx"] == ids["eos_idx"]:
         _fail(where, "'bos_idx' and 'eos_idx' must differ")
-    _integer(config, "max_seq_len", where, low=_MIN_CONTEXT)
+    if _integer(config, "max_seq_len", where, low=1) < _MIN_CONTEXT:
+        _fail(where, f"'max_seq_len' is {config['max_seq_len']}, too small for a 30 s clip "
+                     f"(needs at least {_MIN_CONTEXT} positions)")
     onnx = config.get("onnx")
     if onnx is not None:
         if not isinstance(onnx, dict):
@@ -131,11 +139,13 @@ def _check_io(path, values, expected, kind):
     for (name, element, dims), (_, want_element, rank) in zip(values, expected):
         if element != want_element:
             _fail(path, f"{kind} {name!r} is {element}, expected {want_element}")
-        if len(dims) != rank:
+        if dims is not None and len(dims) != rank:  # no declared shape: nothing to check
             _fail(path, f"{kind} {name!r} has rank {len(dims)}, expected {rank}")
 
 
 def _fixed(path, name, dims, axis, expected, what, source):
+    if dims is None:
+        return
     value = dims[axis]
     if isinstance(value, int) and value != expected:
         _fail(path, f"{name!r} has {what} {value}, expected {expected} ({source})")
@@ -160,13 +170,13 @@ def validate_graphs(directory: Path, precision: str, config: dict) -> int:
         try:
             return graph_signature(path)
         except ValueError as exc:
-            _fail(path, str(exc))
+            _fail(path, str(exc).replace(f"{path} ", "", 1))
 
     encoder = graphs / "encoder.onnx"
     inputs, outputs = signature(encoder)
     _check_io(encoder, inputs, [("audio", "float", 2)], "input")
     _check_io(encoder, outputs, [("context", "float", 3)], "output")
-    hidden = outputs[0][2][2]
+    hidden = outputs[0][2][2] if outputs[0][2] is not None else None
 
     unified = graphs / "decoder.onnx"
     if unified.is_file() or precision != "fp32":
@@ -185,11 +195,18 @@ def validate_graphs(directory: Path, precision: str, config: dict) -> int:
         _check_io(path, outputs, [("logits", "float", 2)] + [(n, "float", 4) for n in produced],
                   "output")
         _fixed(path, "logits", outputs[0][2], 1, vocab, "vocabulary size", "config vocab_size")
+        if path.name == "decoder.onnx":
+            # The runtime builds empty context and cache inputs from these sizes.
+            static = [("context", inputs[0][2], [2]),
+                      *[(n, d, [2, 3]) for n, _, d in inputs[2:]]]
+            for name, dims, axes in static:
+                if dims is None or any(not isinstance(dims[a], int) for a in axes):
+                    _fail(path, f"input {name!r} needs static sizes on axes {axes}, got {dims}")
         if leading[0][0] == "context":
             dims = inputs[0][2]
             if isinstance(hidden, int):
                 _fixed(path, "context", dims, 2, hidden, "hidden size", "the encoder's output")
-            elif isinstance(dims[2], int):
+            elif dims is not None and isinstance(dims[2], int):
                 hidden = dims[2]
         for name, _, dims in [*(inputs if takes_cache else []), *outputs[1:]]:
             if name.startswith(("past_", "present_")):

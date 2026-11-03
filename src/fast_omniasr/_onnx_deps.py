@@ -216,8 +216,9 @@ def _text(buf, span):
 
 def _value_info(buf, start, end):
     """(name, element type name, dims) with dims as ints or symbolic strings (None when
-    neither is given); the type is None for non-tensor values."""
-    name, element, dims = "", None, []
+    neither is given); dims is None when the graph declares no shape, and the type is
+    None for non-tensor values."""
+    name, element, dims = "", None, None
     for field, value in _fields(buf, start, end):
         if field == _VALUE_NAME:
             name = _text(buf, value)
@@ -229,6 +230,7 @@ def _value_info(buf, start, end):
                     if key == _TENSOR_ELEM_TYPE:
                         element = ELEMENT_TYPES.get(item, f"type{item}")
                     elif key == _TENSOR_SHAPE:
+                        dims = []
                         for kind, dim in _fields(buf, *_span(item)):
                             if kind != _SHAPE_DIM:
                                 continue
@@ -239,7 +241,7 @@ def _value_info(buf, start, end):
                                 elif part == _DIM_PARAM:
                                     size = _text(buf, raw)
                             dims.append(size)
-    return name, element, tuple(dims)
+    return name, element, None if dims is None else tuple(dims)
 
 
 def graph_signature(path: str | Path):

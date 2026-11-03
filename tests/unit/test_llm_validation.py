@@ -51,7 +51,7 @@ def artifact(tmp_path, tokenizer_file):
     (tmp_path / "tokenizer.model").write_bytes(tokenizer_file.read_bytes())
     config = {
         "format_version": 1, "model": "omniASR_LLM_300M_v2", "bos_idx": 0, "eos_idx": 2,
-        "pad_idx": 1, "vocab_size": vocab, "max_seq_len": 64,
+        "pad_idx": 1, "vocab_size": vocab, "max_seq_len": 8192, "lid_marker_idx": vocab,
         "onnx": {"layers": LAYERS, "kv_heads": HEADS, "head_dim": HEAD_DIM},
         "languages": {"mapping": "languages.json", "embeddings": "lang_embeddings.npy",
                       "count": 2},
@@ -107,7 +107,9 @@ def test_signature_reader(artifact):
     ({"eos_idx": 0}, "'bos_idx' and 'eos_idx' must differ"),
     ({"pad_idx": -1}, "'pad_idx' is -1"),
     ({"vocab_size": True}, "'vocab_size' must be an integer"),
-    ({"max_seq_len": 2}, "'max_seq_len' is 2"),
+    ({"max_seq_len": 2}, "'max_seq_len' is 2, too small for a 30 s clip"),
+    ({"max_seq_len": 1000}, "'max_seq_len' is 1000, too small for a 30 s clip"),
+    ({"lid_marker_idx": -1}, "'lid_marker_idx' is -1"),
     ({"format_version": 2}, "unsupported format_version 2"),
     ({"model": "omniASR_CTC_300M"}, "unsupported model 'omniASR_CTC_300M'"),
     ({"onnx__layers": 24}, "onnx.layers is 24; this runtime supports 12-layer"),
@@ -150,7 +152,11 @@ def _vocab(artifact):
      "'context' has hidden size 16, expected 8"),
     ("decoder.onnx", lambda v: _decoder(v, heads=4), "has kv_heads 4, expected 2"),
     ("decoder.onnx", lambda v: _decoder(v, names=list(reversed(CACHE))), "wrong order"),
-    ("decoder.onnx", lambda v: b"garbage", "decoder.onnx: .*not a valid ONNX model"),
+    ("decoder.onnx", lambda v: b"garbage", r"decoder.onnx: is not a valid ONNX model"),
+    ("decoder.onnx", lambda v: _decoder(v, hidden="h"),
+     r"input 'context' needs static sizes on axes \[2\]"),
+    ("decoder.onnx", lambda v: _decoder(v, heads="heads"),
+     r"input 'past_key_0' needs static sizes on axes \[2, 3\]"),
 ])
 def test_graph_contracts_are_checked_on_load(artifact, loaded, graph, build, message):
     (artifact / graph).write_bytes(build(_vocab(artifact)))
@@ -219,3 +225,24 @@ def test_decoder_weight_manifest_is_checked(artifact, loaded, entry, message):
 
 def test_invalid_artifact_error_is_a_value_error():
     assert issubclass(InvalidArtifactError, ValueError)
+
+
+def test_lid_marker_may_index_past_the_output_vocabulary(artifact, loaded):
+    # It indexes the input embedding table, which can exceed the output vocabulary.
+    _edit_config(artifact, lid_marker_idx=_vocab(artifact) + 5)
+    OmniASRLLM(artifact, backend="onnx")
+    assert len(loaded) == 1
+
+
+def test_outputs_without_declared_shapes_are_not_misreported(artifact, loaded):
+    vocab = _vocab(artifact)
+    inputs, outputs = graph_signature(artifact / "decoder.onnx")
+    assert graph_signature(artifact / "decoder.onnx")[1][0][2] == (1, vocab)
+    body = ob._field(2, "g")  # the same graph, with the logits output's shape dropped
+    body += b"".join(ob._field(11, ob.value_info(*v)) for v in inputs)
+    logits = ob._field(1, "logits") + ob._field(2, ob._field(1, ob._field(1, 1)))
+    body += ob._field(12, logits)
+    body += b"".join(ob._field(12, ob.value_info(*v)) for v in outputs[1:])
+    (artifact / "decoder.onnx").write_bytes(ob.model(body))
+    assert graph_signature(artifact / "decoder.onnx")[1][0] == ("logits", "float", None)
+    OmniASRLLM(artifact, backend="onnx")
