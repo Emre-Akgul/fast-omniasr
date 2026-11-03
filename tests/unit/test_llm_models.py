@@ -25,5 +25,5 @@ def test_repo_names_cover_all_supported_cards():
 @pytest.mark.parametrize("model", ["omniASR_LLM_7B_ZS", "omniASR_LLM_Unlimited_1B_v2"])
 def test_runtime_rejects_unsupported_cards(tmp_path, model):
     (tmp_path / "config.json").write_text(json.dumps({"format_version": 1, "model": model}))
-    with pytest.raises(ValueError, match="Unsupported"):
+    with pytest.raises(ValueError, match="unsupported model"):
         OmniASRLLM(tmp_path, backend="onnx")

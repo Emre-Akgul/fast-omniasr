@@ -69,3 +69,22 @@ def graph_file(name, listed):
     data = name.rsplit("/", 1)[-1] + ".data"
     sibling = name + ".data"
     return model_with_external(*([data] if sibling in listed else []), inline=name.encode())
+
+
+ELEMENT = {"float": 1, "int32": 6, "int64": 7}
+
+
+def value_info(name, element, dims):
+    """A ValueInfoProto for a tensor; dims are ints or symbolic names."""
+    shape = b"".join(_field(1, _field(1, d) if isinstance(d, int) else _field(2, d))
+                     for d in dims)
+    tensor = _field(1, ELEMENT[element]) + _field(2, shape)
+    return _field(1, name) + _field(2, _field(1, tensor))
+
+
+def signature_model(inputs, outputs):
+    """A model whose graph declares only `inputs`/`outputs` [(name, element, dims)]."""
+    body = _field(2, "g")
+    body += b"".join(_field(11, value_info(*v)) for v in inputs)
+    body += b"".join(_field(12, value_info(*v)) for v in outputs)
+    return model(body)

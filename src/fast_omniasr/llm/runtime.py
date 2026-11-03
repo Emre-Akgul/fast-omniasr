@@ -9,8 +9,8 @@ import numpy as np
 
 from ..audio import load_audio, prepare_audio
 from ..options import check_device, check_flag, resolve_threads
+from ..precision import check_precision
 from ..tokenizer import Tokenizer
-from .models import LLM_MODEL_CARDS
 
 # Every value LLMTranscription.stop_reason can take: "eos" means the transcript is
 # complete; the other two mean generation was cut off.
@@ -93,20 +93,35 @@ class OmniASRLLM:
 
         directory = Path(directory)
         self.directory = directory
-        self.config = json.loads((directory / "config.json").read_text())
-        if (
-            self.config.get("format_version") != 1
-            or self.config.get("model") not in LLM_MODEL_CARDS
-        ):
-            raise ValueError("Unsupported LLM artifact format or model")
+        from .validation import (
+            InvalidArtifactError,
+            validate_config,
+            validate_graphs,
+            validate_languages,
+            validate_tokenizer,
+        )
+
+        try:
+            self.config = json.loads((directory / "config.json").read_text(encoding="utf-8"))
+        except ValueError as exc:
+            raise InvalidArtifactError(
+                f"Invalid LLM artifact {directory / 'config.json'}: not valid JSON ({exc})"
+            ) from exc
+        # Everything below is checked before any session or module is loaded.
+        validate_config(self.config, directory)
+        self.tokenizer = Tokenizer(directory / "tokenizer.model")
+        validate_tokenizer(self.tokenizer, self.config, directory)
         if backend == "onnx":
+            check_precision(precision, device)
+            hidden = validate_graphs(directory, precision, self.config)
+            validate_languages(self.config, directory, hidden)
             from .onnx_backend import ONNXLLMBackend
 
             self.onnx = ONNXLLMBackend(directory, device, threads, low_memory, precision)
             self.device = device
             self.cached = True
-            self.tokenizer = Tokenizer(directory / "tokenizer.model")
             return
+        validate_languages(self.config, directory, None)
         import torch
 
         self.device = torch.device(device)
@@ -118,7 +133,6 @@ class OmniASRLLM:
         self.decoder = torch.jit.load(str(directory / decoder_file), map_location=self.device)
         self.encoder.eval()
         self.decoder.eval()
-        self.tokenizer = Tokenizer(directory / "tokenizer.model")
 
     @classmethod
     def from_pretrained(
