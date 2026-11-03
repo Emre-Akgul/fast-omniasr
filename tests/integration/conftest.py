@@ -33,12 +33,13 @@ def _manifest():
 def published_revision(repo_id: str = PUBLISHED_CTC) -> str:
     """The commit of `repo_id` the manifest declares outputs for; Hub tests load exactly
     this revision, so a new commit on the repo's main can't silently disable checks."""
-    for entry in _manifest()["clips"].values():
-        for key in entry["expected"]:
-            repo, _, commit = key.partition("@")
-            if repo == repo_id:
-                return commit
-    raise LookupError(f"{EXPECTATIONS} declares no outputs for {repo_id}")
+    commits = {key.partition("@")[2] for entry in _manifest()["clips"].values()
+               for key in entry["expected"] if key.partition("@")[0] == repo_id}
+    if len(commits) != 1:
+        # Exactly one pinned commit per repo keeps the choice deterministic.
+        raise LookupError(f"{EXPECTATIONS} must declare outputs for exactly one commit of "
+                          f"{repo_id}, found {sorted(commits)}")
+    return commits.pop()
 
 
 def declared(clip: Path, model: str | None) -> dict | None:
@@ -66,8 +67,12 @@ def expected_transcript(clip: Path, model: str | None, variant: str) -> str | No
     if expected is None and not os.environ.get("OMNIASR_TEST_WAV"):
         # The default clip always has declared outputs: a miss means the model key is off
         # (e.g. an unpinned revision), which must fail rather than skip the check.
+        hint = ("local assets on the default clip must set OMNIASR_TEST_MODEL "
+                "(<repo>@<commit> of a published export) or OMNIASR_TEST_TRANSCRIPT, or use "
+                "another clip with OMNIASR_TEST_WAV" if model is None else
+                f"declare {model} in the manifest")
         raise AssertionError(f"no {variant} transcript declared for {model} on the "
-                             f"default clip in {EXPECTATIONS}")
+                             f"default clip in {EXPECTATIONS}: {hint}")
     return expected
 
 

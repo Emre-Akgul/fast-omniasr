@@ -59,9 +59,11 @@ unless their inputs are provided:
   both the default 400–480,000-sample profile and a custom one)
 - `OMNIASR_TEST_WAV` (optional): the clip; by default the committed English FLEURS clip.
   Exact transcripts come from `tests/fixtures/integration_expectations.json` (matched by
-  the clip's sha256 and `<repo>@<commit>`); local assets declare their model with
-  `OMNIASR_TEST_MODEL`, and `OMNIASR_TEST_TRANSCRIPT` sets the expected text for any other
-  clip. Without a declared transcript, exact-text checks are skipped
+  the clip's sha256 and `<repo>@<commit>`). On the default clip a transcript is required:
+  local assets set `OMNIASR_TEST_MODEL` to the published export they are (e.g.
+  `EmreAkgul/omniASR-CTC-300M-v2-ONNX@6c1096d…`, the full commit) or
+  `OMNIASR_TEST_TRANSCRIPT` to the expected text (e.g. for a fine-tuned export). With
+  another clip and neither variable, exact-text checks are skipped
 - `OMNIASR_REAL_MODELS=1`: download the pinned published models (`OMNIASR_CACHE_DIR` to
   choose the cache; `OMNIASR_CTC_REPO`/`OMNIASR_CTC_REVISION` and
   `OMNIASR_LLM_REPO`/`OMNIASR_LLM_REVISION` to test another repo or revision)
