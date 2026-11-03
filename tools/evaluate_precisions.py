@@ -163,7 +163,7 @@ class GpuMemorySampler:
         thread = getattr(self, "_thread", None)
         if thread is not None:
             thread.join()
-            self._sample()
+        self._sample()  # final reading even when no polling thread ran
 
 
 def run_precision(args, precision, rows):

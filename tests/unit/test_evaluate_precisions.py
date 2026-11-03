@@ -513,6 +513,7 @@ def test_run_precision_covers_load_warmup_and_transcription(monkeypatch):
         return run
 
     monkeypatch.setattr(evaluate, "transcriber", fake_transcriber)
+    monkeypatch.setattr(evaluate.shutil, "which", lambda name: None)  # runner without a GPU
     monkeypatch.setattr(evaluate, "gpu_mib", lambda pid=None: usage["now"])
     rows = [{"id": "a", "wav": np.zeros(1600, np.float32)}]
     measured = evaluate.run_precision(argparse.Namespace(), "fp32", rows)
