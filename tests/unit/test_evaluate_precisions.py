@@ -410,17 +410,19 @@ def test_manifest_limit_stops_reading_early(tmp_path):
     ({"id": "a", "ref": "x"}, "needs at least 'id' and 'audio'"),
     ({"id": "a", "audio": "clips/a.flac", "ref": "x", "wav": [1]}, r"unknown keys \['wav'\]"),
     ({"id": "a", "audio": "clips/a.flac", "ref": "x", "sample_rate": 8000}, "disagrees"),
+    ({"id": "a", "audio": 5, "ref": "x"}, r"eval.jsonl:1: 'audio' must be a file path"),
+    ({"id": "a", "audio": "clips/missing.flac", "ref": "x"}, r"eval.jsonl:1: cannot read"),
+    ({"id": "a", "audio": "clips/missing.npy", "ref": "x"}, r"eval.jsonl:1: cannot read"),
 ])
 def test_manifest_errors_name_the_line(tmp_path, line, message):
     _audio_files(tmp_path)
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises((ValueError, TypeError), match=message):
         evaluate.read_manifest(_manifest(tmp_path, [line]))
 
 
 def test_manifest_npy_arrays_are_loaded_without_pickle(tmp_path):
     import numpy as np
 
-    (tmp_path / "evil.npy").write_bytes(b"")
     np.save(tmp_path / "evil.npy", np.array([{"a": 1}], dtype=object), allow_pickle=True)
     with pytest.raises(ValueError, match="allow_pickle"):
         evaluate.read_manifest(_manifest(tmp_path, [{"id": "x", "audio": "evil.npy"}]))
@@ -434,3 +436,46 @@ def test_pickle_datasets_need_explicit_trust(tmp_path, monkeypatch):
                                       "--dataset", str(path)])
     with pytest.raises(SystemExit, match="can run arbitrary code.*--trust-pickle"):
         evaluate.main()
+
+
+def test_manifest_with_a_bom_is_accepted(tmp_path):
+    _audio_files(tmp_path)
+    path = tmp_path / "bom.jsonl"
+    path.write_bytes(b"\xef\xbb\xbf" + json.dumps(
+        {"id": "a", "audio": "clips/a.flac", "ref": "x"}).encode() + b"\n")
+    assert [r["id"] for r in evaluate.read_manifest(path)] == ["a"]
+
+
+@pytest.mark.parametrize("name", ["data.bin", "data.PKL.txt"])
+def test_binary_dataset_under_another_name_gets_a_helpful_error(tmp_path, name):
+    import pickle
+
+    path = tmp_path / name
+    path.write_bytes(pickle.dumps([{"id": "a"}]))
+    with pytest.raises(ValueError, match="not a UTF-8 JSONL manifest.*--trust-pickle"):
+        evaluate.read_manifest(path)
+
+
+def test_uppercase_pickle_suffix_is_still_gated(tmp_path):
+    import argparse
+
+    path = tmp_path / "DATA.PKL"
+    path.write_bytes(b"not loaded")
+    with pytest.raises(ValueError, match="can run arbitrary code"):
+        evaluate.load_rows(argparse.Namespace(dataset=path, audio=None, limit=None))
+
+
+def test_trust_pickle_does_not_change_how_manifests_load(tmp_path):
+    import argparse
+
+    _audio_files(tmp_path)
+    path = _manifest(tmp_path, [{"id": "a", "audio": "clips/a.flac", "ref": "x"}])
+    rows = evaluate.load_rows(argparse.Namespace(dataset=path, audio=None, limit=None,
+                                                 trust_pickle=True))
+    assert [r["id"] for r in rows] == ["a"]
+
+
+def test_non_string_lang_is_rejected_before_any_model_loads():
+    row = {**_row("a"), "lang": 5}
+    with pytest.raises(ValueError, match="non-string 'lang'"):
+        evaluate.validate_rows([row], labelled=True)

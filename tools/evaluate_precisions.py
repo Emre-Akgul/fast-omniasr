@@ -139,6 +139,8 @@ def validate_rows(rows, labelled, max_seconds=None):
                              or isinstance(row.get("ref"), str)):
             raise ValueError(f"row {row['id']!r} has no 'ref' (reference transcript; "
                              "None for silence)")
+        if row.get("lang") is not None and not isinstance(row["lang"], str):
+            raise ValueError(f"row {row['id']!r} has a non-string 'lang' {row['lang']!r}")
         try:
             audio = prepare_audio(row["wav"], row.get("sample_rate", 16000))
         except ValueError as exc:
@@ -161,8 +163,18 @@ def read_manifest(path, limit=None):
     import soundfile as sf
 
     rows = []
-    with Path(path).open(encoding="utf-8") as f:
-        for number, line in enumerate(f, 1):
+    with Path(path).open(encoding="utf-8-sig") as f:  # tolerate a BOM from Windows editors
+        lines = enumerate(f, 1)
+        while True:
+            try:
+                number, line = next(lines)
+            except StopIteration:
+                break
+            except UnicodeDecodeError as exc:
+                raise ValueError(
+                    f"{path} is not a UTF-8 JSONL manifest (if it is a pickled dataset, "
+                    "convert it, or name it .pkl and pass --trust-pickle)"
+                ) from exc
             if limit is not None and len(rows) == limit:
                 break
             if not line.strip():
@@ -176,15 +188,23 @@ def read_manifest(path, limit=None):
             unknown = entry.keys() - _MANIFEST_KEYS
             if unknown:
                 raise ValueError(f"{path}:{number}: unknown keys {sorted(unknown)}")
+            if not isinstance(entry["audio"], str):
+                raise TypeError(f"{path}:{number}: 'audio' must be a file path string")
             audio = Path(path).parent / entry["audio"]
-            if audio.suffix == ".npy":
-                waveform = np.load(audio, allow_pickle=False)
-                sample_rate = entry.get("sample_rate", 16000)
-            else:
-                waveform, sample_rate = sf.read(audio, dtype="float32")
-                if entry.get("sample_rate") not in (None, sample_rate):
-                    raise ValueError(f"{path}:{number}: sample_rate {entry['sample_rate']} "
-                                     f"disagrees with {audio.name} ({sample_rate} Hz)")
+            is_array = audio.suffix.lower() == ".npy"
+            try:
+                if is_array:
+                    waveform = np.load(audio, allow_pickle=False)
+                    sample_rate = entry.get("sample_rate", 16000)
+                else:
+                    waveform, sample_rate = sf.read(audio, dtype="float32")
+            except ValueError:
+                raise  # e.g. a pickled .npy refused by allow_pickle=False
+            except Exception as exc:  # missing or unreadable files, in any audio format
+                raise ValueError(f"{path}:{number}: cannot read {audio}: {exc}") from exc
+            if not is_array and entry.get("sample_rate") not in (None, sample_rate):
+                raise ValueError(f"{path}:{number}: sample_rate {entry['sample_rate']} "
+                                 f"disagrees with {audio.name} ({sample_rate} Hz)")
             row = {"id": entry["id"], "wav": waveform, "sample_rate": sample_rate,
                    "lang": entry.get("lang")}
             if "ref" in entry:
@@ -196,7 +216,7 @@ def read_manifest(path, limit=None):
 def load_rows(args):
     max_seconds = LLM_MAX_SECONDS if getattr(args, "llm", None) else None
     if args.dataset:
-        if args.dataset.suffix in (".pkl", ".pickle"):
+        if args.dataset.suffix.lower() in (".pkl", ".pickle"):
             if not getattr(args, "trust_pickle", False):
                 raise ValueError(
                     f"{args.dataset} is a pickle, which can run arbitrary code when loaded; "
