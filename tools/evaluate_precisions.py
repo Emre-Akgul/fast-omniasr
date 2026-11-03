@@ -300,7 +300,8 @@ def _split_audio_spec(spec):
     """'clip.wav:eng_Latn' -> ('clip.wav', 'eng_Latn'); a colon that isn't followed by a
     language code (e.g. a Windows drive, 'C:\\clips\\a.wav') is part of the path."""
     path, sep, lang = spec.rpartition(":")
-    if sep and (lang == "" or _LANG_CODE.fullmatch(lang)) and path:
+    # len(path) > 1: a bare Windows drive ("C:") is a path, not a file plus no language.
+    if sep and len(path) > 1 and (lang == "" or _LANG_CODE.fullmatch(lang)):
         return path, lang  # "clip.wav:" means no language, as before
     return spec, ""
 
