@@ -117,7 +117,7 @@ def _fake_llm_main(monkeypatch, tmp_path, reasons_by_precision):
         "--precision", *reasons_by_precision, "--report", str(report), "--no-isolate",
     ])
     evaluate.main()
-    return json.loads(report.read_text())
+    return json.loads(report.read_text(encoding="utf-8"))
 
 
 def test_main_reports_llm_truncation(monkeypatch, tmp_path, capsys):
@@ -580,7 +580,7 @@ def test_main_isolated_report_has_peak_gpu_mib(tmp_path, monkeypatch):
                                       "fp32", "fp16", "--audio", str(tmp_path / "clips/a.flac"),
                                       "--report", str(report)])
     evaluate.main()
-    results = json.loads(report.read_text())["precisions"]
+    results = json.loads(report.read_text(encoding="utf-8"))["precisions"]
     assert {p: r["peak_gpu_mib"] for p, r in results.items()} == {"fp32": 2048, "fp16": 1024}
 
 

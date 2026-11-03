@@ -80,7 +80,7 @@ def loaded(monkeypatch):
 
 
 def _edit_config(artifact, **changes):
-    config = json.loads((artifact / "config.json").read_text())
+    config = json.loads((artifact / "config.json").read_text(encoding="utf-8"))
     for key, value in changes.items():
         section, _, field = key.partition("__")
         if field:
@@ -140,7 +140,7 @@ def test_tokenizer_must_match_vocab_size(artifact, loaded):
 
 
 def _vocab(artifact):
-    return json.loads((artifact / "config.json").read_text())["vocab_size"]
+    return json.loads((artifact / "config.json").read_text(encoding="utf-8"))["vocab_size"]
 
 
 @pytest.mark.parametrize("graph, build, message", [

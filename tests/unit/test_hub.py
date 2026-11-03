@@ -232,7 +232,7 @@ def test_moving_branch_still_yields_one_consistent_commit(monkeypatch, tmp_path)
     _, paths = hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path)
     assert {revision for _, revision in fake.requests} == {SHA_A}
     assert paths["tokenizer.model"].read_bytes() == b"tokenizer A"
-    record = json.loads((paths["tokenizer.model"].parent / hub.SNAPSHOT_METADATA).read_text())
+    record = json.loads((paths["tokenizer.model"].parent / hub.SNAPSHOT_METADATA).read_text(encoding="utf-8"))
     assert record == {"repo_id": "owner/repo", "revision": "main", "commit": SHA_A}
 
 
