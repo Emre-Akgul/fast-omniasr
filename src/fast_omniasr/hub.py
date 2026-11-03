@@ -126,12 +126,16 @@ def _link_or_copy(source: Path, target: Path) -> None:
         shutil.copy2(source, target)
 
 
-def _parse_config(config: dict, required: set[str],
-                  select: Callable[[str], bool] | None) -> list[str]:
-    """Validate config.json and return the files to materialize, smallest first."""
+def _parse_config(config: dict, required, select: Callable[[str], bool] | None,
+                  dependencies: bool = False) -> list[str]:
+    """Validate config.json and return the files to materialize, smallest first: the
+    required ones plus, unless `dependencies`, every listed file `select` accepts. The
+    external data of the chosen graphs is added later (see _graph_closure)."""
     files = config.get("files")
     if not isinstance(files, dict):
         raise TypeError("config.json is missing a files map")
+    if callable(required):
+        required = set(required(config))
     if not required.issubset(files):
         missing = ", ".join(sorted(required - files.keys()))
         raise ValueError(f"config.json is missing required file entries: {missing}")
@@ -143,12 +147,35 @@ def _parse_config(config: dict, required: set[str],
             raise ValueError(f"config.json contains an unsafe filename: {filename}")
         if not files[filename].get("sha256"):
             raise ValueError(f"config.json is missing a files.{filename}.sha256 entry")
-    wanted = [name for name in files if select is None or select(name)]
+    if dependencies:
+        wanted = [name for name in files if name in required]
+    else:
+        wanted = [name for name in files if select is None or select(name)]
     if not required.issubset(wanted):
         missing = ", ".join(sorted(required - set(wanted)))
         raise ValueError(f"required files are not selected for download: {missing}")
     # Smallest file first so corruption is caught before larger downloads when possible.
     return sorted(wanted, key=lambda name: files[name].get("size", 0))
+
+
+def _graph_closure(root: Path, wanted: list[str], files: dict) -> list[str]:
+    """External-data files the wanted ONNX graphs (already under `root`) reference and
+    that aren't wanted yet, smallest first. Each must be listed in config.json, so it is
+    checksum-verified like every other file."""
+    from ._onnx_deps import graph_dependencies
+
+    extra = set()
+    for name in wanted:
+        if name.endswith(".onnx"):
+            for dependency in graph_dependencies(name, root / name):
+                if dependency not in files:
+                    raise ValueError(
+                        f"{name} references external data {dependency}, which config.json "
+                        "does not list"
+                    )
+                extra.add(dependency)
+    extra -= set(wanted)
+    return sorted(extra, key=lambda name: files[name].get("size", 0))
 
 
 def _sidecars(local_dir: Path, kind: str) -> list[Path]:
@@ -194,15 +221,20 @@ def _publish(staging: Path, local_dir: Path) -> None:
     shutil.rmtree(backup, ignore_errors=True)
 
 
-def download_verified(repo_id: str, required: set[str], *, revision: str | None = None,
+def download_verified(repo_id: str, required, *, revision: str | None = None,
                       cache_dir: str | Path | None = None,
-                      select: Callable[[str], bool] | None = None
+                      select: Callable[[str], bool] | None = None,
+                      dependencies: bool = False,
                       ) -> tuple[dict, dict[str, Path]]:
     """Return the repo's config.json and a {filename: local path} map of the listed files.
 
     config.json must contain a `files` map of {filename: {"sha256", "size"}} that
-    includes every name in `required`. `select`, when given, limits downloads to the
-    listed files it accepts (e.g. one precision's subdirectory).
+    includes every name in `required` (a set, or a function of the config returning
+    one). With `dependencies=True` only the required files are downloaded, plus the
+    external-data files their ONNX graphs reference wherever they live in the repo (the
+    graph's dependency closure). Otherwise `select`, when given, limits downloads to the
+    listed files it accepts, and all listed files are downloaded without it; the external
+    data of every downloaded graph is added in either case.
 
     Files are materialized as regular files in one directory per repo and revision
     (under `cache_dir`, default ~/.cache/fast-omniasr/hub) rather than read through the
@@ -247,7 +279,7 @@ def download_verified(repo_id: str, required: set[str], *, revision: str | None 
 
     with _bundle_lock(local_dir.parent / f".{local_dir.name}.lock"):
         _recover(local_dir)
-        reusable = _reuse_published(local_dir, record, required, select)
+        reusable = _reuse_published(local_dir, record, required, select, dependencies)
         if reusable is not None:
             return reusable
         staging = _sidecar(local_dir, "staging")
@@ -255,7 +287,7 @@ def download_verified(repo_id: str, required: set[str], *, revision: str | None 
             config_path = Path(hf_hub_download(repo_id, "config.json", revision=pinned,
                                                local_dir=staging))
             config = json.loads(config_path.read_text())
-            wanted = _parse_config(config, required, select)
+            wanted = _parse_config(config, required, select, dependencies)
             files = config["files"]
             carried = set()
             if local_dir.is_dir():
@@ -265,15 +297,22 @@ def download_verified(repo_id: str, required: set[str], *, revision: str | None 
                     if _matches(local_dir / filename, entry):
                         _link_or_copy(local_dir / filename, staging / filename)
                         carried.add(filename)
-            for filename in wanted:
-                if filename not in carried:
-                    path = Path(hf_hub_download(repo_id, filename, revision=pinned,
-                                                local_dir=staging))
-                    if not _matches(path, files[filename]):
-                        raise RuntimeError(
-                            f"{filename} checksum mismatch: downloaded asset does not match "
-                            f"{repo_id}/config.json"
-                        )
+            def fetch(names):
+                for filename in names:
+                    if filename not in carried:
+                        path = Path(hf_hub_download(repo_id, filename, revision=pinned,
+                                                    local_dir=staging))
+                        if not _matches(path, files[filename]):
+                            raise RuntimeError(
+                                f"{filename} checksum mismatch: downloaded asset does not "
+                                f"match {repo_id}/config.json"
+                            )
+
+            fetch(wanted)
+            # Graphs are verified first, then parsed for the external data they need.
+            closure = _graph_closure(staging, wanted, files)
+            fetch(closure)
+            wanted += closure
             if commit is not None:
                 _write_snapshot(staging, record)
             _publish(staging, local_dir)
@@ -284,8 +323,8 @@ def download_verified(repo_id: str, required: set[str], *, revision: str | None 
     return config, {filename: local_dir / filename for filename in wanted}
 
 
-def _reuse_published(local_dir: Path, record: dict, required: set[str],
-                     select: Callable[[str], bool] | None):
+def _reuse_published(local_dir: Path, record: dict, required,
+                     select: Callable[[str], bool] | None, dependencies: bool = False):
     """The published bundle as (config, paths) if it is the wanted commit and every
     selected file verifies against its config.json; otherwise None."""
     config_path = local_dir / "config.json"
@@ -297,10 +336,16 @@ def _reuse_published(local_dir: Path, record: dict, required: set[str],
             return None
     try:
         config = json.loads(config_path.read_text())
-        wanted = _parse_config(config, required, select)
+        wanted = _parse_config(config, required, select, dependencies)
     except (ValueError, TypeError):
         return None
     files = config["files"]
     if not all(_matches(local_dir / name, files[name]) for name in wanted):
         return None
-    return config, {name: local_dir / name for name in wanted}
+    try:
+        closure = _graph_closure(local_dir, wanted, files)
+    except ValueError:
+        return None  # re-download; a fresh copy reports the problem
+    if not all(_matches(local_dir / name, files[name]) for name in closure):
+        return None
+    return config, {name: local_dir / name for name in wanted + closure}

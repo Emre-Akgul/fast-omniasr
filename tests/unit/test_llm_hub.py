@@ -4,6 +4,7 @@ import shutil
 import sys
 import types
 
+import onnx_bytes
 import pytest
 
 from fast_omniasr.llm import OmniASRLLM
@@ -25,12 +26,16 @@ def fake_hub(monkeypatch, tmp_path, corrupt=None, files=FILES):
     snapshot.mkdir()
     entries = {}
     for name in files:
+        content = onnx_bytes.graph_file(name, files)
         (snapshot / name).parent.mkdir(parents=True, exist_ok=True)
-        (snapshot / name).write_bytes(name.encode())
-        entries[name] = {"sha256": hashlib.sha256(name.encode()).hexdigest(), "size": len(name)}
+        (snapshot / name).write_bytes(content)
+        entries[name] = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
     if corrupt:
         (snapshot / corrupt).write_bytes(b"tampered")
     config = {"format_version": 1, "model": "omniASR_LLM_1B_v2", "files": entries}
+    if "languages.json" in files:  # as published: language tables declared by config.json
+        config["languages"] = {"mapping": "languages.json", "embeddings": "lang_embeddings.npy",
+                               "count": 1}
     (snapshot / "config.json").write_text(json.dumps(config))
     fetched = []
 
