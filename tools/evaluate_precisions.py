@@ -1,7 +1,10 @@
 """Compare fp32, fp16 and bf16 variants of one exported model.
 
 For each precision this reports how many transcripts are identical to the fp32 ones,
-the decode time and the process's peak GPU memory. Inputs are audio files (agreement
+the decode time and the peak GPU memory its process used while loading, warming up and
+transcribing (sampled from nvidia-smi throughout; null without nvidia-smi). By default each
+precision runs in a fresh process (--no-isolate shares one), so one precision's memory
+arena can't inflate the next one's peak. Inputs are audio files (agreement
 only) or a labelled dataset, which adds WER and CER after Unicode normalization,
 lowercasing and punctuation removal. A dataset is a JSONL manifest, one object per line:
 
@@ -31,6 +34,7 @@ import pickle
 import re
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 from pathlib import Path
@@ -97,17 +101,76 @@ def stop_reason_summary(ids, reasons):
     return {"stop_reasons": counts, "truncated": len(truncated), "truncated_ids": truncated}
 
 
-def gpu_mib():
-    """GPU memory held by this process (MiB), from nvidia-smi; 0 if unavailable."""
+def gpu_mib(pid=None):
+    """GPU memory held by a process (MiB) per nvidia-smi; None if nvidia-smi is unavailable."""
+    pid = os.getpid() if pid is None else pid
     try:
         out = subprocess.run(
             ["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, check=True,
+            capture_output=True, text=True, check=True, timeout=10,
         ).stdout
-    except (OSError, subprocess.CalledProcessError):
-        return 0
-    rows = (line.split(",") for line in out.strip().splitlines())
-    return sum(int(mib) for pid, mib in rows if int(pid) == os.getpid())
+    except (OSError, subprocess.SubprocessError):
+        return None
+    rows = (line.split(",") for line in out.strip().splitlines() if line.strip())
+    return sum(int(mib) for row_pid, mib in rows if int(row_pid) == pid)
+
+
+class GpuMemorySampler:
+    """Track this process's peak GPU memory while the block runs, by polling `query`
+    (default: nvidia-smi) from a background thread. `peak` is None if unavailable."""
+
+    def __init__(self, interval=0.1, query=None):
+        self.interval = interval
+        self.query = query if query is not None else (lambda: gpu_mib())
+        self.peak = None
+        self._stop = threading.Event()
+
+    def _sample(self):
+        value = self.query()
+        if value is not None:
+            self.peak = value if self.peak is None else max(self.peak, value)
+        return value
+
+    def _poll(self):
+        while not self._stop.wait(self.interval):
+            if self._sample() is None:
+                return  # no nvidia-smi: stop polling
+
+    def __enter__(self):
+        if self._sample() is not None:
+            self._thread = threading.Thread(target=self._poll, daemon=True)
+            self._thread.start()
+        return self
+
+    def __exit__(self, *exc_info):
+        self._stop.set()
+        thread = getattr(self, "_thread", None)
+        if thread is not None:
+            thread.join()
+            self._sample()
+
+
+def run_precision(args, precision, rows):
+    """Load, warm up and transcribe every row at one precision, measuring peak GPU memory
+    over the whole run (weights and kernels included)."""
+    with GpuMemorySampler() as memory:
+        run = transcriber(args, precision)
+        run(rows[0])  # warm-up: weights load and CUDA kernels initialize
+        start = time.perf_counter()
+        outputs = [run(row) for row in rows]
+        seconds = time.perf_counter() - start
+        del run
+    return {"texts": [text for text, _ in outputs], "reasons": [r for _, r in outputs],
+            "seconds": seconds, "peak_gpu_mib": memory.peak}
+
+
+def run_in_fresh_process(function, *args):
+    """Call `function(*args)` in a newly spawned interpreter and return its result, so GPU
+    memory (and arenas) from one call can't affect another."""
+    import multiprocessing
+
+    with multiprocessing.get_context("spawn").Pool(1) as pool:
+        return pool.apply(function, args)
 
 
 LLM_MAX_SECONDS = 30  # OmniASRLLM.transcribe rejects longer clips
@@ -279,6 +342,9 @@ def main():
     inputs.add_argument("--audio", nargs="+", help="Audio files, optionally `path:lang_code`")
     inputs.add_argument("--dataset", type=Path,
                         help="Labelled JSONL manifest (adds WER/CER); see the module docstring")
+    parser.add_argument("--isolate", action=argparse.BooleanOptionalAction, default=True,
+                        help="run each precision in a fresh process (default) so peak GPU "
+                             "memory is measured per precision")
     parser.add_argument("--trust-pickle", action="store_true",
                         help="allow a .pkl --dataset (unpickling can run arbitrary code)")
     parser.add_argument("--lang", help="Default LLM language code (default: none)")
@@ -298,13 +364,11 @@ def main():
         raise SystemExit(f"error: {exc}") from exc
     results, baseline = {}, None
     for precision in args.precision:
-        run = transcriber(args, precision)
-        run(rows[0])  # warm-up: weights load and CUDA kernels initialize
-        start = time.perf_counter()
-        outputs = [run(row) for row in rows]
-        seconds = time.perf_counter() - start
-        hypotheses = [text for text, _ in outputs]
-        reasons = [reason for _, reason in outputs]
+        if args.isolate:
+            measured = run_in_fresh_process(run_precision, args, precision, rows)
+        else:
+            measured = run_precision(args, precision, rows)
+        hypotheses, reasons, seconds = measured["texts"], measured["reasons"], measured["seconds"]
         ids = [row["id"] for row in rows]
         baseline = baseline or hypotheses
         stops = stop_reason_summary(ids, reasons) if args.llm else {}
@@ -315,7 +379,7 @@ def main():
             # Word-level: CTC can emit whitespace-only output that differs in length only.
             "identical_to_fp32": sum(a.split() == b.split() for a, b in zip(baseline, hypotheses)),
             "seconds": seconds,
-            "gpu_mib": gpu_mib(),
+            "peak_gpu_mib": measured["peak_gpu_mib"],
             "hypotheses": dict(zip(ids, hypotheses)),
             **({"hypothesis_stop_reasons": dict(zip(ids, reasons))} if args.llm else {}),
         }
@@ -326,7 +390,6 @@ def main():
             print(f"warning: {precision}: {stops['truncated']}/{len(rows)} transcripts did not "
                   f"end at EOS ({stops['stop_reasons']}); ids: {stops['truncated_ids']}",
                   file=sys.stderr, flush=True)
-        del run
     report = {
         "model": str(args.llm or args.ctc),
         "inputs": args.dataset.name if args.dataset else args.audio,
