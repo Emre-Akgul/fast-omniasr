@@ -17,6 +17,21 @@ from .models import LLM_MODEL_CARDS
 STOP_REASONS = ("eos", "max_new_tokens", "context_limit")
 
 
+def _language_files(config: dict) -> set[str]:
+    """The language tables config.json declares, shared by every precision."""
+    languages = config.get("languages")
+    if not isinstance(languages, dict):
+        return set()
+    names = {languages.get("mapping"), languages.get("embeddings")}
+    if not all(isinstance(name, str) for name in names):
+        raise ValueError("config.json languages needs 'mapping' and 'embeddings' file names")
+    unlisted = names - config.get("files", {}).keys()
+    if unlisted:
+        raise ValueError(f"config.json declares language tables it does not list: "
+                         f"{', '.join(sorted(unlisted))}")
+    return names
+
+
 @dataclass(frozen=True)
 class LLMTranscription:
     text: str
@@ -136,14 +151,14 @@ class OmniASRLLM:
         threads = resolve_threads(threads)
         check_flag("low_memory", low_memory)
         from ..hub import download_verified
-        from ..precision import asset_selector, check_precision
+        from ..precision import check_precision
 
         check_precision(precision, device)
-        select = asset_selector(precision, {"tokenizer.model", "languages.json", "lang_embeddings.npy"})
         if precision != "fp32":
             required = {f"{precision}/encoder.onnx", f"{precision}/decoder.onnx", "tokenizer.model"}
             _, verified = download_verified(
-                repo_id, required, revision=revision, cache_dir=cache_dir, select=select
+                repo_id, lambda config: required | _language_files(config), revision=revision,
+                cache_dir=cache_dir, dependencies=True,
             )
             directory = verified["tokenizer.model"].parent
             if any(verified[name].parent != directory / precision for name in required - {"tokenizer.model"}):
@@ -153,8 +168,16 @@ class OmniASRLLM:
                 low_memory=low_memory, precision=precision,
             )
         required = {"encoder.onnx", "decoder.weights", "decoder_weights.json", "tokenizer.model"}
+
+        def fp32_files(config):
+            # decoder.onnx (one session) is preferred; older repos ship only prefill/step.
+            listed = config.get("files", {})
+            graphs = {"decoder.onnx"} if "decoder.onnx" in listed else {
+                "decoder_prefill.onnx", "decoder_step.onnx"} & listed.keys()
+            return required | graphs | _language_files(config)
+
         _, verified = download_verified(
-            repo_id, required, revision=revision, cache_dir=cache_dir, select=select
+            repo_id, fp32_files, revision=revision, cache_dir=cache_dir, dependencies=True
         )
         # decoder.onnx (one session) is preferred; older repos ship only prefill/step graphs.
         graphs = {"decoder.onnx"} & verified.keys() or {"decoder_prefill.onnx", "decoder_step.onnx"}

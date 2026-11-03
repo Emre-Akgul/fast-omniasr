@@ -123,14 +123,15 @@ class OmniASR:
         local TensorRT/GPU identity. A later call with the same key reuses the cached engine.
 
         `backend="onnx"` accepts precision "fp32" (default), "fp16" or "bf16": the half
-        variants keep MatMul weights in half precision and download only their own
-        subdirectory plus the tokenizer. bf16 needs device="cuda" and an Ampere+ GPU.
+        variants keep MatMul weights in half precision. Only the chosen graph, the
+        external-data files it references and the tokenizer are downloaded. bf16 needs
+        device="cuda" and an Ampere+ GPU.
         """
         if backend not in ("onnx", "tensorrt"):
             raise ValueError("backend must be 'onnx' or 'tensorrt'")
         # Reject inapplicable device/threads before any download or engine build.
         resolved_device, _ = _check_backend_options(backend, device, threads)
-        from .precision import asset_selector, check_precision
+        from .precision import check_precision
         if backend == "onnx":
             precision = check_precision(precision or "fp32", resolved_device)
         if backend == "onnx" and any(
@@ -151,7 +152,7 @@ class OmniASR:
         graph = "model.onnx" if graph_precision == "fp32" else f"{graph_precision}/model.onnx"
         _, verified = download_verified(
             repo_id, {graph, "tokenizer.model"}, revision=revision, cache_dir=cache_dir,
-            select=asset_selector(graph_precision, {"tokenizer.model"}),
+            dependencies=True,  # the graph, its external data wherever it lives, the tokenizer
         )
         tokenizer_path = verified["tokenizer.model"]
         model_path = verified[graph]

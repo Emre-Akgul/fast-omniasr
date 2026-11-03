@@ -9,6 +9,7 @@ import time
 import types
 from pathlib import Path
 
+import onnx_bytes
 import pytest
 
 from fast_omniasr import OmniASR, hub
@@ -53,9 +54,10 @@ def test_onnx_fp16_downloads_only_its_variant(monkeypatch, tmp_path):
              "fp16/model.onnx.data", "bf16/model.onnx", "bf16/model.onnx.data"]
     entries = {}
     for name in files:
+        content = onnx_bytes.graph_file(name, files)
         (remote / name).parent.mkdir(parents=True, exist_ok=True)
-        (remote / name).write_bytes(name.encode())
-        entries[name] = {"sha256": hashlib.sha256(name.encode()).hexdigest(), "size": len(name)}
+        (remote / name).write_bytes(content)
+        entries[name] = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
     (remote / "config.json").write_text(json.dumps({"format": 1, "files": entries}))
     fetched = []
 
@@ -594,3 +596,90 @@ def test_threads_are_serialized_by_the_process_local_lock(tmp_path):
     for thread in threads:
         thread.join()
     assert overlaps == []
+
+
+# --- downloads follow each graph's external-data dependencies (issue #16) ---
+
+def _closure_repo(monkeypatch, tmp_path, contents):
+    """A fake repo serving `contents` ({name: bytes}); returns the list of fetched names."""
+    remote = tmp_path / "remote"
+    entries = {}
+    for name, content in contents.items():
+        (remote / name).parent.mkdir(parents=True, exist_ok=True)
+        (remote / name).write_bytes(content)
+        entries[name] = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
+    (remote / "config.json").write_text(json.dumps({"format": 1, "files": entries}))
+    fetched = []
+
+    def hf_hub_download(repo_id, filename, revision=None, local_dir=None):
+        fetched.append(filename)
+        (local_dir / filename).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(remote / filename, local_dir / filename)
+        return str(local_dir / filename)
+
+    monkeypatch.setitem(
+        sys.modules, "huggingface_hub", types.SimpleNamespace(hf_hub_download=hf_hub_download)
+    )
+    return fetched
+
+
+NESTED = {
+    "model.onnx": onnx_bytes.model_with_external("weights/a.bin", "weights/deep/b.bin"),
+    "weights/a.bin": b"a" * 64,
+    "weights/deep/b.bin": b"b" * 64,
+    "tokenizer.model": b"tok",
+    "README.md": b"unrelated top-level file",
+    "export_notes.json": b"{}",
+    "fp16/model.onnx": onnx_bytes.model_with_external("model.onnx.data"),
+    "fp16/model.onnx.data": b"h" * 64,
+}
+
+
+def _ctc(monkeypatch, tmp_path, precision="fp32"):
+    loaded = {}
+    monkeypatch.setattr(OmniASR, "__init__", lambda self, *args, **kwargs: loaded.update(
+        model=args[0]))
+    OmniASR.from_pretrained("owner/repo", precision=precision, cache_dir=tmp_path / "cache")
+    return loaded["model"]
+
+
+def test_fp32_downloads_nested_external_data_and_nothing_unrelated(monkeypatch, tmp_path):
+    fetched = _closure_repo(monkeypatch, tmp_path, NESTED)
+    model = _ctc(monkeypatch, tmp_path)
+    assert sorted(fetched) == ["config.json", "model.onnx", "tokenizer.model",
+                               "weights/a.bin", "weights/deep/b.bin"]
+    assert (model.parent / "weights" / "deep" / "b.bin").read_bytes() == b"b" * 64
+
+
+def test_fp16_downloads_its_graph_closure(monkeypatch, tmp_path):
+    fetched = _closure_repo(monkeypatch, tmp_path, NESTED)
+    _ctc(monkeypatch, tmp_path, precision="fp16")
+    assert sorted(fetched) == ["config.json", "fp16/model.onnx", "fp16/model.onnx.data",
+                               "tokenizer.model"]
+
+
+def test_reuse_verifies_the_closure_and_repairs_damaged_external_data(monkeypatch, tmp_path):
+    fetched = _closure_repo(monkeypatch, tmp_path, NESTED)
+    model = _ctc(monkeypatch, tmp_path)
+    fetched.clear()
+    _ctc(monkeypatch, tmp_path)
+    assert fetched == []  # reused, closure verified locally
+    (model.parent / "weights" / "deep" / "b.bin").write_bytes(b"damaged")
+    _ctc(monkeypatch, tmp_path)
+    assert sorted(fetched) == ["config.json", "weights/deep/b.bin"]
+    assert (model.parent / "weights" / "deep" / "b.bin").read_bytes() == b"b" * 64
+
+
+def test_unlisted_external_data_is_an_error(monkeypatch, tmp_path):
+    contents = dict(NESTED)
+    del contents["weights/deep/b.bin"]
+    _closure_repo(monkeypatch, tmp_path, contents)
+    with pytest.raises(ValueError, match="references external data weights/deep/b.bin"):
+        _ctc(monkeypatch, tmp_path)
+
+
+def test_select_mode_also_fetches_external_data_outside_the_selection(monkeypatch, tmp_path):
+    fetched = _closure_repo(monkeypatch, tmp_path, NESTED)
+    hub.download_verified("owner/repo", {"model.onnx"}, cache_dir=tmp_path / "cache",
+                          select=lambda name: "/" not in name)
+    assert {"weights/a.bin", "weights/deep/b.bin"} <= set(fetched)

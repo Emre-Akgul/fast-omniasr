@@ -19,13 +19,3 @@ def check_precision(precision: str, device: str) -> str:
         )
     return precision
 
-
-def asset_selector(precision: str, shared: set[str]):
-    """Choose which manifest files to download for a precision.
-
-    fp32 uses the top-level files only. fp16/bf16 use their subdirectory plus the shared
-    top-level assets (tokenizer, language tables), skipping the float32 graphs and weights.
-    """
-    if precision == "fp32":
-        return lambda name: "/" not in name
-    return lambda name: name.startswith(f"{precision}/") or name in shared
