@@ -177,9 +177,9 @@ def run(args):
         start = time.perf_counter()
         model, identity = load_model(args)
         load = time.perf_counter() - start
-        if identity is None:
-            identity = local_identity(args)
         try:
+            if identity is None:  # hashed after the timed load, closed on failure too
+                identity = local_identity(args)
             start = time.perf_counter()
             result = model.transcribe(args.audio)
             first = time.perf_counter() - start
