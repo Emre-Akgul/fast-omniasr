@@ -96,7 +96,7 @@ def main():
     import torch
 
     torch.set_num_threads(THREADS)
-    suite = json.loads((args.source / "cached_reference.json").read_text())
+    suite = json.loads((args.source / "cached_reference.json").read_text(encoding="utf-8"))
     if args.stage == "contexts":
         from fast_omniasr.audio import load_audio
 
@@ -155,7 +155,7 @@ def main():
         if not (args.directory / f"decoder_probes_{args.device}.json").exists():
             raise ValueError("Run the independent decoder probes first")
         arrays = np.load(args.directory / f"contexts_{args.device}.npz")
-        config = json.loads((args.source / "config.json").read_text())
+        config = json.loads((args.source / "config.json").read_text(encoding="utf-8"))
         reports = []
         with torch.inference_mode():
             for i, clip in enumerate(suite["clips"]):

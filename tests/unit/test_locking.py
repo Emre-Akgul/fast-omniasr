@@ -38,7 +38,7 @@ def test_processes_never_hold_the_lock_together(tmp_path):
         for proc in procs:
             if proc.is_alive():
                 proc.kill()
-    events = (tmp_path / "log").read_text().split()
+    events = (tmp_path / "log").read_text(encoding="utf-8").split()
     assert len(events) == 4
     assert events[0].split("-")[0] == events[1].split("-")[0]  # first holder finished first
     assert events[0].endswith("start") and events[1].endswith("end")

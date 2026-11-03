@@ -123,14 +123,14 @@ def main():
     # Compare against the files the Hub actually stores, not any config.json: an earlier
     # partial run can leave a manifest that lists files which were never uploaded.
     api = HfApi()
-    published = json.loads(Path(hf_hub_download(args.repo_id, "config.json")).read_text())
+    published = json.loads(Path(hf_hub_download(args.repo_id, "config.json")).read_text(encoding="utf-8"))
     previous = published.get("files", {})
     stored = {
         item.path: item
         for item in api.list_repo_tree(args.repo_id, recursive=True, expand=True)
         if hasattr(item, "size")
     }
-    config = json.loads((args.directory / "config.json").read_text())
+    config = json.loads((args.directory / "config.json").read_text(encoding="utf-8"))
     llm, files = manifest_files(args.directory)
     manifest = {
         str(path.relative_to(args.directory)): {"sha256": sha256(path), "size": path.stat().st_size}
@@ -153,10 +153,11 @@ def main():
     config_path = args.directory / "config.precision.json"
     config_path.write_text(json.dumps(config, indent=2) + "\n")
 
-    report = json.loads(args.report.read_text())
-    card = Path(hf_hub_download(args.repo_id, "README.md")).read_text()
+    report = json.loads(args.report.read_text(encoding="utf-8"))
+    card = Path(hf_hub_download(args.repo_id, "README.md")).read_text(encoding="utf-8")
     readme = args.directory / "README.precision.md"
-    readme.write_text(update_model_card(card, precision_section(llm, args.repo_id, report)))
+    readme.write_text(update_model_card(card, precision_section(llm, args.repo_id, report)),
+                      encoding="utf-8")
     print(f"{args.repo_id}: {len(changed)} new or changed files, {len(removed)} removed")
     if not args.upload:
         print("Dry run; pass --upload to commit.")

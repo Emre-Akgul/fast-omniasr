@@ -80,7 +80,7 @@ def loaded(monkeypatch):
 
 
 def _edit_config(artifact, **changes):
-    config = json.loads((artifact / "config.json").read_text())
+    config = json.loads((artifact / "config.json").read_text(encoding="utf-8"))
     for key, value in changes.items():
         section, _, field = key.partition("__")
         if field:
@@ -140,7 +140,7 @@ def test_tokenizer_must_match_vocab_size(artifact, loaded):
 
 
 def _vocab(artifact):
-    return json.loads((artifact / "config.json").read_text())["vocab_size"]
+    return json.loads((artifact / "config.json").read_text(encoding="utf-8"))["vocab_size"]
 
 
 @pytest.mark.parametrize("graph, build, message", [
@@ -193,7 +193,7 @@ def test_half_precision_variant_is_validated(artifact, loaded):
     (artifact / "fp16").mkdir()
     (artifact / "fp16" / "encoder.onnx").write_bytes(_encoder())
     (artifact / "fp16" / "decoder.onnx").write_bytes(_decoder(_vocab(artifact), heads=4))
-    with pytest.raises(InvalidArtifactError, match="fp16/decoder.onnx: .*kv_heads 4"):
+    with pytest.raises(InvalidArtifactError, match=r"fp16[\\/]decoder.onnx: .*kv_heads 4"):
         OmniASRLLM(artifact, backend="onnx", precision="fp16")
 
 

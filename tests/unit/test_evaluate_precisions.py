@@ -117,7 +117,7 @@ def _fake_llm_main(monkeypatch, tmp_path, reasons_by_precision):
         "--precision", *reasons_by_precision, "--report", str(report), "--no-isolate",
     ])
     evaluate.main()
-    return json.loads(report.read_text())
+    return json.loads(report.read_text(encoding="utf-8"))
 
 
 def test_main_reports_llm_truncation(monkeypatch, tmp_path, capsys):
@@ -580,5 +580,20 @@ def test_main_isolated_report_has_peak_gpu_mib(tmp_path, monkeypatch):
                                       "fp32", "fp16", "--audio", str(tmp_path / "clips/a.flac"),
                                       "--report", str(report)])
     evaluate.main()
-    results = json.loads(report.read_text())["precisions"]
+    results = json.loads(report.read_text(encoding="utf-8"))["precisions"]
     assert {p: r["peak_gpu_mib"] for p, r in results.items()} == {"fp32": 2048, "fp16": 1024}
+
+
+@pytest.mark.parametrize("spec, expected", [
+    ("clip.wav", ("clip.wav", "")),
+    ("clip.wav:eng_Latn", ("clip.wav", "eng_Latn")),
+    ("C:\\clips\\a.wav", ("C:\\clips\\a.wav", "")),          # Windows drive letter
+    ("C:\\clips\\a.wav:tur_Latn", ("C:\\clips\\a.wav", "tur_Latn")),
+    ("odd:name.wav", ("odd:name.wav", "")),                   # colon not followed by a code
+    ("clip.wav:roh_Latn_surs1244", ("clip.wav", "roh_Latn_surs1244")),  # dialect code
+    ("clip.wav:", ("clip.wav", "")),                          # explicit "no language"
+    ("C:", ("C:", "")),
+    ("D:", ("D:", "")),
+])
+def test_audio_specs_split_only_on_a_language_code(spec, expected):
+    assert evaluate._split_audio_spec(spec) == expected

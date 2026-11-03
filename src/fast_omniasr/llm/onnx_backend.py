@@ -75,7 +75,7 @@ def session(path, device="cpu", opts=None, arena="kSameAsRequested"):
 
 def _decoder_options(directory, threads=4):
     directory = Path(directory)
-    metadata = json.loads((directory / "decoder_weights.json").read_text())
+    metadata = json.loads((directory / "decoder_weights.json").read_text(encoding="utf-8"))
     opts = options(threads)
     keepalive = []
     for name, entry in metadata.items():

@@ -24,7 +24,7 @@ def main():
     from fairseq2.models.hub import load_model
     from omnilingual_asr.models.wav2vec2_llama.hub import get_wav2vec2_llama_model_hub
 
-    config = json.loads((args.directory / "config.json").read_text())
+    config = json.loads((args.directory / "config.json").read_text(encoding="utf-8"))
     if args.checkpoint:
         hub = get_wav2vec2_llama_model_hub()
         model = hub.load_custom_model(

@@ -1,0 +1,102 @@
+"""Smoke-test an *installed* fast-omniasr (wheel, not the source tree) with one extra.
+
+  python tests/packaging/smoke.py core|onnx|hub|llm|tensorrt|onnx+hub
+
+Checks that the package imports from site-packages, that the extra's runtime dependency is
+importable and works through the library's own code path, and that nothing pulls in a
+dependency the extra doesn't declare. Needs no GPU, network or model files.
+"""
+
+import importlib.util
+import sys
+import tempfile
+from pathlib import Path
+
+
+def absent(*names):
+    present = [n for n in names if importlib.util.find_spec(n) is not None]
+    assert not present, f"unexpected optional dependencies installed: {present}"
+
+
+def core():
+    import numpy as np
+
+    import fast_omniasr
+    from fast_omniasr.audio import prepare_audio
+    from fast_omniasr.decoder import greedy_token_ids
+
+    assert "site-packages" in fast_omniasr.__file__ or "dist-packages" in fast_omniasr.__file__, (
+        f"fast_omniasr imported from {fast_omniasr.__file__}, not an installed wheel")
+    audio = prepare_audio(np.zeros(16000, np.float32), 16000)
+    assert audio.shape == (1, 16000)
+    logits = np.zeros((1, 4, 5), np.float32)
+    for frame, token in enumerate([1, 1, 0, 2]):
+        logits[0, frame, token] = 1
+    assert greedy_token_ids(logits) == [1, 2]  # repeats collapsed, blank (0) removed
+    return fast_omniasr
+
+
+def onnx():
+    import onnxruntime as ort
+
+    from fast_omniasr.backends.onnx import ONNXBackend
+
+    assert "CPUExecutionProvider" in ort.get_available_providers()
+    try:
+        ONNXBackend(Path(tempfile.gettempdir()) / "missing-model.onnx")
+    except Exception as exc:  # noqa: BLE001 -- ORT's own error for a missing file
+        assert "missing-model.onnx" in str(exc) or "NO_SUCHFILE" in str(exc), exc
+    else:
+        raise AssertionError("loading a missing model succeeded")
+
+
+def hub():
+    from fast_omniasr import OmniASR, hub
+
+    with tempfile.TemporaryDirectory() as cache:
+        try:
+            OmniASR.from_pretrained("owner/repo", cache_dir=cache, local_files_only=True)
+        except hub.LocalBundleNotFoundError as exc:
+            assert "is not in the cache" in str(exc)
+        else:
+            raise AssertionError("an empty cache loaded a model")
+        assert hub.list_cached(cache) == []
+    import huggingface_hub  # noqa: F401 -- the extra's dependency resolves
+
+
+def llm():
+    import torch
+
+    from fast_omniasr.llm import OmniASRLLM  # noqa: F401
+
+    assert torch.zeros(2).sum().item() == 0
+
+
+def tensorrt():
+    # cuda-python is installable without a GPU; the bindings must import.
+    try:
+        from cuda.bindings import runtime  # noqa: F401  (cuda-python >= 12.6)
+    except ImportError:
+        from cuda import cudart  # noqa: F401  (older cuda-python)
+    import fast_omniasr.tensorrt_cache  # noqa: F401
+
+
+CHECKS = {"core": [], "onnx": [onnx], "hub": [hub], "llm": [llm], "tensorrt": [tensorrt],
+          "onnx+hub": [onnx, hub]}
+# Dependencies an extra must not drag in (each extra is tested on its own).
+UNEXPECTED = {"core": ["onnxruntime", "torch", "huggingface_hub"],
+              "onnx": ["torch", "huggingface_hub"], "hub": ["onnxruntime", "torch"],
+              "llm": ["huggingface_hub"], "tensorrt": ["onnxruntime", "torch"],
+              "onnx+hub": ["torch"]}
+
+
+def main(extra):
+    module = core()
+    for check in CHECKS[extra]:
+        check()
+    absent(*UNEXPECTED[extra])
+    print(f"ok: {extra} ({module.__file__})")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1] if len(sys.argv) > 1 else "core")

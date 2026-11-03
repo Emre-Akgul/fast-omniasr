@@ -292,6 +292,20 @@ def read_manifest(path, limit=None):
     return rows
 
 
+# eng_Latn, plus dialect-qualified codes such as roh_Latn_surs1244.
+_LANG_CODE = re.compile(r"[a-z]{3}_[A-Za-z]{4}(?:_[A-Za-z0-9]+)?")
+
+
+def _split_audio_spec(spec):
+    """'clip.wav:eng_Latn' -> ('clip.wav', 'eng_Latn'); a colon that isn't followed by a
+    language code (e.g. a Windows drive, 'C:\\clips\\a.wav') is part of the path."""
+    path, sep, lang = spec.rpartition(":")
+    # len(path) > 1: a bare Windows drive ("C:") is a path, not a file plus no language.
+    if sep and len(path) > 1 and (lang == "" or _LANG_CODE.fullmatch(lang)):
+        return path, lang  # "clip.wav:" means no language, as before
+    return spec, ""
+
+
 def load_rows(args):
     max_seconds = LLM_MAX_SECONDS if getattr(args, "llm", None) else None
     if args.dataset:
@@ -312,7 +326,7 @@ def load_rows(args):
 
     rows = []
     for spec in args.audio[: args.limit]:  # --limit before reading any file
-        path, _, lang = spec.partition(":")
+        path, lang = _split_audio_spec(spec)
         # Raw samples: the transcribers normalize exactly once, like OmniASR.transcribe(path).
         waveform, sample_rate = sf.read(path, dtype="float32")  # validated in validate_rows
         rows.append({"id": spec, "wav": waveform, "sample_rate": sample_rate,
@@ -415,7 +429,8 @@ def main():
         "precisions": results,
     }
     if args.report:
-        args.report.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+        args.report.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+                               encoding="utf-8")
 
 
 if __name__ == "__main__":

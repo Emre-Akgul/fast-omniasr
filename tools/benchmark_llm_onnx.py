@@ -185,7 +185,7 @@ def main():
     args = parser.parse_args()
     from fast_omniasr.audio import load_audio
 
-    reference = json.loads((args.source / "reference.json").read_text())
+    reference = json.loads((args.source / "reference.json").read_text(encoding="utf-8"))
     audio = load_audio(args.source / reference["audio"])
     tokens = (reference["token_ids"] + [reference["token_ids"][-1]]) * 3
     with GPUMemoryMonitor(args.backend == "onnx-cuda") as gpu_memory:

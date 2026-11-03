@@ -31,7 +31,7 @@ def tokenizers(tmp_path_factory):
     corpus.write_text("the quick brown fox jumps over the lazy dog\n"
                       "pack my box with five dozen liquor jugs\n" * 50)
     paths = {}
-    for name, size, kind in [("a", 36, "unigram"), ("b", 36, "bpe"), ("big", 42, "unigram")]:
+    for name, size, kind in [("a", 30, "unigram"), ("b", 30, "bpe"), ("big", 36, "unigram")]:
         spm.SentencePieceTrainer.train(input=str(corpus), model_prefix=str(root / name),
                                        vocab_size=size, model_type=kind, minloglevel=2)
         paths[name] = root / f"{name}.model"
@@ -68,8 +68,8 @@ def test_matching_pair_passes(tmp_path, tokenizers):
 
 def test_output_size_mismatch_is_rejected(tokenizers):
     tokenizer = Tokenizer(tokenizers["big"])
-    with pytest.raises(ValueError, match="outputs 36 classes but the tokenizer .*big.model has"):
-        check_compatible(tokenizer, vocabulary_size=36)
+    with pytest.raises(ValueError, match="outputs 30 classes but the tokenizer .*big.model has"):
+        check_compatible(tokenizer, vocabulary_size=30)
 
 
 def test_same_size_but_different_tokenizer_is_rejected(tmp_path, tokenizers):

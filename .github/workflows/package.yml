@@ -1,0 +1,109 @@
+name: Package (wheel, extras, platforms)
+# Builds the sdist and wheel once, then installs the *wheel* (never the source tree) into
+# clean environments: across platforms and Python versions, with each optional extra on
+# its own, and with the oldest dependency versions pyproject.toml allows.
+on:
+  push:
+    branches: [main, develop]  # PR commits run once, through pull_request
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: python -m twine check --strict dist/*
+      - name: Wheel contains the package and nothing else
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          wheel, = glob.glob("dist/*.whl")
+          names = zipfile.ZipFile(wheel).namelist()
+          tops = {n.split("/")[0] for n in names}
+          assert any(n.startswith("fast_omniasr/") for n in names), names
+          assert all(t == "fast_omniasr" or t.endswith(".dist-info") for t in tops), tops
+          print(wheel, len(names), "files")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  wheel:
+    # The unit suite against the installed wheel, on every supported platform.
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.10', '3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install the wheel (not the checkout) with test tools
+        shell: bash
+        run: python -m pip install "$(ls dist/*.whl)" "pytest>=8"
+      - run: python tests/packaging/smoke.py core
+      - run: python -m pytest tests/unit -q
+
+  extras:
+    # Each optional extra installed on its own, from the wheel.
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        extra: [onnx, hub, llm, tensorrt]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install the wheel with one extra
+        run: |
+          if [ "${{ matrix.extra }}" = llm ]; then
+            python -m pip install 'torch>=2.8,<3' --index-url https://download.pytorch.org/whl/cpu
+          fi
+          python -m pip install "$(ls dist/*.whl)[${{ matrix.extra }}]"
+      - run: python tests/packaging/smoke.py ${{ matrix.extra }}
+
+  minimum-dependencies:
+    # The oldest versions pyproject.toml declares, on the oldest supported Python.
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install the wheel with lower-bound dependencies
+        run: |
+          python -m pip install "$(ls dist/*.whl)[onnx,hub]" "pytest>=8" \
+            --constraint tests/packaging/minimum-constraints.txt
+          python -m pip list
+      - run: python tests/packaging/smoke.py onnx+hub
+      - run: python -m pytest tests/unit -q

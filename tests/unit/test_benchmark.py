@@ -77,7 +77,7 @@ def test_local_model_report_is_reproducible(clip, fake, tmp_path):
     benchmark.main([str(clip), "--model", str(model), "--tokenizer", str(tokenizer),
                     "--precision", "fp16", "--threads", "2", "--runs", "3", "--warmup", "1",
                     "--output", str(out)])
-    report = json.loads(out.read_text())
+    report = json.loads(out.read_text(encoding="utf-8"))
     assert report["report_version"] == 1
     assert report["model"]["files_sha256"] == {"model.onnx": benchmark.sha256(model)}
     assert report["model"]["tokenizer_sha256"] == benchmark.sha256(tokenizer)
@@ -99,7 +99,7 @@ def test_repo_report_records_the_resolved_commit(clip, fake, tmp_path):
     out = tmp_path / "r.json"
     benchmark.main([str(clip), "--repo", "owner/repo", "--precision", "fp16", "--runs", "1",
                     "--output", str(out)])
-    report = json.loads(out.read_text())
+    report = json.loads(out.read_text(encoding="utf-8"))
     assert report["model"] == {"repo": "owner/repo", "revision": "main", "commit": "c" * 40}
     call = next(c for c in fake.calls if c[0] == "from_pretrained")
     assert call[2]["precision"] == "fp16" and call[2]["backend"] == "onnx"
@@ -160,7 +160,7 @@ def test_hashing_is_not_timed_as_load(clip, fake, tmp_path, monkeypatch):
     out = tmp_path / "r.json"
     benchmark.main([str(clip), "--model", str(model), "--tokenizer", str(tokenizer), "--runs",
                     "1", "--output", str(out)])
-    assert json.loads(out.read_text())["load_seconds"] < 0.2
+    assert json.loads(out.read_text(encoding="utf-8"))["load_seconds"] < 0.2
 
 
 def test_local_engine_precision_comes_from_its_cache_metadata(tmp_path):

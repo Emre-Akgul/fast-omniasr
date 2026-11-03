@@ -16,7 +16,7 @@ import soundfile as sf
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures" / "fleurs"
-MANIFEST = json.loads((FIXTURES / "manifest.json").read_text())
+MANIFEST = json.loads((FIXTURES / "manifest.json").read_text(encoding="utf-8"))
 
 pytestmark = [
     pytest.mark.integration,

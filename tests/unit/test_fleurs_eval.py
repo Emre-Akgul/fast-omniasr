@@ -108,13 +108,13 @@ def test_languages_without_thresholds_are_not_gated():
 
 
 def test_committed_manifest_and_thresholds_are_consistent():
-    manifest = json.loads(fleurs_eval.MANIFEST.read_text())
+    manifest = json.loads(fleurs_eval.MANIFEST.read_text(encoding="utf-8"))
     fleurs_eval.validate_manifest(manifest)
     assert set(manifest["languages"]) == set(fleurs_eval.LANGUAGES)
     for fleurs, entry in manifest["languages"].items():
         assert (entry["lang"], entry["metric"]) == fleurs_eval.LANGUAGES[fleurs]
         assert all(u["seconds"] <= fleurs_eval.MAX_SECONDS for u in entry["utterances"])
-    thresholds = json.loads(fleurs_eval.THRESHOLDS.read_text())
+    thresholds = json.loads(fleurs_eval.THRESHOLDS.read_text(encoding="utf-8"))
     for name, model in thresholds["models"].items():
         assert len(model["revision"]) == 40 and model["per_language"] >= 1
         assert set(model["languages"]) == set(manifest["languages"]), name
@@ -165,7 +165,7 @@ def test_run_gate_exit_codes_and_report(tmp_path, monkeypatch):
     factory, model = fake_transcriber("hello world")
     monkeypatch.setattr(fleurs_eval, "transcriber", factory)
     assert fleurs_eval.main(args) == 0 and model.closed
-    report = json.loads((tmp_path / "r.json").read_text())
+    report = json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))
     assert report["results"]["en_us"]["wer"] == 0 and report["failures"] == []
     assert report["per_language"] == {"en_us": 1} and report["skipped_gated_languages"] == []
     assert report["revision"] == "c" * 40 and report["dataset_revision"] == "f" * 40
@@ -173,7 +173,7 @@ def test_run_gate_exit_codes_and_report(tmp_path, monkeypatch):
     factory, _ = fake_transcriber("hello word")
     monkeypatch.setattr(fleurs_eval, "transcriber", factory)
     assert fleurs_eval.main(args) == 1
-    assert json.loads((tmp_path / "r.json").read_text())["failures"] == [
+    assert json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))["failures"] == [
         "en_us: WER 50.00 > 10.00", "en_us: CER 9.09 > 5.00"]
 
 
@@ -204,7 +204,7 @@ def test_manifest_rejects_unknown_language_keys():
 
 
 def test_committed_thresholds_follow_the_stated_policy():
-    thresholds = json.loads(fleurs_eval.THRESHOLDS.read_text())
+    thresholds = json.loads(fleurs_eval.THRESHOLDS.read_text(encoding="utf-8"))
     for model in thresholds["models"].values():
         for fleurs, limits in model["languages"].items():
             cer = limits["baseline_cer"]
@@ -217,7 +217,7 @@ def test_committed_thresholds_follow_the_stated_policy():
 
 
 def _run_setup(tmp_path, monkeypatch):
-    manifest = json.loads(fleurs_eval.MANIFEST.read_text())
+    manifest = json.loads(fleurs_eval.MANIFEST.read_text(encoding="utf-8"))
     (tmp_path / "m.json").write_text(json.dumps(manifest))
     monkeypatch.setattr(fleurs_eval, "fetch_audio", lambda *a, **k: pytest.fail("no download"))
     monkeypatch.setattr(fleurs_eval, "transcriber", lambda *a: pytest.fail("no model"))

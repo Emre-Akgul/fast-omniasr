@@ -99,7 +99,7 @@ def test_empty_cache_builds(counting_builder, onnx_a, tmp_path):
     engine_path = get_or_build_engine(onnx_a, precision="fp16", cache_dir=tmp_path / "cache")
     assert len(counting_builder) == 1
     assert engine_path.exists()
-    metadata = json.loads((engine_path.parent / "metadata.json").read_text())
+    metadata = json.loads((engine_path.parent / "metadata.json").read_text(encoding="utf-8"))
     assert metadata["profile"] == {"min": 400, "opt": 80000, "max": 480000}
 
 
@@ -142,7 +142,7 @@ def test_incompatible_metadata_triggers_rebuild(counting_builder, onnx_a, tmp_pa
     cache_dir = tmp_path / "cache"
     engine_path = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache_dir)
     metadata_path = engine_path.parent / "metadata.json"
-    metadata = json.loads(metadata_path.read_text())
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     metadata["tensorrt_version"] = "1.0.0.0"  # simulate a stale/incompatible record
     metadata_path.write_text(json.dumps(metadata))
 
@@ -264,7 +264,7 @@ def test_changing_only_external_weights_triggers_rebuild(counting_builder, exter
 def test_metadata_records_external_weight_hashes(counting_builder, external_model, tmp_path):
     engine_path = get_or_build_engine(external_model, precision="fp32",
                                       cache_dir=tmp_path / "cache")
-    metadata = json.loads((engine_path.parent / "metadata.json").read_text())
+    metadata = json.loads((engine_path.parent / "metadata.json").read_text(encoding="utf-8"))
     assert sorted(metadata["external_data_sha256"]) == ["model.onnx.data", "weights/nested.bin"]
 
 
@@ -504,7 +504,7 @@ def test_mixed_precision_has_its_own_cache_entry(counting_builder, onnx_a, tmp_p
     mixed = get_or_build_engine(onnx_a, precision="mixed", cache_dir=cache_dir)
     assert fp16 != mixed and counting_builder == ["fp16", "mixed"]
     assert get_or_build_engine(onnx_a, precision="mixed", cache_dir=cache_dir) == mixed
-    metadata = json.loads((mixed.parent / "metadata.json").read_text())
+    metadata = json.loads((mixed.parent / "metadata.json").read_text(encoding="utf-8"))
     assert metadata["mixed_recipe"]["fp32_names"] == ["/model/pos_encoder/conv/Conv"]
 
 
@@ -520,7 +520,7 @@ def test_changing_the_mixed_recipe_rebuilds(counting_builder, onnx_a, tmp_path, 
 # --- cached engines are integrity-checked before reuse (issue #15) ---
 
 def _engine_and_metadata(path):
-    return path, json.loads((path.parent / "metadata.json").read_text())
+    return path, json.loads((path.parent / "metadata.json").read_text(encoding="utf-8"))
 
 
 def test_metadata_records_the_engine_checksum(counting_builder, onnx_a, tmp_path):
@@ -553,12 +553,12 @@ def test_entries_cached_before_checksums_are_adopted_not_rebuilt(counting_builde
     cache = tmp_path / "c"
     engine = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
     metadata_path = engine.parent / "metadata.json"
-    legacy = json.loads(metadata_path.read_text())
+    legacy = json.loads(metadata_path.read_text(encoding="utf-8"))
     del legacy["engine"]
     metadata_path.write_text(json.dumps(legacy))
     assert get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache) == engine
     assert counting_builder == ["fp16"]
-    assert "engine" in json.loads(metadata_path.read_text())
+    assert "engine" in json.loads(metadata_path.read_text(encoding="utf-8"))
 
 
 def test_rebuild_forces_a_new_engine(counting_builder, onnx_a, tmp_path):
@@ -658,7 +658,7 @@ def test_discard_reuses_an_engine_another_process_already_rebuilt(counting_build
     get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache, discard_sha256=failed)
     assert len(counting_builder) == 2  # it was still the failed engine: rebuilt
     engine.write_bytes(b"rebuilt by another process")
-    metadata = json.loads((engine.parent / "metadata.json").read_text())
+    metadata = json.loads((engine.parent / "metadata.json").read_text(encoding="utf-8"))
     metadata["engine"] = tensorrt_cache._engine_record(engine)
     (engine.parent / "metadata.json").write_text(json.dumps(metadata))
     get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache, discard_sha256=failed)
@@ -669,7 +669,7 @@ def test_discard_reuses_an_engine_another_process_already_rebuilt(counting_build
 def test_malformed_engine_record_triggers_a_rebuild(counting_builder, onnx_a, tmp_path, record):
     cache = tmp_path / "c"
     engine = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
-    metadata = json.loads((engine.parent / "metadata.json").read_text())
+    metadata = json.loads((engine.parent / "metadata.json").read_text(encoding="utf-8"))
     metadata["engine"] = record
     (engine.parent / "metadata.json").write_text(json.dumps(metadata))
     with pytest.warns(UserWarning, match="recorded checksum"):

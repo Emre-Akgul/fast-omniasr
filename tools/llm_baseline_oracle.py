@@ -21,7 +21,7 @@ def main():
     from fast_omniasr.audio import load_audio
 
     torch.set_num_threads(int(os.environ.get("FAST_OMNIASR_THREADS", "4")))
-    config = json.loads((args.directory / "config.json").read_text())
+    config = json.loads((args.directory / "config.json").read_text(encoding="utf-8"))
     encoder = torch.jit.load(str(args.directory / "encoder.pt")).eval()
     with torch.inference_mode():
         contexts = []

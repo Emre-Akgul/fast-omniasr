@@ -22,8 +22,8 @@ def main():
     if args.repeats < 1:
         parser.error("--repeats must be positive")
     torch.set_num_threads(4)
-    config = json.loads((args.directory / "config.json").read_text())
-    reference = json.loads((args.directory / "reference.json").read_text())
+    config = json.loads((args.directory / "config.json").read_text(encoding="utf-8"))
+    reference = json.loads((args.directory / "reference.json").read_text(encoding="utf-8"))
     audio = args.audio or args.directory / reference["audio"]
     encoder = torch.jit.load(str(args.directory / "encoder.pt")).eval()
     rows = []

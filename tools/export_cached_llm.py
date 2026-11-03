@@ -34,10 +34,10 @@ def main():
     from fast_omniasr.llm.models import LLM_MODEL_CARDS
 
     torch.set_num_threads(int(os.environ.get("FAST_OMNIASR_THREADS", "4")))
-    config = json.loads((args.directory / "config.json").read_text())
+    config = json.loads((args.directory / "config.json").read_text(encoding="utf-8"))
     if config.get("format_version") != 1 or config.get("model") not in LLM_MODEL_CARDS:
         raise ValueError("Unsupported LLM artifact format or model")
-    reference = json.loads((args.directory / "reference.json").read_text())
+    reference = json.loads((args.directory / "reference.json").read_text(encoding="utf-8"))
     clips = [args.directory / reference["audio"], *args.audio]
     temporary = tempfile.TemporaryDirectory(prefix="llm-oracle-")
     oracle_dir = Path(temporary.name)

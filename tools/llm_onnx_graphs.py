@@ -53,7 +53,7 @@ class ExistingWeights:
 
     def __init__(self, directory):
         self.directory = Path(directory)
-        self.entries = json.loads((self.directory / "decoder_weights.json").read_text())
+        self.entries = json.loads((self.directory / "decoder_weights.json").read_text(encoding="utf-8"))
 
     def add(self, name, tensor, transpose=False):
         entry = self.entries[name]
