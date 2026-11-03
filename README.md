@@ -56,10 +56,10 @@ print(model.snapshot)  # Snapshot(repo_id=..., revision='main', commit='6c1096dâ
 
 for bundle in hub.list_cached():  # every downloaded repo revision, with commit and size
     print(bundle.repo_id, bundle.revision, bundle.commit, bundle.size_bytes)
-hub.delete_cached("EmreAkgul/omniASR-CTC-300M-v2-ONNX")  # all revisions; or pass revision=
+hub.delete_cached("EmreAkgul/omniASR-CTC-300M-v2-ONNX")  # "main"; or a revision, or all_revisions=True
 ```
 
-`local_files_only=True` (on `OmniASR.from_pretrained` and `OmniASRLLM.from_pretrained`) never contacts the Hub: it verifies and loads the cached copy of the revision (for a branch or tag, the commit recorded when it was downloaded) or raises `hub.LocalBundleNotFoundError` saying what is missing. `model.snapshot` records the repo, the requested revision, the commit it resolved to and the local directory. `delete_cached` takes the same lock as downloads, so it never removes a bundle mid-download. Download failures leave the cache unchanged; a checksum mismatch names the `delete_cached` call that clears a damaged copy.
+`local_files_only=True` (on `OmniASR.from_pretrained` and `OmniASRLLM.from_pretrained`) never contacts the Hub: it verifies and loads the cached copy of the revision (for a branch or tag, the commit recorded when it was downloaded) or raises `hub.LocalBundleNotFoundError` saying which files are missing (e.g. another precision was downloaded) or fail verification. It also works on a read-only cache. `model.snapshot` records the repo, the requested revision, the commit it resolved to and the local directory. `delete_cached` takes the same lock as downloads, so it never removes a bundle mid-download. Download failures leave the cache unchanged; a checksum mismatch names the `delete_cached` call that clears a damaged copy. These helpers live in `fast_omniasr.hub`.
 
 ### Precision (fp32, fp16, bf16)
 

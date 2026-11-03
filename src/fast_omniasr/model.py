@@ -42,6 +42,8 @@ def _check_backend_options(backend: str, device: str | None, threads: int | None
 class OmniASR:
     """Load explicitly supplied ONNX/tokenizer assets; no implicit downloads."""
 
+    snapshot = None  # set by from_pretrained: where the assets came from (hub.Snapshot)
+
     def __init__(self, model_path: str | Path, tokenizer_path: str | Path,
                  *, backend: str = "onnx", device: str | None = None,
                  threads: int | None = None, precision: str = "fp32"):
@@ -157,7 +159,7 @@ class OmniASR:
             raise ValueError(
                 "backend='tensorrt' requires precision='fp32', 'fp16' or 'mixed'"
             )
-        from .hub import download_verified, snapshot_of
+        from .hub import download_verified
         from .options import check_flag
 
         check_flag("local_files_only", local_files_only)
@@ -165,13 +167,12 @@ class OmniASR:
         # TensorRT builds its engine from the float32 graph whatever the engine precision.
         graph_precision = precision if backend == "onnx" else "fp32"
         graph = "model.onnx" if graph_precision == "fp32" else f"{graph_precision}/model.onnx"
-        _, verified = download_verified(
+        _, verified, snapshot = download_verified(
             repo_id, {graph, "tokenizer.model"}, revision=revision, cache_dir=cache_dir,
             dependencies=True,  # the graph, its external data wherever it lives, the tokenizer
-            local_files_only=local_files_only,
+            local_files_only=local_files_only, return_snapshot=True,
         )
         tokenizer_path = verified["tokenizer.model"]
-        snapshot = snapshot_of(tokenizer_path.parent, repo_id, revision)
         model_path = verified[graph]
         if backend == "tensorrt":
             # The engine has no metadata of its own: check the graph it is built from,

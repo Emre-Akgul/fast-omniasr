@@ -718,7 +718,8 @@ def test_local_files_only_reports_a_damaged_copy(monkeypatch, tmp_path):
     (_bundle(tmp_path) / "tokenizer.model").write_bytes(b"damaged")
     _no_network(monkeypatch)
     with pytest.raises(hub.LocalBundleNotFoundError,
-                       match="fails checksum verification.*delete_cached"):
+                       match=r"tokenizer.model fail checksum verification.*"
+                             r"delete_cached\('owner/repo', 'main', cache_dir="):
         _load_local(tmp_path)
 
 
@@ -738,11 +739,23 @@ def test_local_files_only_with_a_commit_revision(monkeypatch, tmp_path):
         _load_local(tmp_path, SHA_A)
 
 
-def test_snapshot_records_the_resolved_commit(monkeypatch, tmp_path):
-    _hub(monkeypatch)
-    _, paths = _load(tmp_path)
-    snapshot = hub.snapshot_of(paths["tokenizer.model"].parent, "owner/repo", None)
+def test_snapshot_records_the_commit_actually_used(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    *_, snapshot = hub.download_verified("owner/repo", {"tokenizer.model"},
+                                         cache_dir=tmp_path, return_snapshot=True,
+                                         select=lambda name: "/" not in name)
     assert snapshot == hub.Snapshot("owner/repo", "main", SHA_A, _bundle(tmp_path))
+    fake.head = SHA_B  # a newer commit: downloaded, and the snapshot follows
+    *_, snapshot = hub.download_verified("owner/repo", {"tokenizer.model"},
+                                         cache_dir=tmp_path, return_snapshot=True,
+                                         select=lambda name: "/" not in name)
+    assert snapshot.commit == SHA_B
+    _no_network(monkeypatch)
+    *_, offline = hub.download_verified("owner/repo", {"tokenizer.model"},
+                                        cache_dir=tmp_path, return_snapshot=True,
+                                        select=lambda name: "/" not in name,
+                                        local_files_only=True)
+    assert offline.commit == SHA_B
 
 
 def test_from_pretrained_exposes_the_snapshot(monkeypatch, tmp_path):
@@ -775,12 +788,12 @@ def test_list_and_delete_cached_bundles(monkeypatch, tmp_path):
         ("owner/repo", SHA_B, SHA_B), ("owner/repo", "main", SHA_A)]
     assert all(b.size_bytes > 0 for b in bundles)
 
-    assert hub.delete_cached("owner/repo", "main", cache_dir=tmp_path) == [_bundle(tmp_path)]
+    assert hub.delete_cached("owner/repo", cache_dir=tmp_path) == [_bundle(tmp_path)]  # main
     assert not _bundle(tmp_path).exists()
     assert _leftovers(tmp_path) == []  # the crashed download's staging copy went too
     assert [b.revision for b in hub.list_cached(tmp_path)] == [SHA_B]
     assert hub.delete_cached("owner/repo", "main", cache_dir=tmp_path) == []
-    assert len(hub.delete_cached("owner/repo", cache_dir=tmp_path)) == 1  # all revisions
+    assert len(hub.delete_cached("owner/repo", all_revisions=True, cache_dir=tmp_path)) == 1
     assert hub.list_cached(tmp_path) == []
 
 
@@ -802,3 +815,75 @@ def test_network_failure_suggests_local_files_only(monkeypatch, tmp_path):
     with pytest.raises(ConnectionError) as caught:
         _load(tmp_path)
     assert any("local_files_only=True" in note for note in caught.value.__notes__)
+
+
+def test_partial_copy_is_reported_as_missing_files_not_damage(monkeypatch, tmp_path):
+    _hub(monkeypatch)
+    _load(tmp_path)  # fp32 only
+    _no_network(monkeypatch)
+    with pytest.raises(hub.LocalBundleNotFoundError) as caught:
+        hub.download_verified("owner/repo", {"fp16/model.bin"}, cache_dir=tmp_path,
+                              local_files_only=True)
+    assert "missing fp16/model.bin" in str(caught.value)
+    assert "delete_cached" not in str(caught.value)  # nothing is damaged
+
+
+def test_lookups_of_uncached_repos_create_nothing(monkeypatch, tmp_path):
+    _no_network(monkeypatch)
+    with pytest.raises(hub.LocalBundleNotFoundError, match="is not in the cache"):
+        hub.download_verified("nobody/x", {"a"}, cache_dir=tmp_path, local_files_only=True)
+    assert hub.delete_cached("nobody/x", cache_dir=tmp_path) == []
+    assert hub.delete_cached("nobody/x", all_revisions=True, cache_dir=tmp_path) == []
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0,
+                    reason="needs POSIX permissions enforced for this user")
+def test_local_files_only_reads_a_read_only_cache(monkeypatch, tmp_path):
+    _hub(monkeypatch)
+    _load(tmp_path)
+    (tmp_path / "owner--repo" / ".main.lock").unlink()
+    _no_network(monkeypatch)
+    for path in [tmp_path, *tmp_path.rglob("*")]:
+        path.chmod(path.stat().st_mode & ~0o222)
+    try:
+        assert _load_local(tmp_path)[1]["tokenizer.model"].read_bytes() == b"tok A"
+    finally:
+        for path in [tmp_path, *tmp_path.rglob("*")]:
+            path.chmod(path.stat().st_mode | 0o200)
+
+
+def test_delete_all_revisions_covers_interrupted_and_crashed_downloads(monkeypatch, tmp_path):
+    _hub(monkeypatch)
+    _load(tmp_path)
+    repo = tmp_path / "owner--repo"
+    # A publish interrupted between its renames: only the backup of "v1" exists.
+    os.rename(_bundle(tmp_path), repo / f".old~v1~{'1' * 32}")
+    (repo / f".staging~%sha256-abc~{'2' * 32}").mkdir()  # a crashed first download
+    deleted = hub.delete_cached("owner/repo", all_revisions=True, cache_dir=tmp_path)
+    assert [p.name for p in deleted] == ["v1"]  # restored by recovery, then removed
+    assert sorted(p.name for p in repo.iterdir() if not p.name.endswith(".lock")) == []
+
+
+def test_delete_cached_flag_must_be_a_bool(tmp_path):
+    with pytest.raises((TypeError, ValueError), match="all_revisions"):
+        hub.delete_cached("owner/repo", all_revisions="yes", cache_dir=tmp_path)
+
+
+@pytest.mark.parametrize("name", ["RepositoryNotFoundError", "GatedRepoError"])
+def test_not_found_and_access_errors_get_no_offline_hint(name):
+    error = type(name, (OSError,), {})("nope")
+    assert not hub._transient(error)
+    assert hub._transient(ConnectionError("dropped"))
+    http = OSError("404")
+    http.response = types.SimpleNamespace(status_code=404)
+    assert not hub._transient(http)
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 11), reason="Python 3.10 path")
+def test_network_failure_hint_is_a_warning_on_python_310(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    fake.fail.add("tokenizer.model")
+    with pytest.warns(UserWarning, match="local_files_only=True"), \
+            pytest.raises(ConnectionError):
+        _load(tmp_path)

@@ -56,6 +56,8 @@ class OmniASRLLM:
     don't call its methods directly while the model is in use.
     """
 
+    snapshot = None  # set by from_pretrained: where the assets came from (hub.Snapshot)
+
     def __init__(
         self,
         directory: str | Path,
@@ -156,15 +158,16 @@ class OmniASRLLM:
         threads = resolve_threads(threads)
         check_flag("low_memory", low_memory)
         check_flag("local_files_only", local_files_only)
-        from ..hub import download_verified, snapshot_of
+        from ..hub import download_verified
         from ..precision import check_precision
 
         check_precision(precision, device)
         if precision != "fp32":
             required = {f"{precision}/encoder.onnx", f"{precision}/decoder.onnx", "tokenizer.model"}
-            _, verified = download_verified(
+            _, verified, snapshot = download_verified(
                 repo_id, lambda config: required | _language_files(config), revision=revision,
                 cache_dir=cache_dir, dependencies=True, local_files_only=local_files_only,
+                return_snapshot=True,
             )
             directory = verified["tokenizer.model"].parent
             if any(verified[name].parent != directory / precision for name in required - {"tokenizer.model"}):
@@ -173,7 +176,7 @@ class OmniASRLLM:
                 directory, backend="onnx", device=device, threads=threads,
                 low_memory=low_memory, precision=precision,
             )
-            model.snapshot = snapshot_of(directory, repo_id, revision)
+            model.snapshot = snapshot
             return model
         required = {"encoder.onnx", "decoder.weights", "decoder_weights.json", "tokenizer.model"}
 
@@ -184,9 +187,9 @@ class OmniASRLLM:
                 "decoder_prefill.onnx", "decoder_step.onnx"} & listed.keys()
             return required | graphs | _language_files(config)
 
-        _, verified = download_verified(
+        _, verified, snapshot = download_verified(
             repo_id, fp32_files, revision=revision, cache_dir=cache_dir, dependencies=True,
-            local_files_only=local_files_only,
+            local_files_only=local_files_only, return_snapshot=True,
         )
         # decoder.onnx (one session) is preferred; older repos ship only prefill/step graphs.
         graphs = {"decoder.onnx"} & verified.keys() or {"decoder_prefill.onnx", "decoder_step.onnx"}
@@ -198,7 +201,7 @@ class OmniASRLLM:
         model = cls(
             directory, backend="onnx", device=device, threads=threads, low_memory=low_memory
         )
-        model.snapshot = snapshot_of(directory, repo_id, revision)
+        model.snapshot = snapshot
         return model
 
     def language_embedding(self, lang: str) -> np.ndarray:

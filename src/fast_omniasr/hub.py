@@ -243,24 +243,37 @@ class CachedBundle(Snapshot):
     size_bytes: int = 0
 
 
-def snapshot_of(local_dir: Path, repo_id: str, revision: str | None) -> Snapshot:
-    """The Snapshot recorded for a published bundle directory."""
-    recorded = _read_snapshot(local_dir)
-    commit = recorded.get("commit")
-    return Snapshot(repo_id, revision or "main",
-                    commit if _COMMIT.fullmatch(str(commit or "")) else None, Path(local_dir))
+def _delete_call(repo_id: str, revision: str | None, cache_dir) -> str:
+    where = "" if cache_dir is None else f", cache_dir={str(cache_dir)!r}"
+    return f"fast_omniasr.hub.delete_cached({repo_id!r}, {revision or 'main'!r}{where})"
 
 
 def _recovery_hint(repo_id: str, revision: str | None, cache_dir) -> str:
-    where = "" if cache_dir is None else f", cache_dir={str(cache_dir)!r}"
     return (f"Retry the download, or remove the cached copy with "
-            f"fast_omniasr.hub.delete_cached({repo_id!r}, revision={revision!r}{where}) "
-            "and load again.")
+            f"{_delete_call(repo_id, revision, cache_dir)} and load again.")
+
+
+# Hub errors where loading an older local copy is no answer (the repo, revision or file
+# doesn't exist, or access is denied).
+_NOT_TRANSIENT = {"RepositoryNotFoundError", "RevisionNotFoundError", "EntryNotFoundError",
+                  "GatedRepoError", "DisabledRepoError"}
+
+
+def _transient(exc: BaseException) -> bool:
+    if any(cls.__name__ in _NOT_TRANSIENT for cls in type(exc).__mro__):
+        return False
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status in (401, 403, 404):
+        return False
+    return isinstance(exc, OSError) or type(exc).__module__.startswith(
+        ("huggingface_hub", "requests", "urllib3", "httpx"))
 
 
 def _note(exc: BaseException, text: str) -> None:
     if hasattr(exc, "add_note"):  # Python 3.11+
         exc.add_note(text)
+    else:  # Python 3.10: the hint can't ride on the exception, so warn instead
+        warnings.warn(text, stacklevel=3)
 
 
 def download_verified(repo_id: str, required, *, revision: str | None = None,
@@ -268,7 +281,7 @@ def download_verified(repo_id: str, required, *, revision: str | None = None,
                       select: Callable[[str], bool] | None = None,
                       dependencies: bool = False,
                       local_files_only: bool = False,
-                      ) -> tuple[dict, dict[str, Path]]:
+                      return_snapshot: bool = False):
     """Return the repo's config.json and a {filename: local path} map of the listed files.
 
     config.json must contain a `files` map of {filename: {"sha256", "size"}} that
@@ -293,9 +306,28 @@ def download_verified(repo_id: str, required, *, revision: str | None = None,
     `local_files_only=True` never contacts the Hub: the cached bundle (the recorded
     commit of a branch or tag) is verified and returned, or LocalBundleNotFoundError
     explains what is missing.
+
+    Returns (config, paths), or (config, paths, Snapshot) with `return_snapshot=True`;
+    the Snapshot's commit is the one the returned files were verified for (None when it
+    couldn't be determined).
     """
     if local_files_only:
-        return _load_local(repo_id, required, revision, cache_dir, select, dependencies)
+        result = _load_local(repo_id, required, revision, cache_dir, select, dependencies)
+    else:
+        result = _download(repo_id, required, revision, cache_dir, select, dependencies)
+    config, paths, snapshot = result
+    return (config, paths, snapshot) if return_snapshot else (config, paths)
+
+
+def _recorded_commit(local_dir: Path, repo_id: str, requested: str) -> str | None:
+    recorded = _read_snapshot(local_dir)
+    if (recorded.get("repo_id") == repo_id and recorded.get("revision") == requested
+            and _COMMIT.fullmatch(str(recorded.get("commit", "")))):
+        return recorded["commit"]
+    return None
+
+
+def _download(repo_id, required, revision, cache_dir, select, dependencies):
     try:
         from huggingface_hub import hf_hub_download
     except ImportError as exc:
@@ -305,10 +337,7 @@ def download_verified(repo_id: str, required, *, revision: str | None = None,
     requested = revision or "main"
     commit, reason = _resolve_commit(repo_id, revision)
     if commit is None:
-        recorded = _read_snapshot(local_dir)
-        if (recorded.get("repo_id") == repo_id and recorded.get("revision") == requested
-                and _COMMIT.fullmatch(str(recorded.get("commit", "")))):
-            commit = recorded["commit"]
+        commit = _recorded_commit(local_dir, repo_id, requested)
         if commit is not None and not reason.startswith("OfflineModeIsEnabled"):
             # Explicit offline mode (HF_HUB_OFFLINE=1) is intentional; anything else may
             # be a transient failure that leaves an older snapshot in use.
@@ -330,7 +359,9 @@ def download_verified(repo_id: str, required, *, revision: str | None = None,
         _recover(local_dir)
         reusable = _reuse_published(local_dir, record, required, select, dependencies)
         if reusable is not None:
-            return reusable
+            # Read under the lock: the commit of exactly the files being returned.
+            used = commit or _recorded_commit(local_dir, repo_id, requested)
+            return (*reusable, Snapshot(repo_id, requested, used, local_dir))
         staging = _sidecar(local_dir, "staging")
         try:
             config_path = Path(hf_hub_download(repo_id, "config.json", revision=pinned,
@@ -370,13 +401,13 @@ def download_verified(repo_id: str, required, *, revision: str | None = None,
         except BaseException as exc:
             # The published bundle (if any) is untouched; drop the partial staging copy.
             shutil.rmtree(staging, ignore_errors=True)
-            if isinstance(exc, OSError) or type(exc).__module__.startswith(
-                    ("huggingface_hub", "requests", "urllib3", "httpx")):
+            if _transient(exc):
                 _note(exc, f"Downloading {repo_id}@{requested} failed; nothing in the cache "
                            "was changed. If a complete copy was downloaded before, "
                            "local_files_only=True loads it without the network.")
             raise
-    return config, {filename: local_dir / filename for filename in wanted}
+    return (config, {filename: local_dir / filename for filename in wanted},
+            Snapshot(repo_id, requested, commit, local_dir))
 
 
 def _reuse_published(local_dir: Path, record: dict, required,
@@ -407,40 +438,77 @@ def _reuse_published(local_dir: Path, record: dict, required,
     return config, {name: local_dir / name for name in wanted + closure}
 
 
+def _diagnose(local_dir: Path, required, select, dependencies) -> tuple[list, list]:
+    """(missing, damaged) file names of a cached bundle that failed reuse."""
+    try:
+        config = json.loads((local_dir / "config.json").read_text())
+        wanted = _parse_config(config, required, select, dependencies)
+    except (OSError, ValueError, TypeError):
+        return ["config.json"], []
+    files = config["files"]
+    try:
+        present = [n for n in wanted if (local_dir / n).is_file()]
+        names = wanted + _graph_closure(local_dir, present, files)
+    except ValueError:
+        names = wanted
+    missing = [n for n in names if not (local_dir / n).is_file()]
+    damaged = [n for n in names if n not in missing and not _matches(local_dir / n, files[n])]
+    return missing, damaged
+
+
 def _load_local(repo_id, required, revision, cache_dir, select, dependencies):
     local_dir = _bundle_dir(Path(cache_dir or DEFAULT_CACHE), repo_id, revision)
     requested = revision or "main"
-    recorded = _read_snapshot(local_dir)
+    load_online = ("Load it once without local_files_only (with network access) to "
+                   "download it.")
+    if not local_dir.is_dir():  # nothing to lock or verify; create nothing
+        raise LocalBundleNotFoundError(
+            f"local_files_only=True: {repo_id}@{requested} is not in the cache "
+            f"({local_dir}). {load_online}")
     commit = revision if revision and _COMMIT.fullmatch(revision) else None
-    if commit is None and recorded.get("repo_id") == repo_id \
-            and recorded.get("revision") == requested \
-            and _COMMIT.fullmatch(str(recorded.get("commit", ""))):
-        commit = recorded["commit"]
+    commit = commit or _recorded_commit(local_dir, repo_id, requested)
     record = {"repo_id": repo_id, "revision": requested, "commit": commit}
-    with _bundle_lock(local_dir.parent / f".{local_dir.name}.lock"):
-        _recover(local_dir)
+    try:
+        lock = _bundle_lock(local_dir.parent / f".{local_dir.name}.lock")
+        lock.__enter__()
+    except OSError:
+        lock = None  # a read-only cache (e.g. baked into an image): verify without locking
+    try:
+        if lock is not None:
+            _recover(local_dir)
         reusable = _reuse_published(local_dir, record, required, select, dependencies)
-    if reusable is not None:
-        return reusable
-    state = ("is not in the cache" if not (local_dir / "config.json").is_file()
-             else "is cached incompletely or fails checksum verification")
+        if reusable is not None:
+            return (*reusable, Snapshot(repo_id, requested, commit, local_dir))
+        missing, damaged = _diagnose(local_dir, required, select, dependencies)
+    finally:
+        if lock is not None:
+            lock.__exit__(None, None, None)
+    parts = []
+    if missing:
+        parts.append(f"missing {', '.join(missing)} (the cached copy holds other files, "
+                     "e.g. another precision)")
+    if damaged:
+        parts.append(f"{', '.join(damaged)} fail checksum verification")
+    detail = "; ".join(parts) or "the cached copy is for a different commit"
+    advice = load_online
+    if damaged:
+        advice += (" To discard the damaged copy first, run "
+                   f"{_delete_call(repo_id, revision, cache_dir)}.")
     raise LocalBundleNotFoundError(
-        f"local_files_only=True: {repo_id}@{requested} {state} ({local_dir}). Load it once "
-        "without local_files_only (with network access) to download it"
-        + ("" if state.startswith("is not") else
-           ", or remove the damaged copy with "
-           f"fast_omniasr.hub.delete_cached({repo_id!r}, revision={revision!r})")
-        + "."
-    )
+        f"local_files_only=True: {repo_id}@{requested} in {local_dir}: {detail}. {advice}")
 
 
 def _cache_root(cache_dir) -> Path:
     return Path(cache_dir or DEFAULT_CACHE)
 
 
+_SIDECAR = re.compile(r"\.(?:staging|old)~(.+)~[0-9a-f]{32}")
+
+
 def list_cached(cache_dir: str | Path | None = None) -> list[CachedBundle]:
     """Every published bundle in the cache, with its recorded commit and size on disk.
-    In-progress staging copies and lock files are not listed."""
+    In-progress staging copies and lock files are not listed. A bundle being replaced
+    while this runs may be skipped."""
     from urllib.parse import unquote
 
     root = _cache_root(cache_dir)
@@ -452,25 +520,43 @@ def list_cached(cache_dir: str | Path | None = None) -> list[CachedBundle]:
             repo_id = recorded.get("repo_id") or unquote(repo.name).replace("--", "/", 1)
             revision = recorded.get("revision") or unquote(local_dir.name)
             commit = recorded.get("commit")
-            size = sum(f.stat().st_size for f in local_dir.rglob("*") if f.is_file())
+            try:
+                size = sum(f.stat().st_size for f in local_dir.rglob("*") if f.is_file())
+            except FileNotFoundError:
+                continue  # swapped out by a concurrent publish
             bundles.append(CachedBundle(
                 repo_id, revision, commit if _COMMIT.fullmatch(str(commit or "")) else None,
                 local_dir, size))
     return bundles
 
 
-def delete_cached(repo_id: str, revision: str | None = None, *,
+def delete_cached(repo_id: str, revision: str = "main", *, all_revisions: bool = False,
                   cache_dir: str | Path | None = None) -> list[Path]:
-    """Delete the cached bundle of `repo_id` at `revision` (every revision when None),
-    under the same per-bundle lock downloads use, so a concurrent download is never cut
-    short. Returns the deleted directories."""
+    """Delete the cached bundle of `repo_id` at `revision` ("main" by default, as in
+    from_pretrained), or every revision with `all_revisions=True`. Each bundle is removed
+    under the same lock downloads use, so a concurrent download is never cut short, and
+    leftovers of crashed downloads go with it. Returns the deleted bundle directories."""
+    from .options import check_flag
+
+    check_flag("all_revisions", all_revisions)
     root = _cache_root(cache_dir)
-    if revision is None:
-        targets = [b.path for b in list_cached(root) if b.repo_id == repo_id]
+    if all_revisions:
+        repo_dir = _bundle_dir(root, repo_id, "main").parent
+        names = set()
+        if repo_dir.is_dir():
+            for entry in repo_dir.iterdir():
+                sidecar = _SIDECAR.fullmatch(entry.name)
+                if sidecar:
+                    names.add(sidecar.group(1))
+                elif entry.is_dir() and not entry.name.startswith("."):
+                    names.add(entry.name)
+        targets = [repo_dir / name for name in sorted(names)]
     else:
         targets = [_bundle_dir(root, repo_id, revision)]
     deleted = []
     for local_dir in targets:
+        if not local_dir.parent.is_dir():
+            continue  # nothing cached for this repo; create nothing
         with _bundle_lock(local_dir.parent / f".{local_dir.name}.lock"):
             _recover(local_dir)  # also clears staging/backup leftovers
             if local_dir.exists():

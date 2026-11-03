@@ -120,7 +120,8 @@ def test_tensorrt_from_pretrained_checks_before_building(tmp_path, tokenizers, m
 
     graph = _stamped(tmp_path, tokenizers["a"])
     monkeypatch.setattr(hub, "download_verified", lambda *a, **k: (
-        {}, {"model.onnx": graph, "tokenizer.model": tokenizers["b"]}))
+        {}, {"model.onnx": graph, "tokenizer.model": tokenizers["b"]},
+        *((None,) if k.get("return_snapshot") else ())))
     builds = []
     monkeypatch.setattr(tensorrt_cache, "get_or_build_engine", lambda *a, **k: builds.append(1))
     with pytest.raises(ValueError, match="not the tokenizer"):
