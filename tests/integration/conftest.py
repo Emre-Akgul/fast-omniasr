@@ -26,6 +26,32 @@ DEFAULT_CLIP = "fleurs/en_us_10233995782544396174.flac"
 PUBLISHED_CTC = "EmreAkgul/omniASR-CTC-300M-v2-ONNX"
 
 
+def _manifest():
+    return json.loads(EXPECTATIONS.read_text(encoding="utf-8"))
+
+
+def published_revision(repo_id: str = PUBLISHED_CTC) -> str:
+    """The commit of `repo_id` the manifest declares outputs for; Hub tests load exactly
+    this revision, so a new commit on the repo's main can't silently disable checks."""
+    for entry in _manifest()["clips"].values():
+        for key in entry["expected"]:
+            repo, _, commit = key.partition("@")
+            if repo == repo_id:
+                return commit
+    raise LookupError(f"{EXPECTATIONS} declares no outputs for {repo_id}")
+
+
+def declared(clip: Path, model: str | None) -> dict | None:
+    """The manifest entry (frames, vocabulary_size, transcripts) for clip and model."""
+    if model is None:
+        return None
+    digest = hashlib.sha256(Path(clip).read_bytes()).hexdigest()
+    for entry in _manifest()["clips"].values():
+        if entry["sha256"] == digest:
+            return entry["expected"].get(model)
+    return None
+
+
 def clip_path() -> Path:
     return Path(os.environ.get("OMNIASR_TEST_WAV") or FIXTURES / DEFAULT_CLIP)
 
@@ -36,14 +62,13 @@ def expected_transcript(clip: Path, model: str | None, variant: str) -> str | No
     override = os.environ.get("OMNIASR_TEST_TRANSCRIPT")
     if override is not None:
         return override
-    if model is None:
-        return None
-    digest = hashlib.sha256(Path(clip).read_bytes()).hexdigest()
-    manifest = json.loads(EXPECTATIONS.read_text(encoding="utf-8"))
-    for entry in manifest["clips"].values():
-        if entry["sha256"] == digest:
-            return entry["expected"].get(model, {}).get("transcripts", {}).get(variant)
-    return None
+    expected = (declared(clip, model) or {}).get("transcripts", {}).get(variant)
+    if expected is None and not os.environ.get("OMNIASR_TEST_WAV"):
+        # The default clip always has declared outputs: a miss means the model key is off
+        # (e.g. an unpinned revision), which must fail rather than skip the check.
+        raise AssertionError(f"no {variant} transcript declared for {model} on the "
+                             f"default clip in {EXPECTATIONS}")
+    return expected
 
 
 def vocabulary_size(tokenizer_path) -> int:
@@ -73,9 +98,17 @@ def local_model_key():
 
 @pytest.fixture
 def expect():
-    """Helpers: expect.transcript(clip, model, variant), expect.vocabulary(tokenizer),
-    expect.frames(samples), expect.published(snapshot) -> model key."""
+    """Helpers: expect.transcript(clip, model, variant), expect.declared(clip, model),
+    expect.vocabulary(tokenizer), expect.frames(samples), expect.revision(repo) (the pinned
+    commit) and expect.published(snapshot) -> model key."""
     return types.SimpleNamespace(
         transcript=expected_transcript, vocabulary=vocabulary_size, frames=frames,
+        declared=declared, revision=published_revision,
         published=lambda snapshot: f"{snapshot.repo_id}@{snapshot.commit}",
     )
+
+
+@pytest.fixture
+def network():
+    if os.environ.get("OMNIASR_HUB_TESTS") != "1":
+        pytest.skip("Set OMNIASR_HUB_TESTS=1 to download from the Hub")

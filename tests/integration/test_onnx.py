@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -20,6 +21,7 @@ def assets(clip):
 def test_real_transcript_without_training_frameworks(assets, expect, local_model_key):
     expected = expect.transcript(assets[2], local_model_key, "onnx-cpu-fp32")
     code = """
+import json
 import sys
 import soundfile as sf
 from fast_omniasr import OmniASR
@@ -27,13 +29,14 @@ model = OmniASR(sys.argv[1], sys.argv[2])
 result = model.transcribe(sys.argv[3])
 samples = sf.info(sys.argv[3]).frames
 assert result.logits_shape == (1, (samples - 400) // 320 + 1, int(sys.argv[4])), result
-if sys.argv[5] != "-":
-    assert result.text == sys.argv[5], result.text
+expected = json.loads(sys.argv[5])
+if expected is not None:
+    assert result.text == expected, result.text
 assert result.text.strip(), "empty transcript"
 assert not any(name in sys.modules for name in ['torch', 'fairseq2', 'transformers'])
 """
     subprocess.run([sys.executable, "-c", code, *assets, str(expect.vocabulary(assets[1])),
-                    expected if expected is not None else "-"], check=True)
+                    json.dumps(expected)], check=True)
 
 
 def test_dynamic_frame_counts(assets, expect):

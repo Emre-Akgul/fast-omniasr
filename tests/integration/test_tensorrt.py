@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -25,6 +26,7 @@ def _within(model, lengths):
 def test_real_transcript_without_training_frameworks(assets, expect, local_model_key):
     expected = expect.transcript(assets[2], local_model_key, "tensorrt-fp32")
     code = """
+import json
 import sys
 import soundfile as sf
 from fast_omniasr import OmniASR
@@ -32,13 +34,14 @@ model = OmniASR(sys.argv[1], sys.argv[2], backend="tensorrt")
 result = model.transcribe(sys.argv[3])
 samples = sf.info(sys.argv[3]).frames
 assert result.logits_shape == (1, (samples - 400) // 320 + 1, int(sys.argv[4])), result
-if sys.argv[5] != "-":
-    assert result.text == sys.argv[5], result.text
+expected = json.loads(sys.argv[5])
+if expected is not None:
+    assert result.text == expected, result.text
 assert result.text.strip(), "empty transcript"
 assert not any(name in sys.modules for name in ['torch', 'fairseq2', 'transformers', 'onnxruntime'])
 """
     subprocess.run([sys.executable, "-c", code, *assets, str(expect.vocabulary(assets[1])),
-                    expected if expected is not None else "-"], check=True)
+                    json.dumps(expected)], check=True)
 
 
 def test_dynamic_frame_counts(assets, expect):
@@ -63,7 +66,8 @@ def test_sequential_calls_of_varying_length(assets, expect):
     from fast_omniasr import OmniASR
     model = OmniASR(assets[0], assets[1], backend="tensorrt")
     vocabulary = expect.vocabulary(assets[1])
-    for n in _within(model, [16000, 480000, 80000]):
+    for n in _within(model, [16000, 480000, 80000]) + [model.backend.max_samples,
+                                                       model.backend.min_samples]:
         result = model.transcribe_numpy(np.zeros(n, dtype=np.float32))
         assert result.logits_shape == (1, expect.frames(n), vocabulary)
 
@@ -84,7 +88,8 @@ def test_buffers_are_reused_not_reallocated(assets):
     from fast_omniasr import OmniASR
     model = OmniASR(assets[0], assets[1], backend="tensorrt")
     pointers = (model.backend.input_ptr, model.backend.output_ptr)
-    for n in _within(model, [16000, 480000, 80000, 240000]):
+    for n in _within(model, [16000, 480000, 80000, 240000]) + [model.backend.min_samples,
+                                                               model.backend.max_samples]:
         model.transcribe_numpy(np.zeros(n, dtype=np.float32))
         assert (model.backend.input_ptr, model.backend.output_ptr) == pointers
 
@@ -126,8 +131,10 @@ def test_concurrent_calls_match_sequential(assets):
     from fast_omniasr import OmniASR
     with OmniASR(assets[0], assets[1], backend="tensorrt") as model:
         rng = np.random.default_rng(0)
-        inputs = [(0.1 * rng.standard_normal(n)).astype(np.float32) for n in _within(
-            model, [16000, 32000, 48000, 64000, 16000, 80000, 24000, 40000])]
+        lengths = _within(model, [16000, 32000, 48000, 64000, 16000, 80000, 24000, 40000])
+        if not lengths:
+            pytest.skip("the engine profile accepts none of the concurrency probe lengths")
+        inputs = [(0.1 * rng.standard_normal(n)).astype(np.float32) for n in lengths]
         sequential = [model.backend.infer(x[None]) for x in inputs]
         results, errors = [None] * len(inputs), []
         barrier = threading.Barrier(len(inputs))
