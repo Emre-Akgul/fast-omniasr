@@ -48,15 +48,22 @@ def manifest_files(directory):
     return llm, sorted(files)
 
 
+def memory_gib(result):
+    """Peak GPU memory as table text: `peak_gpu_mib` from current reports, `gpu_mib` from
+    reports written before peaks were sampled; "n/a" when it wasn't measured."""
+    mib = result.get("peak_gpu_mib", result.get("gpu_mib"))
+    return "n/a" if not mib else f"{mib / 1024:.1f} GiB"
+
+
 def precision_section(llm, repo_id, report):
     results = report["precisions"]
     runs = results["fp32"]["inputs"]
-    gib = {p: results[p]["gpu_mib"] / 1024 for p in results}
+    gib = {p: memory_gib(results[p]) for p in results}
     agreement = {p: f"{results[p]['identical_to_fp32']}/{runs} identical" for p in PRECISIONS}
     rows = [
-        f"| `fp32` (default) | CPU, CUDA | top level | {gib['fp32']:.1f} GiB | reference |",
-        f"| `fp16` | CPU, CUDA | `fp16/` | {gib['fp16']:.1f} GiB | {agreement['fp16']} |",
-        f"| `bf16` | CUDA (Ampere or newer) | `bf16/` | {gib['bf16']:.1f} GiB | {agreement['bf16']} |",
+        f"| `fp32` (default) | CPU, CUDA | top level | {gib['fp32']} | reference |",
+        f"| `fp16` | CPU, CUDA | `fp16/` | {gib['fp16']} | {agreement['fp16']} |",
+        f"| `bf16` | CUDA (Ampere or newer) | `bf16/` | {gib['bf16']} | {agreement['bf16']} |",
     ]
     if llm:
         usage = (

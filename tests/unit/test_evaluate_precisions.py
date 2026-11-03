@@ -531,3 +531,53 @@ def test_run_in_fresh_process_uses_another_process():
     import os
 
     assert evaluate.run_in_fresh_process(os.getpid) != os.getpid()
+
+
+
+def _fake_smi(monkeypatch, stdout):
+    import subprocess
+
+    monkeypatch.setattr(evaluate.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
+        a, 0, stdout=stdout))
+
+
+def test_gpu_mib_skips_unparsable_rows(monkeypatch):
+    import os
+
+    _fake_smi(monkeypatch, f"{os.getpid()}, [N/A]\n{os.getpid()}, 300\n7, 9000\n")
+    assert evaluate.gpu_mib() == 300
+
+
+def test_gpu_mib_is_none_when_the_process_is_not_listed(monkeypatch):
+    _fake_smi(monkeypatch, "7, 9000\n")  # CPU-only run, or another PID namespace
+    assert evaluate.gpu_mib() is None
+    _fake_smi(monkeypatch, "")
+    assert evaluate.gpu_mib() is None
+
+
+def test_sampler_keeps_polling_after_a_failed_reading():
+    import time
+
+    readings = iter([100, None, None, 4000] + [500] * 1000)
+    with evaluate.GpuMemorySampler(interval=0.001, query=lambda: next(readings)) as memory:
+        time.sleep(0.05)
+    assert memory.peak == 4000
+
+
+def test_main_isolated_report_has_peak_gpu_mib(tmp_path, monkeypatch):
+    import sys
+
+    def fake_fresh_process(function, args, precision, rows):
+        assert function is evaluate.run_precision
+        return {"texts": ["a"] * len(rows), "reasons": [None] * len(rows), "seconds": 0.5,
+                "peak_gpu_mib": {"fp32": 2048, "fp16": 1024}[precision]}
+
+    monkeypatch.setattr(evaluate, "run_in_fresh_process", fake_fresh_process)
+    _audio_files(tmp_path)
+    report = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", ["evaluate_precisions.py", "--ctc", "x", "--precision",
+                                      "fp32", "fp16", "--audio", str(tmp_path / "clips/a.flac"),
+                                      "--report", str(report)])
+    evaluate.main()
+    results = json.loads(report.read_text())["precisions"]
+    assert {p: r["peak_gpu_mib"] for p, r in results.items()} == {"fp32": 2048, "fp16": 1024}
