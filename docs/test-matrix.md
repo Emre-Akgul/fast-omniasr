@@ -72,7 +72,7 @@ Known gaps, by design of the tiers:
 
 Integration tests outside the scheduled tiers, run locally when their inputs are set (see CONTRIBUTING):
 
-- `tests/integration/test_onnx.py`: a local CTC ONNX export (CPU or CUDA)
+- `tests/integration/test_onnx.py`: a local CTC ONNX export (CPU fp32)
 - `tests/integration/test_tensorrt.py`: a local TensorRT engine and its profile
 - `tests/integration/test_tensorrt_from_pretrained.py`: TensorRT engines built from the Hub, default and custom profiles
 - `tests/integration/test_hub.py`: Hub download, offline reuse and checksum failure
