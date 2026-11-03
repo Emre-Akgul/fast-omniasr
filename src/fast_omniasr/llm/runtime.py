@@ -44,7 +44,8 @@ class OmniASRLLM:
 
     The default baseline recomputes the prefix. Set cached=True to load the
     explicit-cache decoder, which processes the prefix once per transcription.
-    It supports one mono 16 kHz clip, up to 30 seconds, without language conditioning.
+    It supports one mono 16 kHz clip, up to 30 seconds; `transcribe(lang=...)` needs the
+    language tables (tools/export_llm_languages.py).
 
     Thread-safe: an instance may be shared across threads. Its sessions, lazily created
     graphs, low_memory phasing and device buffers are per-instance state, so concurrent

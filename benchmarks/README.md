@@ -88,6 +88,13 @@ pytest tests/integration/test_llm_cache_reference.py -q
 
 ## ONNX LLM cache (CPU and CUDA)
 
+> These measurements are of the first ONNX implementation: separate prefill and step
+> graphs with the K/V cache passed through host memory, as `tools/benchmark_llm_onnx.py`
+> still loads them. The current runtime uses one unified decoder and keeps the cache on
+> the GPU (see the [README](../README.md#llm-asr-models) and the
+> [LLM export history](../docs/llm-export-history.md)), so these CUDA numbers are not its
+> current performance.
+
 Day 3 keeps the Day 2 TorchScript files frozen and exports three ONNX graphs.
 The decoder graphs share one external weight file; their K/V tensors remain
 explicit runtime inputs and outputs.

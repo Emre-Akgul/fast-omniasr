@@ -315,13 +315,21 @@ from fast_omniasr.llm import OmniASRLLM
 
 model = OmniASRLLM("/path/to/llm-300m-v2")               # full-prefix decoder
 model = OmniASRLLM("/path/to/llm-300m-v2", cached=True)  # explicit KV-cache decoder
-result = model.transcribe("speech.wav", lang="eng_Latn", max_new_tokens=512)
+result = model.transcribe("speech.wav", max_new_tokens=512)
 print(result.text, result.stop_reason)  # "eos" means complete
 ```
 
-`python export_llm.py --output DIR --audio speech.wav` exports these graphs (requires
-fairseq2 and omnilingual_asr) and `python tools/validate_llm.py DIR [--cached]` re-checks them
-with the reference packages blocked. The real-artifact integration test runs with
+Building such a directory (requires fairseq2 and omnilingual_asr):
+
+```bash
+python export_llm.py --output DIR --audio speech.wav       # encoder.pt, decoder.pt, tokenizer
+python tools/export_cached_llm.py DIR --audio speech.wav  # adds decoder_cached.pt (cached=True)
+python tools/export_llm_languages.py DIR [--checkpoint CKPT]  # adds language tables (lang=...)
+python tools/validate_llm.py DIR [--cached]                # re-checks with reference packages blocked
+```
+
+Without the language tables, `transcribe(..., lang=...)` raises; without `lang` the model
+uses its learned "no language" embedding and warns, as with the ONNX runtime. The real-artifact integration test runs with
 `FAST_OMNIASR_LLM_DIR=DIR pytest tests/integration/test_llm.py` (`FAST_OMNIASR_LLM_TEST_WAV`
 overrides the clip).
 
