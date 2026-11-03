@@ -597,6 +597,8 @@ def _from_pretrained_with(monkeypatch, tmp_path, failures):
         return tmp_path / "e.engine"
 
     monkeypatch.setattr(tensorrt_cache, "get_or_build_engine", fake_cache)
+    monkeypatch.setattr(model, "Tokenizer", lambda path: None)
+    monkeypatch.setattr(model, "check_compatible", lambda *a, **k: None)
     real_init = model.OmniASR.__init__
 
     def fake_init(self, *args, **kwargs):

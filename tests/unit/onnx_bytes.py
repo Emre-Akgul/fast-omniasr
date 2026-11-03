@@ -48,8 +48,11 @@ def if_node(then_graph):
     return _field(1, "cond") + _field(4, "If") + _field(5, attribute)
 
 
-def model(graph_bytes):
-    return _field(1, 8) + _field(2, "test") + _field(7, graph_bytes) + _field(8, _field(2, 17))
+def model(graph_bytes, metadata=None):
+    props = b"".join(_field(14, _field(1, key) + _field(2, value))
+                     for key, value in (metadata or {}).items())
+    return (_field(1, 8) + _field(2, "test") + _field(7, graph_bytes) + _field(8, _field(2, 17))
+            + props)
 
 
 def model_with_external(*locations, inline=b""):

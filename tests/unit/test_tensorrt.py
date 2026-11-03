@@ -247,6 +247,7 @@ def test_omniasr_close_releases_tensorrt_resources(fake_trt, monkeypatch):
     from fast_omniasr import model as model_module
 
     monkeypatch.setattr(model_module, "Tokenizer", lambda path: object())
+    monkeypatch.setattr(model_module, "check_compatible", lambda *a, **k: None)
     asr = model_module.OmniASR(fake_trt.path, "tokenizer.model", backend="tensorrt")
     engine_ref = weakref.ref(asr.backend.engine)
     with asr:

@@ -120,6 +120,7 @@ class TensorRTBackend:
         self.min_samples, self.max_samples, max_output_shape = _validate_contract(
             trt, engine, self.context
         )
+        self.vocabulary_size = max_output_shape[2]
         self.stream = self._check(cudart.cudaStreamCreate())
         self.input_ptr = self._check(cudart.cudaMalloc(self.max_samples * np.dtype(np.float32).itemsize))
         max_output_elements = int(np.prod(max_output_shape))
