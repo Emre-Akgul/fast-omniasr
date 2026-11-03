@@ -904,3 +904,32 @@ def test_local_files_only_recovers_an_interrupted_publish(monkeypatch, tmp_path)
     os.rename(_bundle(tmp_path), tmp_path / "owner--repo" / f".old~main~{'3' * 32}")
     _no_network(monkeypatch)
     assert _load_local(tmp_path)[1]["tokenizer.model"].read_bytes() == b"tok A"
+
+
+def test_replace_retries_transient_permission_errors_on_windows(monkeypatch, tmp_path):
+    calls = []
+
+    def flaky(source, target):
+        calls.append(source)
+        if len(calls) < 3:
+            raise PermissionError("in use")
+
+    monkeypatch.setattr(hub.os, "name", "nt")
+    monkeypatch.setattr(hub.os, "replace", flaky)
+    monkeypatch.setattr(hub.time, "sleep", lambda seconds: None)
+    hub._replace("a", "b")
+    assert len(calls) == 3
+
+
+def test_replace_gives_up_and_does_not_retry_elsewhere(monkeypatch):
+    def denied(source, target):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(hub.os, "replace", denied)
+    monkeypatch.setattr(hub.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(hub.os, "name", "posix")
+    with pytest.raises(PermissionError):
+        hub._replace("a", "b")  # not Windows: raised at once
+    monkeypatch.setattr(hub.os, "name", "nt")
+    with pytest.raises(PermissionError):
+        hub._replace("a", "b", attempts=3)  # Windows: bounded, then raised

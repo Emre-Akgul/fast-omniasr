@@ -590,6 +590,9 @@ def test_main_isolated_report_has_peak_gpu_mib(tmp_path, monkeypatch):
     ("C:\\clips\\a.wav", ("C:\\clips\\a.wav", "")),          # Windows drive letter
     ("C:\\clips\\a.wav:tur_Latn", ("C:\\clips\\a.wav", "tur_Latn")),
     ("odd:name.wav", ("odd:name.wav", "")),                   # colon not followed by a code
+    ("clip.wav:roh_Latn_surs1244", ("clip.wav", "roh_Latn_surs1244")),  # dialect code
+    ("clip.wav:", ("clip.wav", "")),                          # explicit "no language"
+    ("C:", ("C:", "")),
 ])
 def test_audio_specs_split_only_on_a_language_code(spec, expected):
     assert evaluate._split_audio_spec(spec) == expected

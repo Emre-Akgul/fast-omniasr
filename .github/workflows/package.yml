@@ -4,6 +4,7 @@ name: Package (wheel, extras, platforms)
 # its own, and with the oldest dependency versions pyproject.toml allows.
 on:
   push:
+    branches: [main, develop]  # PR commits run once, through pull_request
   pull_request:
   workflow_dispatch:
 

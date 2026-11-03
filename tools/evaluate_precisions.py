@@ -292,15 +292,16 @@ def read_manifest(path, limit=None):
     return rows
 
 
-_LANG_CODE = re.compile(r"[a-z]{3}_[A-Za-z]{4}")
+# eng_Latn, plus dialect-qualified codes such as roh_Latn_surs1244.
+_LANG_CODE = re.compile(r"[a-z]{3}_[A-Za-z]{4}(?:_[A-Za-z0-9]+)?")
 
 
 def _split_audio_spec(spec):
     """'clip.wav:eng_Latn' -> ('clip.wav', 'eng_Latn'); a colon that isn't followed by a
     language code (e.g. a Windows drive, 'C:\\clips\\a.wav') is part of the path."""
     path, sep, lang = spec.rpartition(":")
-    if sep and _LANG_CODE.fullmatch(lang):
-        return path, lang
+    if sep and (lang == "" or _LANG_CODE.fullmatch(lang)) and path:
+        return path, lang  # "clip.wav:" means no language, as before
     return spec, ""
 
 
