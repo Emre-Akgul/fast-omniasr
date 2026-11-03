@@ -260,7 +260,12 @@ _NOT_TRANSIENT = {"RepositoryNotFoundError", "RevisionNotFoundError", "EntryNotF
 
 
 def _transient(exc: BaseException) -> bool:
-    if any(cls.__name__ in _NOT_TRANSIENT for cls in type(exc).__mro__):
+    names = {cls.__name__ for cls in type(exc).__mro__}
+    if "LocalEntryNotFoundError" in names:
+        # Raised when the Hub can't be reached (network down, timeout, HF_HUB_OFFLINE),
+        # although it subclasses EntryNotFoundError.
+        return True
+    if names & _NOT_TRANSIENT:
         return False
     status = getattr(getattr(exc, "response", None), "status_code", None)
     if status in (401, 403, 404):
@@ -461,13 +466,12 @@ def _load_local(repo_id, required, revision, cache_dir, select, dependencies):
     requested = revision or "main"
     load_online = ("Load it once without local_files_only (with network access) to "
                    "download it.")
-    if not local_dir.is_dir():  # nothing to lock or verify; create nothing
+    if not local_dir.is_dir() and not _sidecars(local_dir, "old"):
+        # Nothing to lock, recover or verify; create nothing. (A backup alone is a publish
+        # interrupted between its renames, which _recover restores below.)
         raise LocalBundleNotFoundError(
             f"local_files_only=True: {repo_id}@{requested} is not in the cache "
             f"({local_dir}). {load_online}")
-    commit = revision if revision and _COMMIT.fullmatch(revision) else None
-    commit = commit or _recorded_commit(local_dir, repo_id, requested)
-    record = {"repo_id": repo_id, "revision": requested, "commit": commit}
     try:
         lock = _bundle_lock(local_dir.parent / f".{local_dir.name}.lock")
         lock.__enter__()
@@ -476,6 +480,11 @@ def _load_local(repo_id, required, revision, cache_dir, select, dependencies):
     try:
         if lock is not None:
             _recover(local_dir)
+        # Read under the lock, so a concurrent publish can't pair a stale record with
+        # newer files.
+        commit = revision if revision and _COMMIT.fullmatch(revision) else None
+        commit = commit or _recorded_commit(local_dir, repo_id, requested)
+        record = {"repo_id": repo_id, "revision": requested, "commit": commit}
         reusable = _reuse_published(local_dir, record, required, select, dependencies)
         if reusable is not None:
             return (*reusable, Snapshot(repo_id, requested, commit, local_dir))

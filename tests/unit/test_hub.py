@@ -887,3 +887,20 @@ def test_network_failure_hint_is_a_warning_on_python_310(monkeypatch, tmp_path):
     with pytest.warns(UserWarning, match="local_files_only=True"), \
             pytest.raises(ConnectionError):
         _load(tmp_path)
+
+
+def test_unreachable_hub_errors_keep_the_offline_hint():
+    # huggingface_hub raises LocalEntryNotFoundError (an EntryNotFoundError subclass) when
+    # the network is down; that is exactly when local_files_only helps.
+    entry = type("EntryNotFoundError", (OSError,), {})
+    local = type("LocalEntryNotFoundError", (entry, FileNotFoundError), {})
+    assert hub._transient(local("connection failed"))
+    assert not hub._transient(entry("no such file in the repo"))
+
+
+def test_local_files_only_recovers_an_interrupted_publish(monkeypatch, tmp_path):
+    _hub(monkeypatch)
+    _load(tmp_path)
+    os.rename(_bundle(tmp_path), tmp_path / "owner--repo" / f".old~main~{'3' * 32}")
+    _no_network(monkeypatch)
+    assert _load_local(tmp_path)[1]["tokenizer.model"].read_bytes() == b"tok A"
