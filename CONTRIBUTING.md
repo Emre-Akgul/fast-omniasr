@@ -8,13 +8,14 @@ tiers, reproducing benchmarks, and what a pull request needs before it is merged
 - `main` holds released code; day-to-day work lands on **`develop`**.
 - Branch from `develop` (`fix/issue-123-short-name` or `feature/short-name`) and open the
   pull request **against `develop`**. Pull requests are squash-merged.
-- One issue per pull request. Reference it with `Closes #123` in the description; issues
-  are closed when the change reaches `develop`.
+- One issue per pull request. Reference it with `Closes #123` in the description.
+  GitHub only auto-closes issues on the default branch (`main`), so a maintainer closes
+  the issue when the pull request is merged into `develop`.
 - Keep changes focused: a bug fix doesn't need a drive-by refactor.
 
 ## Development setup
 
-Python 3.10–3.12.
+Python 3.10 or newer (CI tests 3.10–3.12).
 
 ```bash
 git clone https://github.com/Emre-Akgul/fast-omniasr && cd fast-omniasr
@@ -43,7 +44,7 @@ Exporting models additionally needs `fairseq2`/`omnilingual-asr` and `onnx`; see
 | Lint | `python -m ruff check .` | `dev` | every push and PR |
 | Unit | `python -m pytest tests/unit` | `dev` (CPU only, no models, no network) | every push and PR, Python 3.10/3.11/3.12; cache locking also on Windows |
 | LLM unit | `python -m pytest tests/unit/test_llm.py tests/unit/test_llm_cache.py tests/unit/test_llm_onnx.py` | `dev,llm,onnx` extras and the `onnx` package | every push and PR |
-| Real models, CPU | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_cpu.py` | `dev,onnx,hub`; downloads ~8 GB | weekly, on demand, and on PRs touching the runtime (`Real-model CPU validation`) |
+| Real models, CPU | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_cpu.py` | `dev,onnx,hub`; downloads ~8 GB | `Real-model CPU validation`: weekly, after each published release, on demand, and on PRs that change the paths listed in `real-models.yml` (the ONNX/LLM runtime, hub, audio and evaluation code; not the TensorRT backend) |
 | FLEURS gates | `python tools/fleurs_eval.py run --model ctc --gate` (and `--model llm`) | `dev,onnx,hub` | same workflow (`fleurs-ctc`, `fleurs-llm`) |
 | GPU / TensorRT | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_tensorrt_fleurs.py`, plus `test_tensorrt*.py`/`test_onnx.py` with the `OMNIASR_*` variables below | a CUDA GPU, `cuda`/`tensorrt` | not in CI: run locally for GPU changes |
 
@@ -51,9 +52,14 @@ Unit tests must not need a GPU, model downloads or the network. Integration test
 unless their inputs are provided:
 
 - `OMNIASR_ONNX`, `OMNIASR_TOKENIZER`, `OMNIASR_TEST_WAV`: a local ONNX export and a clip
-- `OMNIASR_TRT_FP32_ENGINE`: a TensorRT engine (with the tokenizer and clip above)
+  (`test_onnx.py`)
+- `OMNIASR_TRT_FP32_ENGINE`: a TensorRT engine, with the tokenizer and clip above
+  (`test_tensorrt.py`)
+- `OMNIASR_TEST_WAV` alone, plus network access: `test_hub.py` and
+  `test_tensorrt_from_pretrained.py` download the published model
 - `OMNIASR_REAL_MODELS=1`: download the pinned published models (`OMNIASR_CACHE_DIR` to
-  choose the cache)
+  choose the cache; `OMNIASR_CTC_REPO`/`OMNIASR_CTC_REVISION` and
+  `OMNIASR_LLM_REPO`/`OMNIASR_LLM_REVISION` to test another repo or revision)
 - `FAST_OMNIASR_LLM_DIR`, `FAST_OMNIASR_LLM_TEST_WAV`: a local LLM export
 
 Changes to runtime code (`src/fast_omniasr/**`) need the unit tier green and, for
@@ -96,16 +102,17 @@ Every pull request gets a review before merge, and all required checks must pass
 
 Maintainers release from `main`:
 
-1. Merge `develop` into `main` once its CI and the `Real-model CPU validation` workflow
-   (dispatched on that commit) pass.
+1. Merge `develop` into `main` once its CI passes, then dispatch the `Real-model CPU
+   validation` workflow on `main` and require it to pass before tagging.
 2. Bump `version` in `pyproject.toml`, tag `vX.Y.Z` and publish the GitHub release.
-3. Build and upload the package from the tag: `python -m build` then
-   `python -m twine upload dist/*`.
+3. Build and upload the package from the tag: `python -m pip install build twine`,
+   `python -m build`, then `python -m twine upload dist/*`.
 4. If exported model assets changed, republish them with the tools under `tools/`
-   (`publish_hub.py`, `publish_llm_hub.py`) so each `config.json` carries fresh checksums.
+   (`publish_hub.py`, `publish_llm_hub.py`, and `publish_precisions.py` for fp16/bf16
+   variants) so each `config.json` carries fresh checksums.
 
-Before 1.0, a minor version (0.x) may change public behaviour; the release notes list
-every such change. Patch versions (0.x.y) only fix bugs.
+Before 1.0, a minor version (0.x) may change public behaviour; the release notes (the
+GitHub release description) list every such change. Patch versions (0.x.y) only fix bugs.
 
 ## Reporting bugs and security issues
 

@@ -33,7 +33,7 @@ body:
     id: model
     attributes:
       label: Model and revision
-      description: "e.g. EmreAkgul/omniASR-CTC-300M-v2-ONNX @ main, or `model.snapshot` (repo, revision, commit)"
+      description: "e.g. EmreAkgul/omniASR-CTC-300M-v2-ONNX @ main. The exact commit is in .fast-omniasr-snapshot.json inside the downloaded model's cache directory."
     validations:
       required: true
   - type: dropdown
@@ -61,8 +61,9 @@ body:
       description: |
         Paste the output of:
         python -c "import platform, sys; print(sys.version, platform.platform())"
-        pip list 2>/dev/null | grep -iE "onnxruntime|tensorrt|cuda-python|torch|numpy|huggingface|sentencepiece"
-        nvidia-smi --query-gpu=driver_version --format=csv,noheader   # if using a GPU
+        python -m pip list
+        nvidia-smi --query-gpu=driver_version --format=csv,noheader   (if using a GPU)
+        The relevant packages are onnxruntime(-gpu), tensorrt, cuda-python, torch, numpy, huggingface_hub and sentencepiece; you may trim the pip list to those.
       render: text
     validations:
       required: true
