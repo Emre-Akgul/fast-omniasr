@@ -1,13 +1,15 @@
 """OmniASRLLM validates its artifact on load (issue #7)."""
 
 import json
+import sys
+import types
 
 import numpy as np
 import onnx_bytes as ob
 import pytest
 
 from fast_omniasr._onnx_deps import graph_signature
-from fast_omniasr.llm import OmniASRLLM, onnx_backend
+from fast_omniasr.llm import OmniASRLLM
 from fast_omniasr.llm.validation import InvalidArtifactError
 
 HIDDEN, HEADS, HEAD_DIM, LAYERS = 8, 2, 4, 12
@@ -71,8 +73,9 @@ def artifact(tmp_path, tokenizer_file):
 def loaded(monkeypatch):
     """Record backend construction instead of creating ONNX Runtime sessions."""
     created = []
-    monkeypatch.setattr(onnx_backend, "ONNXLLMBackend",
-                        lambda *args, **kwargs: created.append(args) or object())
+    # A stand-in module: validation must not need onnxruntime (not installed in every CI job).
+    monkeypatch.setitem(sys.modules, "fast_omniasr.llm.onnx_backend", types.SimpleNamespace(
+        ONNXLLMBackend=lambda *args, **kwargs: created.append(args) or object()))
     return created
 
 
