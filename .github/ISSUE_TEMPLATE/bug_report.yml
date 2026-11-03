@@ -59,10 +59,10 @@ body:
     attributes:
       label: Environment
       description: |
-        Paste the output of:
+        Paste the output of these commands (the last one only if you use a GPU):
         python -c "import platform, sys; print(sys.version, platform.platform())"
         python -m pip list
-        nvidia-smi --query-gpu=driver_version --format=csv,noheader   (if using a GPU)
+        nvidia-smi --query-gpu=driver_version --format=csv,noheader
         The relevant packages are onnxruntime(-gpu), tensorrt, cuda-python, torch, numpy, huggingface_hub and sentencepiece; you may trim the pip list to those.
       render: text
     validations:
