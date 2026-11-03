@@ -111,8 +111,13 @@ class OmniASR:
                          min_samples: int | None = None,
                          opt_samples: int | None = None,
                          max_samples: int | None = None,
-                         device: str | None = None, threads: int | None = None):
+                         device: str | None = None, threads: int | None = None,
+                         local_files_only: bool = False):
         """Download and verify model/tokenizer assets from a Hugging Face Hub repo.
+
+        `local_files_only=True` loads the cached copy without contacting the Hub (raising
+        fast_omniasr.hub.LocalBundleNotFoundError if there is none). The returned model's
+        `snapshot` records the repo, revision, resolved commit and local directory.
 
         The repo must publish `model.onnx`, `tokenizer.model` and a `config.json`
         with a `files` map of expected sha256 checksums. Any ONNX external-data
@@ -152,7 +157,10 @@ class OmniASR:
             raise ValueError(
                 "backend='tensorrt' requires precision='fp32', 'fp16' or 'mixed'"
             )
-        from .hub import download_verified
+        from .hub import download_verified, snapshot_of
+        from .options import check_flag
+
+        check_flag("local_files_only", local_files_only)
 
         # TensorRT builds its engine from the float32 graph whatever the engine precision.
         graph_precision = precision if backend == "onnx" else "fp32"
@@ -160,16 +168,18 @@ class OmniASR:
         _, verified = download_verified(
             repo_id, {graph, "tokenizer.model"}, revision=revision, cache_dir=cache_dir,
             dependencies=True,  # the graph, its external data wherever it lives, the tokenizer
+            local_files_only=local_files_only,
         )
         tokenizer_path = verified["tokenizer.model"]
+        snapshot = snapshot_of(tokenizer_path.parent, repo_id, revision)
         model_path = verified[graph]
         if backend == "tensorrt":
             # The engine has no metadata of its own: check the graph it is built from,
             # before a long engine build.
             check_compatible(Tokenizer(tokenizer_path), graph_path=model_path)
         if backend == "onnx":
-            return cls(model_path, tokenizer_path, backend="onnx", device=device,
-                       threads=threads, precision=precision)
+            return _attach(snapshot, cls(model_path, tokenizer_path, backend="onnx",
+                                         device=device, threads=threads, precision=precision))
 
         if precision == "fp16":
             import warnings
@@ -195,8 +205,8 @@ class OmniASR:
 
         engine_path = engine()
         try:
-            return cls(engine_path, tokenizer_path, backend="tensorrt", device=device,
-                       threads=threads)
+            return _attach(snapshot, cls(engine_path, tokenizer_path, backend="tensorrt",
+                                         device=device, threads=threads))
         except EngineDeserializationError as exc:
             reason = str(exc)  # rebuild outside the handler so the failed backend is freed
         import warnings
@@ -205,4 +215,10 @@ class OmniASR:
                       "may be transient.", stacklevel=2)
         failed = recorded_engine_sha256(engine_path)
         rebuilt = engine(discard_sha256=failed) if failed else engine(rebuild=True)
-        return cls(rebuilt, tokenizer_path, backend="tensorrt", device=device, threads=threads)
+        return _attach(snapshot, cls(rebuilt, tokenizer_path, backend="tensorrt", device=device,
+                                     threads=threads))
+
+
+def _attach(snapshot, model):
+    model.snapshot = snapshot
+    return model

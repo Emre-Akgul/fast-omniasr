@@ -683,3 +683,122 @@ def test_select_mode_also_fetches_external_data_outside_the_selection(monkeypatc
     hub.download_verified("owner/repo", {"model.onnx"}, cache_dir=tmp_path / "cache",
                           select=lambda name: "/" not in name)
     assert {"weights/a.bin", "weights/deep/b.bin"} <= set(fetched)
+
+
+# --- offline loading and cache management (issue #17) ---
+
+def _no_network(monkeypatch):
+    """Make any use of huggingface_hub fail loudly."""
+    monkeypatch.setitem(sys.modules, "huggingface_hub", None)
+
+
+def test_local_files_only_without_a_cached_copy_explains_what_to_do(monkeypatch, tmp_path):
+    _no_network(monkeypatch)
+    with pytest.raises(hub.LocalBundleNotFoundError,
+                       match=r"owner/repo@main is not in the cache .*Load it once without "
+                             "local_files_only"):
+        hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path,
+                              local_files_only=True)
+
+
+def test_local_files_only_reuses_the_recorded_commit_without_the_network(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    _load(tmp_path)
+    fake.head = SHA_B  # the branch moved, but we never ask
+    _no_network(monkeypatch)
+    _, paths = hub.download_verified("owner/repo", {"tokenizer.model"}, cache_dir=tmp_path,
+                                     select=lambda name: "/" not in name,
+                                     local_files_only=True)
+    assert paths["tokenizer.model"].read_bytes() == b"tok A"
+
+
+def test_local_files_only_reports_a_damaged_copy(monkeypatch, tmp_path):
+    _hub(monkeypatch)
+    _load(tmp_path)
+    (_bundle(tmp_path) / "tokenizer.model").write_bytes(b"damaged")
+    _no_network(monkeypatch)
+    with pytest.raises(hub.LocalBundleNotFoundError,
+                       match="fails checksum verification.*delete_cached"):
+        _load_local(tmp_path)
+
+
+def _load_local(tmp_path, revision=None):
+    return hub.download_verified("owner/repo", {"tokenizer.model"}, revision=revision,
+                                 cache_dir=tmp_path, select=lambda name: "/" not in name,
+                                 local_files_only=True)
+
+
+def test_local_files_only_with_a_commit_revision(monkeypatch, tmp_path):
+    _hub(monkeypatch)
+    hub.download_verified("owner/repo", {"tokenizer.model"}, revision=SHA_B,
+                          cache_dir=tmp_path, select=lambda name: "/" not in name)
+    _no_network(monkeypatch)
+    assert _load_local(tmp_path, SHA_B)[1]["tokenizer.model"].read_bytes() == b"tok B"
+    with pytest.raises(hub.LocalBundleNotFoundError):
+        _load_local(tmp_path, SHA_A)
+
+
+def test_snapshot_records_the_resolved_commit(monkeypatch, tmp_path):
+    _hub(monkeypatch)
+    _, paths = _load(tmp_path)
+    snapshot = hub.snapshot_of(paths["tokenizer.model"].parent, "owner/repo", None)
+    assert snapshot == hub.Snapshot("owner/repo", "main", SHA_A, _bundle(tmp_path))
+
+
+def test_from_pretrained_exposes_the_snapshot(monkeypatch, tmp_path):
+    _closure_repo(monkeypatch, tmp_path, NESTED)  # no HfApi: the commit can't be resolved
+    monkeypatch.setattr(OmniASR, "__init__", lambda self, *args, **kwargs: None)
+    with pytest.warns(UserWarning, match="without pinning"):
+        model = OmniASR.from_pretrained("owner/repo", cache_dir=tmp_path / "cache")
+    assert model.snapshot.repo_id == "owner/repo" and model.snapshot.revision == "main"
+    assert model.snapshot.commit is None
+    assert model.snapshot.path == tmp_path / "cache" / "owner--repo" / "main"
+    _no_network(monkeypatch)
+    again = OmniASR.from_pretrained("owner/repo", cache_dir=tmp_path / "cache",
+                                    local_files_only=True)
+    assert again.snapshot.path == model.snapshot.path
+
+
+def test_local_files_only_must_be_a_bool():
+    with pytest.raises((TypeError, ValueError), match="local_files_only"):
+        OmniASR.from_pretrained("owner/repo", local_files_only="yes")
+
+
+def test_list_and_delete_cached_bundles(monkeypatch, tmp_path):
+    _hub(monkeypatch)
+    _load(tmp_path)
+    hub.download_verified("owner/repo", {"tokenizer.model"}, revision=SHA_B,
+                          cache_dir=tmp_path, select=lambda name: "/" not in name)
+    (tmp_path / "owner--repo" / f".staging~main~{'0' * 32}").mkdir()  # crashed download
+    bundles = hub.list_cached(tmp_path)
+    assert [(b.repo_id, b.revision, b.commit) for b in bundles] == [
+        ("owner/repo", SHA_B, SHA_B), ("owner/repo", "main", SHA_A)]
+    assert all(b.size_bytes > 0 for b in bundles)
+
+    assert hub.delete_cached("owner/repo", "main", cache_dir=tmp_path) == [_bundle(tmp_path)]
+    assert not _bundle(tmp_path).exists()
+    assert _leftovers(tmp_path) == []  # the crashed download's staging copy went too
+    assert [b.revision for b in hub.list_cached(tmp_path)] == [SHA_B]
+    assert hub.delete_cached("owner/repo", "main", cache_dir=tmp_path) == []
+    assert len(hub.delete_cached("owner/repo", cache_dir=tmp_path)) == 1  # all revisions
+    assert hub.list_cached(tmp_path) == []
+
+
+def test_list_cached_on_an_empty_or_missing_cache(tmp_path):
+    assert hub.list_cached(tmp_path / "nothing-here") == []
+
+
+def test_checksum_mismatch_explains_recovery(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    fake.corrupt.add("tokenizer.model")
+    with pytest.raises(RuntimeError, match=r"checksum mismatch.*delete_cached\('owner/repo'"):
+        _load(tmp_path)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="exception notes need Python 3.11")
+def test_network_failure_suggests_local_files_only(monkeypatch, tmp_path):
+    fake = _hub(monkeypatch)
+    fake.fail.add("tokenizer.model")
+    with pytest.raises(ConnectionError) as caught:
+        _load(tmp_path)
+    assert any("local_files_only=True" in note for note in caught.value.__notes__)
