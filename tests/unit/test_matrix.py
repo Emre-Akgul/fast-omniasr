@@ -32,28 +32,38 @@ def test_every_supported_model_card_is_in_the_matrix():
 
 def test_pinned_models_match_the_scheduled_validation():
     thresholds = json.loads((ROOT / "benchmarks/fleurs/thresholds.json").read_text(encoding="utf-8"))
+    fixtures = json.loads((ROOT / "tests/fixtures/fleurs/manifest.json").read_text(encoding="utf-8"))
     for family, model in thresholds["models"].items():
         card = MATRIX["families"][family]["pinned"]
-        repo = model["repo"].split("/")[1]
         expected = card.replace("omniASR_", "omniASR-").replace("_", "-") + "-ONNX"
-        assert repo == expected, (family, repo, card)
+        assert model["repo"].split("/")[1] == expected, (family, model["repo"], card)
+        pinned = fixtures["models"][family]
+        assert pinned["repo"] == model["repo"], (family, pinned["repo"], model["repo"])
 
 
-VALID = {
-    ("ctc", "onnx"): {"cpu": {"fp32", "fp16"}, "cuda": {"fp32", "fp16", "bf16"}},
-    ("ctc", "tensorrt"): {"cuda": {"fp32", "fp16", "mixed"}},
-    ("llm", "onnx"): {"cpu": {"fp32", "fp16"}, "cuda": {"fp32", "fp16", "bf16"}},
-    ("llm", "torch"): {"cpu": {"fp32"}},
-}
+def _supported():
+    """Every (family, backend, device, precision) the code accepts, derived from the code."""
+    from fast_omniasr.precision import PRECISIONS, check_precision
+    from fast_omniasr.tensorrt_builder import PRECISIONS as ENGINE_PRECISIONS
+
+    supported = set()
+    for family in ("ctc", "llm"):
+        for device in ("cpu", "cuda"):
+            for precision in PRECISIONS:
+                try:
+                    check_precision(precision, device)
+                except ValueError:
+                    continue
+                supported.add((family, "onnx", device, precision))
+    supported |= {("ctc", "tensorrt", "cuda", p) for p in ENGINE_PRECISIONS}
+    supported.add(("llm", "torch", "cpu", "fp32"))  # the TorchScript reference: CPU fp32 only
+    return supported
 
 
 def test_configurations_are_exactly_the_supported_ones():
     listed = {(c["family"], c["backend"], c["device"], c["precision"])
               for c in MATRIX["configurations"]}
-    supported = {(family, backend, device, precision)
-                 for (family, backend), devices in VALID.items()
-                 for device, precisions in devices.items() for precision in precisions}
-    assert listed == supported
+    assert listed == _supported()
     assert len(listed) == len(MATRIX["configurations"])  # no duplicates
 
 
@@ -68,13 +78,29 @@ def test_tiers_are_defined_and_unit_covers_everything():
         assert tier["when"] and tier["runs"] and tier["command"]
 
 
-@pytest.mark.parametrize("path", ["tests/integration/test_real_models_cpu.py",
-                                  "tests/integration/test_tensorrt_fleurs.py",
-                                  "tools/fleurs_eval.py", "tools/evaluate_precisions.py",
-                                  "tools/publish_precisions.py", "tools/validate_llm_fairseq2.py"])
-def test_referenced_tests_and_tools_exist(path):
-    assert path in json.dumps(MATRIX)
-    assert (ROOT / path).is_file()
+def test_every_test_and_tool_the_matrix_names_exists():
+    import re
+
+    text = json.dumps(MATRIX)
+    paths = set(re.findall(r"(?:tools|tests/integration|tests/unit)/[\w/]+\.py", text))
+    assert {"tools/fleurs_eval.py", "tests/integration/test_real_models_cpu.py"} <= paths
+    missing = sorted(p for p in paths if not (ROOT / p).is_file())
+    assert not missing, missing
+
+
+def test_torch_backend_is_still_cpu_fp32_only():
+    from fast_omniasr.llm import OmniASRLLM
+
+    with pytest.raises(ValueError, match="precision='fp32' only"):
+        OmniASRLLM(ROOT, backend="torch", precision="fp16")
+
+
+def test_splice_rejects_missing_or_misordered_markers():
+    begin, end = matrix_tool.BEGIN, matrix_tool.END
+    assert matrix_tool.splice(f"a{begin}old{end}b", "T") == f"a{begin}\nT{end}b"
+    for document in ("no markers", f"{end}x{begin}", f"{begin}{begin}{end}"):
+        with pytest.raises(ValueError, match="exactly one"):
+            matrix_tool.splice(document, "T")
 
 
 def test_docs_are_generated_from_the_matrix():

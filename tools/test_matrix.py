@@ -36,10 +36,18 @@ def render(matrix) -> str:
         for row in rows:
             lines.append(f"| {row['backend']} | {row['device']} | {row['precision']} | "
                          f"{', '.join(row['pinned'])} | {', '.join(row['other'])} |")
+    opt_in = matrix.get("opt_in")
+    if opt_in:
+        lines += ["", "### Opt-in integration tests", "", opt_in["description"], ""]
+        lines += [f"- `{path}`: {what}" for path, what in opt_in["tests"].items()]
     return "\n".join(lines) + "\n"
 
 
 def splice(document: str, table: str) -> str:
+    """Replace the text between the markers, which must each appear once, in order."""
+    if document.count(BEGIN) != 1 or document.count(END) != 1 or (
+            document.index(BEGIN) > document.index(END)):
+        raise ValueError(f"{DOC} needs exactly one {BEGIN} followed by one {END}")
     start, end = document.index(BEGIN) + len(BEGIN), document.index(END)
     return document[:start] + "\n" + table + document[end:]
 
@@ -56,7 +64,11 @@ def main(argv=None):
         print(table, end="")
         return 0
     document = DOC.read_text(encoding="utf-8")
-    updated = splice(document, table)
+    try:
+        updated = splice(document, table)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
     if args.write:
         DOC.write_text(updated, encoding="utf-8")
         return 0

@@ -6,8 +6,9 @@ CUDA, and fp32/fp16/bf16 graphs (plus TensorRT's fp16 and `mixed` engines). Runn
 combination on every change would mean downloading and running hundreds of gigabytes of
 weights, so testing is tiered:
 
-- **unit** checks every configuration's code path on every change, with fakes and tiny
-  generated graphs.
+- **unit** checks argument validation, variant selection, downloads and backend wiring for
+  every configuration on every change, with fakes (and, for the LLM, tiny generated ONNX
+  graphs on CPU). It doesn't run real weights or a GPU.
 - **real-cpu** runs one pinned model per family end to end on hosted CPUs, on a schedule,
   for releases and for runtime changes.
 - **gpu** is the manual CUDA/TensorRT pass, since there is no hosted GPU runner.
@@ -20,19 +21,23 @@ releases. The source of truth is [`tests/matrix.json`](../tests/matrix.json); th
 below are generated from it (`python tools/test_matrix.py --write`), and a unit test keeps
 them, the model cards, backends and precisions consistent.
 
-Known gaps, by design of the tiers: CPU half-precision graphs are covered only by unit
-tests (the release reports measure precision agreement on CUDA), CTC exports have no
-release-time comparison against the source model yet (tracked separately), and TensorRT is
-tested only for the pinned CTC model.
+Known gaps, by design of the tiers:
+- CPU half-precision graphs are covered only by unit tests (the release reports measure
+  precision agreement on CUDA).
+- ONNX CUDA has no pass/fail gate for either family or any precision: its agreement, WER
+  and CER are reported, not checked against thresholds. Only TensorRT (CTC) is gated on GPU.
+- CTC exports have no release-time comparison against the source model yet (#53).
+- TensorRT is tested only for the pinned CTC model, and CTC on CUDA is never exercised by a
+  unit test.
 
 <!-- matrix:begin -->
 ### Tiers
 
 | tier | when | what runs | command |
 |---|---|---|---|
-| `unit` | every push and PR (Lint and CPU unit tests; Package) | pytest tests/unit, against fakes and tiny generated graphs; no real weights | `python -m pytest tests/unit` |
+| `unit` | every push and PR (Lint and CPU unit tests; Package) | pytest tests/unit: argument validation, variant selection, downloads and backend wiring for every configuration, against fakes; the llm-unit job also runs tiny generated LLM ONNX graphs on CPU (fp32, fp16); no real weights | `python -m pytest tests/unit` |
 | `real-cpu` | weekly, on each published release, on demand, and on PRs touching the runtime (Real-model CPU validation) | the pinned published model end to end on CPU (FLEURS fixtures, CER ceilings, determinism) plus the per-language FLEURS regression gate | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_cpu.py && python tools/fleurs_eval.py run --model {family} --gate` |
-| `gpu` | manually on a CUDA machine, before merging changes to GPU, precision, TensorRT or export code (no hosted GPU runner) | ONNX CUDA precision agreement and TensorRT engines of the pinned model on the FLEURS fixtures and gate | `python tools/evaluate_precisions.py --{family} <export> --device cuda --precision fp32 fp16 bf16 --dataset <eval.jsonl>; OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_tensorrt_fleurs.py; python tools/fleurs_eval.py run --model ctc --backend tensorrt --precision mixed --gate` |
+| `gpu` | manually on a CUDA machine, before merging changes to GPU, precision, TensorRT or export code (no hosted GPU runner) | TensorRT engines of the pinned CTC model on the FLEURS fixtures and gate; ONNX CUDA precision agreement, WER and CER on a dataset you supply (reported, not gated) | `python tools/evaluate_precisions.py --{family} <export> --device cuda --precision fp32 fp16 bf16 --dataset <eval.jsonl>; OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_tensorrt_fleurs.py; python tools/fleurs_eval.py run --model ctc --backend tensorrt --precision mixed --gate` |
 | `release` | once per model, when it is exported or republished | the precision-agreement report published in the model card (measured with CUDA; tools/publish_precisions.py); for LLMs, step-by-step fp32 logit parity with fairseq2 on CPU and CUDA (tools/validate_llm_fairseq2.py) | `python tools/evaluate_precisions.py --{family} <export> --device cuda --precision fp32 fp16 bf16 --audio <clips> --report <report>; python tools/publish_precisions.py {repo} <export> --report <report> [--upload]; for LLMs also python tools/validate_llm_fairseq2.py compare <reference> --directory <export> --device cpu|cuda` |
 
 ### CTC models
@@ -62,6 +67,17 @@ tested only for the pinned CTC model.
 | onnx | cuda | fp16 | unit, gpu, release | unit, release |
 | onnx | cuda | bf16 | unit, gpu, release | unit, release |
 | torch | cpu | fp32 | unit | unit |
+
+### Opt-in integration tests
+
+Integration tests outside the scheduled tiers, run locally when their inputs are set (see CONTRIBUTING):
+
+- `tests/integration/test_onnx.py`: a local CTC ONNX export (CPU or CUDA)
+- `tests/integration/test_tensorrt.py`: a local TensorRT engine and its profile
+- `tests/integration/test_tensorrt_from_pretrained.py`: TensorRT engines built from the Hub, default and custom profiles
+- `tests/integration/test_hub.py`: Hub download, offline reuse and checksum failure
+- `tests/integration/test_llm.py`: a local TorchScript LLM export (backend torch, CPU fp32)
+- `tests/integration/test_llm_cache_reference.py`: the TorchScript explicit KV cache against its fairseq2 reference
 <!-- matrix:end -->
 
 To run a tier for a model other than the pinned one, point the same commands at it: the
