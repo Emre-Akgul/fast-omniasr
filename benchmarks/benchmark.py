@@ -76,11 +76,35 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def model_files(path):
+    """sha256 of a model and every file it needs: an ONNX graph's external-data files
+    (e.g. fp16/model.onnx.data) are part of the model's identity."""
+    path = Path(path)
+    files = {path.name: sha256(path)}
+    if path.suffix == ".onnx":
+        from fast_omniasr._onnx_deps import graph_dependencies
+
+        for name in sorted(graph_dependencies(path.name, path)):
+            files[name] = sha256(path.parent / name)
+    return files
+
+
+def engine_precision(engine):
+    """The precision recorded beside a cached TensorRT engine (metadata.json), if any."""
+    try:
+        metadata = json.loads((Path(engine).parent / "metadata.json").read_text())
+    except (OSError, ValueError):
+        return None
+    key = metadata.get("key", metadata)
+    return key.get("precision") if isinstance(key, dict) else None
+
+
 def environment(device):
     info = {"python": platform.python_version(), "platform": platform.platform(),
             "machine": platform.machine(), "cpu_count": os.cpu_count(),
             "packages": versions()}
     if device == "cuda":
+        info["cuda_visible_devices"] = os.environ.get("CUDA_VISIBLE_DEVICES")
         try:
             out = subprocess.run(
                 ["nvidia-smi", "--query-gpu=name,driver_version,memory.total",
@@ -131,10 +155,13 @@ def load_model(args):
         if args.precision:
             options["precision"] = args.precision
         model = OmniASR(args.model, args.tokenizer, backend=args.backend, **options)
-        identity = {"model_path": str(args.model), "model_sha256": sha256(args.model),
-                    "tokenizer_path": str(args.tokenizer),
-                    "tokenizer_sha256": sha256(args.tokenizer)}
+        identity = None  # hashed by the caller, outside the timed load
     return model, identity
+
+
+def local_identity(args):
+    return {"model_path": str(args.model), "files_sha256": model_files(args.model),
+            "tokenizer_path": str(args.tokenizer), "tokenizer_sha256": sha256(args.tokenizer)}
 
 
 def run(args):
@@ -150,6 +177,8 @@ def run(args):
         start = time.perf_counter()
         model, identity = load_model(args)
         load = time.perf_counter() - start
+        if identity is None:
+            identity = local_identity(args)
         try:
             start = time.perf_counter()
             result = model.transcribe(args.audio)
@@ -178,7 +207,7 @@ def run(args):
         "model": identity,
         "backend": args.backend,
         "precision": args.precision or ("fp32" if args.backend == "onnx" or args.repo
-                                        else "from the engine"),
+                                        else engine_precision(args.model)),
         "device": device,
         "threads": threads,
         "audio": {"path": str(args.audio), "sha256": sha256(args.audio),
@@ -231,12 +260,26 @@ def parse_args(argv=None):
         parser.error("--backend tensorrt with --repo needs --precision (fp32, fp16 or mixed)")
     if args.backend == "tensorrt" and args.model and args.precision:
         parser.error("--precision: a local TensorRT engine carries its own precision")
+    allowed = {"onnx": ("fp32", "fp16", "bf16"), "tensorrt": ("fp32", "fp16", "mixed")}
+    if args.precision and args.precision not in allowed[args.backend]:
+        parser.error(f"--precision for {args.backend}: one of {', '.join(allowed[args.backend])}")
+    if args.precision == "bf16" and args.device != "cuda":
+        parser.error("--precision bf16 needs --device cuda")
+    if args.threads is not None and args.threads < 1:
+        parser.error("--threads must be positive")
+    if args.backend == "tensorrt" and (args.threads is not None or args.device == "cpu"):
+        parser.error("--backend tensorrt runs on the current CUDA device; drop --threads/--device")
+    if not args.audio.is_file():
+        parser.error(f"audio file not found: {args.audio}")
     return args
 
 
 def main(argv=None):
     args = parse_args(argv)
-    report = run(args)
+    try:
+        report = run(args)
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise SystemExit(f"error: {exc}") from exc
     text = json.dumps(report, indent=2, ensure_ascii=False)
     print(text)
     if args.output:

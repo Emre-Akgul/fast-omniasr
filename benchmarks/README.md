@@ -14,13 +14,18 @@ decoding. The JSON report (`report_version` 1) records everything needed to repr
 
 | field | contents |
 |---|---|
-| `model` | `repo`, `revision` and resolved `commit`, or local `model_path`/`model_sha256` and `tokenizer_path`/`tokenizer_sha256` |
-| `backend`, `precision`, `device`, `threads` | how it ran (`--precision` fp32/fp16/bf16 for ONNX; fp32/fp16/mixed for TensorRT with `--repo`; a local engine carries its own) |
+| `model` | `repo`, `revision` and resolved `commit`, or local `model_path`, `files_sha256` (the graph and every external-data file it references, e.g. `model.onnx.data`) and `tokenizer_path`/`tokenizer_sha256`; hashing happens outside the timed load |
+| `backend`, `precision`, `device`, `threads` | how it ran (`--precision` fp32/fp16/bf16 for ONNX; fp32/fp16/mixed for TensorRT with `--repo`; a local engine's precision is read from its cache `metadata.json`, else null) |
 | `audio` | path, sha256, duration, sample rate, channels |
 | `load_seconds`, `first_seconds` | model load and the first (cold) call |
 | `latency_seconds` | over `--runs` warm calls after `--warmup` unmeasured ones (default 2): mean, stdev, min, max, p50/p90/p95/p99, and the real-time factor `rtf_p50`/`rtf_mean` (seconds of compute per second of audio) |
 | `memory` | peak process RSS, and peak GPU memory sampled from nvidia-smi on CUDA |
-| `environment` | Python, platform, CPU count, versions of the relevant packages, and the GPU(s) on CUDA runs |
+| `environment` | Python, platform, CPU count, versions of the relevant packages, and on CUDA runs the GPUs and `CUDA_VISIBLE_DEVICES` |
+
+`load_seconds` and the peak memory figures cover model loading too. On a cold cache a
+`--repo` run therefore includes the download and, for TensorRT, the engine build (whose
+memory peak can exceed inference's); run twice and keep the second report for
+steady-state numbers.
 
 These times are not directly comparable to the forward-only exploratory TensorRT
 measurements in the main README.
