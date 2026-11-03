@@ -193,7 +193,7 @@ def test_half_precision_variant_is_validated(artifact, loaded):
     (artifact / "fp16").mkdir()
     (artifact / "fp16" / "encoder.onnx").write_bytes(_encoder())
     (artifact / "fp16" / "decoder.onnx").write_bytes(_decoder(_vocab(artifact), heads=4))
-    with pytest.raises(InvalidArtifactError, match="fp16/decoder.onnx: .*kv_heads 4"):
+    with pytest.raises(InvalidArtifactError, match=r"fp16[\\/]decoder.onnx: .*kv_heads 4"):
         OmniASRLLM(artifact, backend="onnx", precision="fp16")
 
 

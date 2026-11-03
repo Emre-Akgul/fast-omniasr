@@ -7,6 +7,9 @@ import threading
 import time
 from pathlib import Path
 
+# msvcrt.locking reports contention as EDEADLOCK, which only Windows and Linux define.
+_DEADLOCK = getattr(errno, "EDEADLOCK", errno.EDEADLK)
+
 _THREAD_LOCKS: dict[str, threading.Lock] = {}
 _THREAD_LOCKS_GUARD = threading.Lock()
 
@@ -59,7 +62,7 @@ def _msvcrt_locked(f):
             msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
             break
         except OSError as exc:  # LK_LOCK gives up after ~10 s of contention; keep waiting
-            if exc.errno not in (errno.EDEADLOCK, errno.EACCES):
+            if exc.errno not in (_DEADLOCK, errno.EACCES):
                 raise
             time.sleep(1)
     try:

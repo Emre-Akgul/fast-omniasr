@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import uuid
 import warnings
 from collections.abc import Callable
@@ -79,7 +80,7 @@ def _resolve_commit(repo_id: str, revision: str | None) -> tuple[str | None, str
 
 def _read_snapshot(local_dir: Path) -> dict:
     try:
-        record = json.loads((local_dir / SNAPSHOT_METADATA).read_text())
+        record = json.loads((local_dir / SNAPSHOT_METADATA).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return record if isinstance(record, dict) else {}
@@ -90,12 +91,25 @@ def _write_snapshot(local_dir: Path, record: dict) -> None:
     # A unique temporary name: concurrent writers must not replace each other's file.
     fd, tmp = tempfile.mkstemp(prefix=SNAPSHOT_METADATA + ".", dir=local_dir)
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(json.dumps(record, indent=2) + "\n")
-        os.replace(tmp, local_dir / SNAPSHOT_METADATA)
+        _replace(tmp, local_dir / SNAPSHOT_METADATA)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def _replace(source, target, attempts=50):
+    """os.replace, retried briefly on Windows, where replacing a file another process is
+    replacing (or has open) at the same moment fails with PermissionError."""
+    for attempt in range(attempts):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt == attempts - 1:
+                raise
+            time.sleep(0.01 * (attempt + 1))
 
 
 # The per-bundle lock (portable; see _locking.file_lock).
@@ -371,7 +385,7 @@ def _download(repo_id, required, revision, cache_dir, select, dependencies):
         try:
             config_path = Path(hf_hub_download(repo_id, "config.json", revision=pinned,
                                                local_dir=staging))
-            config = json.loads(config_path.read_text())
+            config = json.loads(config_path.read_text(encoding="utf-8"))
             wanted = _parse_config(config, required, select, dependencies)
             files = config["files"]
             carried = set()
@@ -427,7 +441,7 @@ def _reuse_published(local_dir: Path, record: dict, required,
         if recorded.get("commit") != record["commit"]:
             return None
     try:
-        config = json.loads(config_path.read_text())
+        config = json.loads(config_path.read_text(encoding="utf-8"))
         wanted = _parse_config(config, required, select, dependencies)
     except (ValueError, TypeError):
         return None
@@ -446,7 +460,7 @@ def _reuse_published(local_dir: Path, record: dict, required,
 def _diagnose(local_dir: Path, required, select, dependencies) -> tuple[list, list]:
     """(missing, damaged) file names of a cached bundle that failed reuse."""
     try:
-        config = json.loads((local_dir / "config.json").read_text())
+        config = json.loads((local_dir / "config.json").read_text(encoding="utf-8"))
         wanted = _parse_config(config, required, select, dependencies)
     except (OSError, ValueError, TypeError):
         return ["config.json"], []

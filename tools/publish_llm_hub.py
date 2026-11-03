@@ -38,13 +38,13 @@ PARITY_FILES = [
 
 
 def prepare_bundle(directory: Path) -> tuple[dict, list[Path], list[Path]]:
-    config = json.loads((directory / "config.json").read_text())
+    config = json.loads((directory / "config.json").read_text(encoding="utf-8"))
     if config.get("format_version") != 1 or config.get("model") not in LLM_MODEL_CARDS:
         raise ValueError("Unsupported LLM artifact format or model")
     if "languages" not in config:
         raise ValueError("Run tools/export_llm_languages.py before publishing")
     for name in ["encoder_fp64.json", "fairseq2_parity_cpu.json", "fairseq2_parity_cuda.json"]:
-        report = json.loads((directory / name).read_text())
+        report = json.loads((directory / name).read_text(encoding="utf-8"))
         if not report["passed"] or report["model"] != config["model"]:
             raise ValueError(f"{name} does not record a passing {config['model']} comparison")
     assets = [directory / name for name in RUNTIME_FILES]
@@ -69,7 +69,7 @@ def model_card(config: dict, repo_id: str, directory: Path) -> str:
     tokenizer = LLM_MODEL_TOKENIZERS[model]
     rows = []
     for device in ["cpu", "cuda"]:
-        report = json.loads((directory / f"fairseq2_parity_{device}.json").read_text())
+        report = json.loads((directory / f"fairseq2_parity_{device}.json").read_text(encoding="utf-8"))
         rows.append(
             f"| ONNX Runtime {device.upper()} | {len(report['clips'])} | {report['total_steps']} "
             f"| {report['max_logit_abs_error']:.3g} | yes |"
@@ -190,7 +190,7 @@ def main():
     config, assets, parity = prepare_bundle(args.directory)
     repo_id = f"{args.namespace}/{repo_name(config['model'])}"
     readme = args.directory / "README.md"
-    readme.write_text(model_card(config, repo_id, args.directory))
+    readme.write_text(model_card(config, repo_id, args.directory), encoding="utf-8")
     print(f"Prepared {repo_id}: {', '.join(path.name for path in assets)}")
     if not args.upload:
         print("Dry run only; pass --upload to create and publish the repository.")

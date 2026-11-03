@@ -226,7 +226,7 @@ class OmniASRLLM:
         if not hasattr(self, "_lang_embeddings"):
             with self._ensure_lock("_language_lock"):
                 if not hasattr(self, "_lang_embeddings"):  # loaded once, even concurrently
-                    mapping = json.loads((self.directory / languages["mapping"]).read_text())
+                    mapping = json.loads((self.directory / languages["mapping"]).read_text(encoding="utf-8"))
                     embeddings = np.load(self.directory / languages["embeddings"],
                                          mmap_mode="r")
                     self._languages = mapping

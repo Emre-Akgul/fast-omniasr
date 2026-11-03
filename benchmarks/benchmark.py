@@ -92,7 +92,7 @@ def model_files(path):
 def engine_precision(engine):
     """The precision recorded beside a cached TensorRT engine (metadata.json), if any."""
     try:
-        metadata = json.loads((Path(engine).parent / "metadata.json").read_text())
+        metadata = json.loads((Path(engine).parent / "metadata.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     key = metadata.get("key", metadata)

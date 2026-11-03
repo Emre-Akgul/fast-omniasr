@@ -40,10 +40,10 @@ def main():
     from fast_omniasr.audio import load_audio
     from fast_omniasr.llm import OmniASRLLM
 
-    reference = json.loads((args.directory / "reference.json").read_text())
+    reference = json.loads((args.directory / "reference.json").read_text(encoding="utf-8"))
     references = [reference]
     if args.cached or args.backend == "onnx":
-        suite = json.loads((args.directory / "cached_reference.json").read_text())
+        suite = json.loads((args.directory / "cached_reference.json").read_text(encoding="utf-8"))
         references.extend(suite["clips"][1:])
     model = OmniASRLLM(
         args.directory,

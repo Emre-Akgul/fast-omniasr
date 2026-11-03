@@ -250,9 +250,9 @@ def transcriber(model: str, repo: str, revision: str, cache_dir: Path | None,
 
 
 def evaluate(args) -> int:
-    manifest = json.loads(args.manifest.read_text())
+    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     validate_manifest(manifest)
-    thresholds = json.loads(args.thresholds.read_text())
+    thresholds = json.loads(args.thresholds.read_text(encoding="utf-8"))
     model = thresholds["models"][args.model]
     repo, revision = args.repo or model["repo"], args.revision or model["revision"]
     languages = args.languages or list(manifest["languages"])
@@ -300,7 +300,8 @@ def evaluate(args) -> int:
               "results": results, "failures": failures, "skipped_gated_languages": skipped,
               "hypotheses": details}
     if args.report:
-        args.report.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+        args.report.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+                               encoding="utf-8")
     for failure in failures:
         print(f"REGRESSION {failure}", file=sys.stderr)
     if skipped:
@@ -348,7 +349,8 @@ def main(argv=None) -> int:
                                       allow_patterns=patterns)) / "data"
     manifest = build_manifest(root, args.revision, args.per_language)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+    args.out.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8")
     print(f"wrote {args.out}: {sum(len(e['utterances']) for e in manifest['languages'].values())}"
           " utterances")
     return 0

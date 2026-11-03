@@ -291,7 +291,7 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
     with file_lock(root / f"{key}.lock"):
         if not rebuild and engine_path.exists() and metadata_path.exists():
             try:
-                cached = json.loads(metadata_path.read_text())
+                cached = json.loads(metadata_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 cached = None
             if isinstance(cached, dict):
@@ -331,7 +331,7 @@ def _engine_matches(engine_path: Path, recorded) -> bool:
 def recorded_engine_sha256(engine_path: str | Path) -> str | None:
     """The sha256 the cache recorded for this engine, if any."""
     try:
-        record = json.loads((Path(engine_path).parent / "metadata.json").read_text())
+        record = json.loads((Path(engine_path).parent / "metadata.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     engine = record.get("engine") if isinstance(record, dict) else None

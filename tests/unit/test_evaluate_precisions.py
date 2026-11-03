@@ -582,3 +582,14 @@ def test_main_isolated_report_has_peak_gpu_mib(tmp_path, monkeypatch):
     evaluate.main()
     results = json.loads(report.read_text())["precisions"]
     assert {p: r["peak_gpu_mib"] for p, r in results.items()} == {"fp32": 2048, "fp16": 1024}
+
+
+@pytest.mark.parametrize("spec, expected", [
+    ("clip.wav", ("clip.wav", "")),
+    ("clip.wav:eng_Latn", ("clip.wav", "eng_Latn")),
+    ("C:\\clips\\a.wav", ("C:\\clips\\a.wav", "")),          # Windows drive letter
+    ("C:\\clips\\a.wav:tur_Latn", ("C:\\clips\\a.wav", "tur_Latn")),
+    ("odd:name.wav", ("odd:name.wav", "")),                   # colon not followed by a code
+])
+def test_audio_specs_split_only_on_a_language_code(spec, expected):
+    assert evaluate._split_audio_spec(spec) == expected
