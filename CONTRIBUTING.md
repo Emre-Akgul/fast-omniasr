@@ -51,12 +51,17 @@ Exporting models additionally needs `fairseq2`/`omnilingual-asr` and `onnx`; see
 Unit tests must not need a GPU, model downloads or the network. Integration tests skip
 unless their inputs are provided:
 
-- `OMNIASR_ONNX`, `OMNIASR_TOKENIZER`, `OMNIASR_TEST_WAV`: a local ONNX export and a clip
-  (`test_onnx.py`)
-- `OMNIASR_TRT_FP32_ENGINE`: a TensorRT engine, with the tokenizer and clip above
-  (`test_tensorrt.py`)
-- `OMNIASR_TEST_WAV` alone, plus network access: `test_hub.py` and
-  `test_tensorrt_from_pretrained.py` download the published model
+- `OMNIASR_ONNX`, `OMNIASR_TOKENIZER`: a local ONNX export (`test_onnx.py`)
+- `OMNIASR_TRT_FP32_ENGINE`: a TensorRT engine, with the tokenizer above
+  (`test_tensorrt.py`); length checks follow the engine's own profile
+- `OMNIASR_HUB_TESTS=1`, plus network access: `test_hub.py` and
+  `test_tensorrt_from_pretrained.py` download the published model (the latter checks
+  both the default 400–480,000-sample profile and a custom one)
+- `OMNIASR_TEST_WAV` (optional): the clip; by default the committed English FLEURS clip.
+  Exact transcripts come from `tests/fixtures/integration_expectations.json` (matched by
+  the clip's sha256 and `<repo>@<commit>`); local assets declare their model with
+  `OMNIASR_TEST_MODEL`, and `OMNIASR_TEST_TRANSCRIPT` sets the expected text for any other
+  clip. Without a declared transcript, exact-text checks are skipped
 - `OMNIASR_REAL_MODELS=1`: download the pinned published models (`OMNIASR_CACHE_DIR` to
   choose the cache; `OMNIASR_CTC_REPO`/`OMNIASR_CTC_REVISION` and
   `OMNIASR_LLM_REPO`/`OMNIASR_LLM_REVISION` to test another repo or revision)
