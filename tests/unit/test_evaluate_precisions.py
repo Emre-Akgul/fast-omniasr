@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -267,7 +268,8 @@ def test_load_rows_applies_limit_then_validates(tmp_path):
     import argparse
 
     rows = [_row("a"), _row("b"), _row("a")]  # the duplicate falls outside --limit 2
-    args = argparse.Namespace(dataset=_dataset(tmp_path, rows), audio=None, limit=2)
+    args = argparse.Namespace(dataset=_dataset(tmp_path, rows), audio=None, limit=2,
+                              trust_pickle=True)
     assert [r["id"] for r in evaluate.load_rows(args)] == ["a", "b"]
     args.limit = None
     with pytest.raises(ValueError, match="duplicate ids"):
@@ -304,7 +306,7 @@ def test_cli_reports_bad_inputs_without_a_traceback(tmp_path, monkeypatch):
 
     path = _dataset(tmp_path, [])
     monkeypatch.setattr(sys, "argv", ["evaluate_precisions.py", "--ctc", "x",
-                                      "--dataset", str(path)])
+                                      "--dataset", str(path), "--trust-pickle"])
     with pytest.raises(SystemExit, match="^error: no evaluation inputs"):
         evaluate.main()
 
@@ -312,7 +314,8 @@ def test_cli_reports_bad_inputs_without_a_traceback(tmp_path, monkeypatch):
 def test_load_rows_rejects_non_list_pickles(tmp_path):
     import argparse
 
-    args = argparse.Namespace(dataset=_dataset(tmp_path, {"a": 1}), audio=None, limit=None)
+    args = argparse.Namespace(dataset=_dataset(tmp_path, {"a": 1}), audio=None, limit=None,
+                              trust_pickle=True)
     with pytest.raises(TypeError, match="must contain a list"):
         evaluate.load_rows(args)
 
@@ -347,4 +350,87 @@ def test_cli_rejects_duplicate_precisions(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["evaluate_precisions.py", "--ctc", "x", "--audio", "a.wav",
                                       "--precision", "fp32", "fp16", "fp16"])
     with pytest.raises(SystemExit, match="lists a precision twice"):
+        evaluate.main()
+
+
+
+# --- JSONL manifests replace pickle datasets (issue #24) ---
+
+def _manifest(tmp_path, entries, name="eval.jsonl"):
+    path = tmp_path / name
+    path.write_text("\n".join(json.dumps(e) if not isinstance(e, str) else e
+                              for e in entries) + "\n", encoding="utf-8")
+    return path
+
+
+def _audio_files(tmp_path):
+    import numpy as np
+    import soundfile as sf
+
+    (tmp_path / "clips").mkdir()
+    rng = np.random.default_rng(1)
+    flac = rng.standard_normal(16000).astype("float32") * 0.1
+    sf.write(tmp_path / "clips" / "a.flac", flac, 16000)
+    npy = rng.standard_normal(8000).astype("float32")
+    np.save(tmp_path / "clips" / "b.npy", npy)
+    return flac, npy
+
+
+def test_manifest_rows_resolve_audio_relative_to_the_manifest(tmp_path):
+    import argparse
+
+    import numpy as np
+
+    flac, npy = _audio_files(tmp_path)
+    path = _manifest(tmp_path, [
+        {"id": "a", "audio": "clips/a.flac", "ref": "Hello there.", "lang": "eng_Latn"},
+        "",
+        {"id": "b", "audio": "clips/b.npy", "ref": None},
+    ])
+    rows = evaluate.load_rows(argparse.Namespace(dataset=path, audio=None, limit=None))
+    assert [r["id"] for r in rows] == ["a", "b"]
+    assert rows[0]["lang"] == "eng_Latn" and rows[0]["sample_rate"] == 16000
+    np.testing.assert_allclose(rows[0]["wav"], flac, atol=1e-4)  # FLAC is 16-bit
+    np.testing.assert_array_equal(rows[1]["wav"], npy)
+    assert rows[1]["ref"] is None  # silence
+
+
+def test_manifest_limit_stops_reading_early(tmp_path):
+    import argparse
+
+    _audio_files(tmp_path)
+    path = _manifest(tmp_path, [{"id": "a", "audio": "clips/a.flac", "ref": "x"},
+                                {"id": "b", "audio": "missing.flac", "ref": "y"}])
+    rows = evaluate.load_rows(argparse.Namespace(dataset=path, audio=None, limit=1))
+    assert [r["id"] for r in rows] == ["a"]
+
+
+@pytest.mark.parametrize("line, message", [
+    ("{not json", r"eval.jsonl:1: invalid JSON"),
+    ({"id": "a", "ref": "x"}, "needs at least 'id' and 'audio'"),
+    ({"id": "a", "audio": "clips/a.flac", "ref": "x", "wav": [1]}, r"unknown keys \['wav'\]"),
+    ({"id": "a", "audio": "clips/a.flac", "ref": "x", "sample_rate": 8000}, "disagrees"),
+])
+def test_manifest_errors_name_the_line(tmp_path, line, message):
+    _audio_files(tmp_path)
+    with pytest.raises(ValueError, match=message):
+        evaluate.read_manifest(_manifest(tmp_path, [line]))
+
+
+def test_manifest_npy_arrays_are_loaded_without_pickle(tmp_path):
+    import numpy as np
+
+    (tmp_path / "evil.npy").write_bytes(b"")
+    np.save(tmp_path / "evil.npy", np.array([{"a": 1}], dtype=object), allow_pickle=True)
+    with pytest.raises(ValueError, match="allow_pickle"):
+        evaluate.read_manifest(_manifest(tmp_path, [{"id": "x", "audio": "evil.npy"}]))
+
+
+def test_pickle_datasets_need_explicit_trust(tmp_path, monkeypatch):
+    import sys
+
+    path = _dataset(tmp_path, [_row("a")])
+    monkeypatch.setattr(sys, "argv", ["evaluate_precisions.py", "--ctc", "x",
+                                      "--dataset", str(path)])
+    with pytest.raises(SystemExit, match="can run arbitrary code.*--trust-pickle"):
         evaluate.main()

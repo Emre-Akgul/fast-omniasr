@@ -2,8 +2,15 @@
 
 For each precision this reports how many transcripts are identical to the fp32 ones,
 the decode time and the process's peak GPU memory. Inputs are audio files (agreement
-only) or a labelled pickle of [{"id", "ref", "wav"}] with mono 16 kHz float32 waveforms,
-which adds WER and CER after Unicode normalization, lowercasing and punctuation removal.
+only) or a labelled dataset, which adds WER and CER after Unicode normalization,
+lowercasing and punctuation removal. A dataset is a JSONL manifest, one object per line:
+
+  {"id": "en-001", "audio": "clips/en-001.flac", "ref": "Hello there.", "lang": "eng_Latn"}
+
+`audio` is a sound file or a `.npy` array (loaded without pickle; give "sample_rate" if it
+isn't 16000), relative to the manifest's directory; `ref` may be null for silence and
+`lang` is optional. Pickled datasets ([{"id", "ref", "wav"}]) can run arbitrary code when
+loaded, so they are only read with --trust-pickle.
 Utterances whose normalized reference is empty (silence, noise) are kept: any words
 emitted for them count as insertions, and they are also summarized separately.
 LLM inputs given as `clip.wav:eng_Latn` are transcribed with that language code.
@@ -14,6 +21,7 @@ and flagged on stderr, since they are not comparable with complete ones.
   python tools/evaluate_precisions.py --llm /path/to/llm-export \\
       --audio en.wav en.wav:eng_Latn tr.wav:tur_Latn --report precision.json
   python tools/evaluate_precisions.py --ctc /path/to/ctc-export --audio en.wav tr.wav
+  python tools/evaluate_precisions.py --ctc /path/to/ctc-export --dataset eval.jsonl
 """
 
 import argparse
@@ -143,13 +151,64 @@ def validate_rows(rows, labelled, max_seconds=None):
     return rows
 
 
+_MANIFEST_KEYS = {"id", "audio", "ref", "lang", "sample_rate"}
+
+
+def read_manifest(path, limit=None):
+    """Rows from a JSONL manifest; audio is read from files (sound files, or .npy arrays
+    loaded with allow_pickle=False) resolved against the manifest's directory."""
+    import numpy as np
+    import soundfile as sf
+
+    rows = []
+    with Path(path).open(encoding="utf-8") as f:
+        for number, line in enumerate(f, 1):
+            if limit is not None and len(rows) == limit:
+                break
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{path}:{number}: invalid JSON ({exc.msg})") from exc
+            if not isinstance(entry, dict) or not {"id", "audio"} <= entry.keys():
+                raise ValueError(f"{path}:{number}: each line needs at least 'id' and 'audio'")
+            unknown = entry.keys() - _MANIFEST_KEYS
+            if unknown:
+                raise ValueError(f"{path}:{number}: unknown keys {sorted(unknown)}")
+            audio = Path(path).parent / entry["audio"]
+            if audio.suffix == ".npy":
+                waveform = np.load(audio, allow_pickle=False)
+                sample_rate = entry.get("sample_rate", 16000)
+            else:
+                waveform, sample_rate = sf.read(audio, dtype="float32")
+                if entry.get("sample_rate") not in (None, sample_rate):
+                    raise ValueError(f"{path}:{number}: sample_rate {entry['sample_rate']} "
+                                     f"disagrees with {audio.name} ({sample_rate} Hz)")
+            row = {"id": entry["id"], "wav": waveform, "sample_rate": sample_rate,
+                   "lang": entry.get("lang")}
+            if "ref" in entry:
+                row["ref"] = entry["ref"]
+            rows.append(row)
+    return rows
+
+
 def load_rows(args):
     max_seconds = LLM_MAX_SECONDS if getattr(args, "llm", None) else None
     if args.dataset:
-        rows = pickle.loads(args.dataset.read_bytes())
-        if not isinstance(rows, (list, tuple)):
-            raise TypeError(f"{args.dataset} must contain a list of rows")
-        return validate_rows(rows[: args.limit], labelled=True, max_seconds=max_seconds)
+        if args.dataset.suffix in (".pkl", ".pickle"):
+            if not getattr(args, "trust_pickle", False):
+                raise ValueError(
+                    f"{args.dataset} is a pickle, which can run arbitrary code when loaded; "
+                    "convert it to a JSONL manifest, or pass --trust-pickle if you trust it"
+                )
+            rows = pickle.loads(args.dataset.read_bytes())
+            if not isinstance(rows, (list, tuple)):
+                raise TypeError(f"{args.dataset} must contain a list of rows")
+            rows = rows[: args.limit]
+        else:
+            rows = read_manifest(args.dataset, args.limit)
+        return validate_rows(rows, labelled=True, max_seconds=max_seconds)
     import soundfile as sf
 
     rows = []
@@ -198,7 +257,10 @@ def main():
     source.add_argument("--ctc", type=Path, help="CTC export directory (model.onnx, tokenizer.model)")
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--audio", nargs="+", help="Audio files, optionally `path:lang_code`")
-    inputs.add_argument("--dataset", type=Path, help="Labelled pickle (adds WER/CER)")
+    inputs.add_argument("--dataset", type=Path,
+                        help="Labelled JSONL manifest (adds WER/CER); see the module docstring")
+    parser.add_argument("--trust-pickle", action="store_true",
+                        help="allow a .pkl --dataset (unpickling can run arbitrary code)")
     parser.add_argument("--lang", help="Default LLM language code (default: none)")
     parser.add_argument("--precision", nargs="+", choices=["fp32", "fp16", "bf16"],
                         default=["fp32", "fp16", "bf16"])
