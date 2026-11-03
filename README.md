@@ -46,6 +46,21 @@ print(model.transcribe("speech.wav").text)
 
 `from_pretrained` downloads `model.onnx`/`tokenizer.model` via `huggingface_hub` (requires the `hub` extra), verifies each against the sha256 in the repo's `config.json`, and stores them as regular files under `~/.cache/fast-omniasr/hub` (or `cache_dir`) — later calls (even fully offline, e.g. `HF_HUB_OFFLINE=1`) reuse them. Regular files are required because ONNX Runtime 1.31+ rejects external tensor data reached through the Hugging Face cache's symlinks. A branch or tag is resolved to one commit for the whole download. Each repo revision's bundle is assembled in a staging directory and swapped in under a cross-process lock, so concurrent loaders of the same bundle download it once and an interrupted or failed download leaves the previously published bundle intact. Files are opened after `from_pretrained` returns, so a process that loads while another publishes a newer commit can still briefly race that swap.
 
+Offline use and the cache:
+
+```python
+from fast_omniasr import OmniASR, hub
+
+model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", local_files_only=True)
+print(model.snapshot)  # Snapshot(repo_id=..., revision='main', commit='6c1096d…', path=...)
+
+for bundle in hub.list_cached():  # every downloaded repo revision, with commit and size
+    print(bundle.repo_id, bundle.revision, bundle.commit, bundle.size_bytes)
+hub.delete_cached("EmreAkgul/omniASR-CTC-300M-v2-ONNX")  # "main"; or a revision, or all_revisions=True
+```
+
+`local_files_only=True` (on `OmniASR.from_pretrained` and `OmniASRLLM.from_pretrained`) never contacts the Hub: it verifies and loads the cached copy of the revision (for a branch or tag, the commit recorded when it was downloaded) or raises `hub.LocalBundleNotFoundError` saying which files are missing (e.g. another precision was downloaded) or fail verification. It also works on a read-only cache. `model.snapshot` records the repo, the requested revision, the commit it resolved to and the local directory. `delete_cached` takes the same lock as downloads, so it never removes a bundle mid-download. Download failures leave the cache unchanged; a checksum mismatch names the `delete_cached` call that clears a damaged copy. These helpers live in `fast_omniasr.hub`.
+
 ### Precision (fp32, fp16, bf16)
 
 Every published model — CTC and LLM — ships float32 graphs plus `fp16/` and `bf16/`

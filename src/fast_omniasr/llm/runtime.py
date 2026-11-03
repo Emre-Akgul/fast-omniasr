@@ -56,6 +56,8 @@ class OmniASRLLM:
     don't call its methods directly while the model is in use.
     """
 
+    snapshot = None  # set by from_pretrained: where the assets came from (hub.Snapshot)
+
     def __init__(
         self,
         directory: str | Path,
@@ -145,6 +147,7 @@ class OmniASRLLM:
         precision: str = "fp32",
         revision: str | None = None,
         cache_dir: str | Path | None = None,
+        local_files_only: bool = False,
     ) -> "OmniASRLLM":
         """Download, verify and load published ONNX assets (no PyTorch needed).
 
@@ -160,27 +163,35 @@ class OmniASRLLM:
         precision="fp16" or "bf16" downloads only that variant (MatMul weights in half
         precision, about half the size) plus the shared tokenizer and language tables.
         bf16 needs device="cuda" and an Ampere or newer GPU.
+
+        `local_files_only=True` loads the cached copy without contacting the Hub (raising
+        fast_omniasr.hub.LocalBundleNotFoundError if there is none). The returned model's
+        `snapshot` records the repo, revision, resolved commit and local directory.
         """
         check_device(device)
         threads = resolve_threads(threads)
         check_flag("low_memory", low_memory)
+        check_flag("local_files_only", local_files_only)
         from ..hub import download_verified
         from ..precision import check_precision
 
         check_precision(precision, device)
         if precision != "fp32":
             required = {f"{precision}/encoder.onnx", f"{precision}/decoder.onnx", "tokenizer.model"}
-            _, verified = download_verified(
+            _, verified, snapshot = download_verified(
                 repo_id, lambda config: required | _language_files(config), revision=revision,
-                cache_dir=cache_dir, dependencies=True,
+                cache_dir=cache_dir, dependencies=True, local_files_only=local_files_only,
+                return_snapshot=True,
             )
             directory = verified["tokenizer.model"].parent
             if any(verified[name].parent != directory / precision for name in required - {"tokenizer.model"}):
                 raise RuntimeError("Downloaded assets are not co-located in one snapshot")
-            return cls(
+            model = cls(
                 directory, backend="onnx", device=device, threads=threads,
                 low_memory=low_memory, precision=precision,
             )
+            model.snapshot = snapshot
+            return model
         required = {"encoder.onnx", "decoder.weights", "decoder_weights.json", "tokenizer.model"}
 
         def fp32_files(config):
@@ -190,8 +201,9 @@ class OmniASRLLM:
                 "decoder_prefill.onnx", "decoder_step.onnx"} & listed.keys()
             return required | graphs | _language_files(config)
 
-        _, verified = download_verified(
-            repo_id, fp32_files, revision=revision, cache_dir=cache_dir, dependencies=True
+        _, verified, snapshot = download_verified(
+            repo_id, fp32_files, revision=revision, cache_dir=cache_dir, dependencies=True,
+            local_files_only=local_files_only, return_snapshot=True,
         )
         # decoder.onnx (one session) is preferred; older repos ship only prefill/step graphs.
         graphs = {"decoder.onnx"} & verified.keys() or {"decoder_prefill.onnx", "decoder_step.onnx"}
@@ -200,9 +212,11 @@ class OmniASRLLM:
         directory = verified["encoder.onnx"].parent
         if any(verified[name].parent != directory for name in required | graphs):
             raise RuntimeError("Downloaded assets are not co-located in one snapshot")
-        return cls(
+        model = cls(
             directory, backend="onnx", device=device, threads=threads, low_memory=low_memory
         )
+        model.snapshot = snapshot
+        return model
 
     def language_embedding(self, lang: str) -> np.ndarray:
         """Return the learned embedding row for an upstream code such as eng_Latn."""

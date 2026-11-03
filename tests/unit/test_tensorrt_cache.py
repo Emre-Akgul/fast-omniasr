@@ -589,7 +589,8 @@ def _from_pretrained_with(monkeypatch, tmp_path, failures):
     from fast_omniasr import OmniASR, hub, model
 
     monkeypatch.setattr(hub, "download_verified", lambda *a, **k: (
-        {}, {"model.onnx": tmp_path / "m.onnx", "tokenizer.model": tmp_path / "t.model"}))
+        {}, {"model.onnx": tmp_path / "m.onnx", "tokenizer.model": tmp_path / "t.model"},
+        *((None,) if k.get("return_snapshot") else ())))
     rebuilds = []
 
     def fake_cache(onnx_path, **kwargs):
