@@ -59,7 +59,7 @@ reports total latency and the mean latency of the final five steps. Attention st
 and this first implementation concatenates K/V tensors; cached decoding is not
 constant-time or allocation-free.
 
-Measured on an Intel Core i7-11800H with four CPU threads, float32, and three
+Measured on a laptop CPU with four threads, float32, and three
 warm repetitions ([raw measurements](llm_300m_v2_cache_scaling.json)):
 
 | Output steps | Full-prefix seconds | Cached seconds | Speedup |
@@ -109,6 +109,13 @@ pytest tests/integration/test_llm_cache_reference.py -q
 ```
 
 ## ONNX LLM cache (CPU and CUDA)
+
+> These measurements are of the first ONNX implementation: separate prefill and step
+> graphs with the K/V cache passed through host memory, as `tools/benchmark_llm_onnx.py`
+> still loads them. The current runtime uses one unified decoder and keeps the cache on
+> the GPU (see the [README](../README.md#llm-asr-models) and the
+> [LLM export history](../docs/llm-export-history.md)), so these CUDA numbers are not its
+> current performance.
 
 Day 3 keeps the Day 2 TorchScript files frozen and exports three ONNX graphs.
 The decoder graphs share one external weight file; their K/V tensors remain
@@ -165,8 +172,8 @@ peak RSS, sampled CUDA process memory, and the theoretical float32 cache bytes a
 100 positions are recorded. Cache concatenation and CPU-owned cache transfers are
 part of the measured implementation.
 
-Measured with four CPU threads on an Intel Core i7-11800H and, for CUDA, an RTX
-3060 Laptop GPU with 6 GiB. Values are medians of three measured runs after one
+Measured with four CPU threads on a laptop CPU and, for CUDA, a consumer laptop GPU
+with 6 GiB. Values are medians of three measured runs after one
 warmup:
 
 | Backend | 10 positions | 25 positions | 50 positions | 100 positions |
