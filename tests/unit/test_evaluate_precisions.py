@@ -114,7 +114,7 @@ def _fake_llm_main(monkeypatch, tmp_path, reasons_by_precision):
     report = tmp_path / "report.json"
     monkeypatch.setattr(sys, "argv", [
         "evaluate_precisions.py", "--llm", str(tmp_path), "--audio", "x.wav",
-        "--precision", *reasons_by_precision, "--report", str(report),
+        "--precision", *reasons_by_precision, "--report", str(report), "--no-isolate",
     ])
     evaluate.main()
     return json.loads(report.read_text())
@@ -479,3 +479,106 @@ def test_non_string_lang_is_rejected_before_any_model_loads():
     row = {**_row("a"), "lang": 5}
     with pytest.raises(ValueError, match="non-string 'lang'"):
         evaluate.validate_rows([row], labelled=True)
+
+
+
+# --- peak GPU memory is sampled during each run, per process (issue #21) ---
+
+def test_sampler_records_the_peak_seen_while_running():
+    import time
+
+    readings = iter([100, 900, 2500, 1200, 1100] + [1000] * 1000)
+    with evaluate.GpuMemorySampler(interval=0.001, query=lambda: next(readings)) as memory:
+        time.sleep(0.05)
+    assert memory.peak == 2500  # not the 1000 a single post-run sample would report
+
+
+def test_sampler_without_nvidia_smi_reports_none():
+    with evaluate.GpuMemorySampler(interval=0.001, query=lambda: None) as memory:
+        pass
+    assert memory.peak is None
+
+
+def test_run_precision_covers_load_warmup_and_transcription(monkeypatch):
+    import argparse
+
+    import numpy as np
+
+    usage = {"now": 50}
+
+    def fake_transcriber(args, precision):
+        usage["now"] = 3000  # weights loaded: the peak happens here, before any timing
+        def run(row):
+            return "text", None
+        return run
+
+    monkeypatch.setattr(evaluate, "transcriber", fake_transcriber)
+    monkeypatch.setattr(evaluate.shutil, "which", lambda name: None)  # runner without a GPU
+    monkeypatch.setattr(evaluate, "gpu_mib", lambda pid=None: usage["now"])
+    rows = [{"id": "a", "wav": np.zeros(1600, np.float32)}]
+    measured = evaluate.run_precision(argparse.Namespace(), "fp32", rows)
+    assert measured["texts"] == ["text"] and measured["peak_gpu_mib"] == 3000
+
+
+def test_gpu_mib_handles_a_missing_nvidia_smi(monkeypatch):
+    def missing(*args, **kwargs):
+        raise FileNotFoundError("nvidia-smi")
+
+    monkeypatch.setattr(evaluate.subprocess, "run", missing)
+    assert evaluate.gpu_mib() is None
+
+
+def test_run_in_fresh_process_uses_another_process():
+    import os
+
+    assert evaluate.run_in_fresh_process(os.getpid) != os.getpid()
+
+
+
+def _fake_smi(monkeypatch, stdout):
+    import subprocess
+
+    monkeypatch.setattr(evaluate.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
+        a, 0, stdout=stdout))
+
+
+def test_gpu_mib_skips_unparsable_rows(monkeypatch):
+    import os
+
+    _fake_smi(monkeypatch, f"{os.getpid()}, [N/A]\n{os.getpid()}, 300\n7, 9000\n")
+    assert evaluate.gpu_mib() == 300
+
+
+def test_gpu_mib_is_none_when_the_process_is_not_listed(monkeypatch):
+    _fake_smi(monkeypatch, "7, 9000\n")  # CPU-only run, or another PID namespace
+    assert evaluate.gpu_mib() is None
+    _fake_smi(monkeypatch, "")
+    assert evaluate.gpu_mib() is None
+
+
+def test_sampler_keeps_polling_after_a_failed_reading():
+    import time
+
+    readings = iter([100, None, None, 4000] + [500] * 1000)
+    with evaluate.GpuMemorySampler(interval=0.001, query=lambda: next(readings)) as memory:
+        time.sleep(0.05)
+    assert memory.peak == 4000
+
+
+def test_main_isolated_report_has_peak_gpu_mib(tmp_path, monkeypatch):
+    import sys
+
+    def fake_fresh_process(function, args, precision, rows):
+        assert function is evaluate.run_precision
+        return {"texts": ["a"] * len(rows), "reasons": [None] * len(rows), "seconds": 0.5,
+                "peak_gpu_mib": {"fp32": 2048, "fp16": 1024}[precision]}
+
+    monkeypatch.setattr(evaluate, "run_in_fresh_process", fake_fresh_process)
+    _audio_files(tmp_path)
+    report = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", ["evaluate_precisions.py", "--ctc", "x", "--precision",
+                                      "fp32", "fp16", "--audio", str(tmp_path / "clips/a.flac"),
+                                      "--report", str(report)])
+    evaluate.main()
+    results = json.loads(report.read_text())["precisions"]
+    assert {p: r["peak_gpu_mib"] for p, r in results.items()} == {"fp32": 2048, "fp16": 1024}
