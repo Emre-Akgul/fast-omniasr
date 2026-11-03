@@ -84,7 +84,7 @@ def precision_section(llm, repo_id, report):
 `from_pretrained(..., precision=...)` downloads only the requested variant (plus the shared
 tokenizer) and needs fast-omniasr 0.3.0 or newer.
 
-| `precision` | Devices | Files | GPU memory (resident, CUDA) | Transcripts vs fp32 |
+| `precision` | Devices | Files | Peak GPU memory (CUDA) | Transcripts vs fp32 |
 |---|---|---|---:|---:|
 {chr(10).join(rows)}
 
