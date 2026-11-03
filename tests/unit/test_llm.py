@@ -75,7 +75,7 @@ def test_nonfinite_logits_rejected():
 
 def test_artifact_model_guard(tmp_path):
     (tmp_path / "config.json").write_text(json.dumps({"format_version": 1, "model": "CTC"}))
-    with pytest.raises(ValueError, match="Unsupported"):
+    with pytest.raises(ValueError, match="unsupported model"):
         OmniASRLLM(tmp_path)
 
 
