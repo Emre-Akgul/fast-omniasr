@@ -95,7 +95,7 @@ result = model.transcribe_numpy(waveform, sample_rate=16000)  # or from a NumPy 
 
 Audio must be mono, 16 kHz, at least 400 samples.
 
-The tokenizer must be the one the graph was exported with. On load, the model's output vocabulary has to match the tokenizer's size. Graphs exported by `export_onnx.py` also record the tokenizer's sha256 in their ONNX metadata, so a different tokenizer of the same size is rejected too. Older exports can be stamped in place with `python tools/stamp_tokenizer.py model.onnx fp16/model.onnx --tokenizer tokenizer.model`; fp16/bf16 variants made by `tools/convert_precision.py` keep the stamp. A TensorRT engine carries no metadata, so a local engine gets the vocabulary-size check only; `from_pretrained(backend="tensorrt")` checks the ONNX graph before building the engine.
+The tokenizer must be the one the graph was exported with. On load, the model's output vocabulary has to match the tokenizer's size. Graphs exported by `export_onnx.py` also record the tokenizer's sha256 in their ONNX metadata, so a different tokenizer of the same size is rejected too. Older exports can be stamped in place with `python tools/stamp_tokenizer.py model.onnx fp16/model.onnx --tokenizer tokenizer.model`; fp16/bf16 variants made by `tools/convert_precision.py` keep the stamp. Stamping changes the graph file, so a published repo needs its `config.json` checksums regenerated (republish it). The check compares the exact tokenizer file bytes. A TensorRT engine carries no metadata, so a local engine gets the vocabulary-size check only; `from_pretrained(backend="tensorrt")` checks the ONNX graph before building the engine.
 
 <details>
 <summary>TensorRT backend</summary>

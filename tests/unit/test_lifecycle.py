@@ -312,4 +312,6 @@ def test_omniasr_closes_backend_if_tokenizer_fails(fake_ort, monkeypatch):
     monkeypatch.setattr(model_module, "Tokenizer", broken_tokenizer)
     with pytest.raises(OSError, match="tokenizer missing"):
         OmniASR("model.onnx", "tokenizer.model", backend="onnx")
-    assert created and created[0].closed
+    # The tokenizer loads first, so a broken one fails before any session exists; a
+    # failure after the session loads closes it (test_tokenizer_compat).
+    assert created == []

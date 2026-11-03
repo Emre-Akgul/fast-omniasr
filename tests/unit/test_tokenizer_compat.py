@@ -68,14 +68,14 @@ def test_matching_pair_passes(tmp_path, tokenizers):
 
 def test_output_size_mismatch_is_rejected(tokenizers):
     tokenizer = Tokenizer(tokenizers["big"])
-    with pytest.raises(ValueError, match="outputs 36 classes but the tokenizer big.model has"):
+    with pytest.raises(ValueError, match="outputs 36 classes but the tokenizer .*big.model has"):
         check_compatible(tokenizer, vocabulary_size=36)
 
 
 def test_same_size_but_different_tokenizer_is_rejected(tmp_path, tokenizers):
     graph = _stamped(tmp_path, tokenizers["a"])
     other = Tokenizer(tokenizers["b"])  # same vocabulary size: only the hash tells them apart
-    with pytest.raises(ValueError, match="b.model is not the tokenizer model.onnx was exported"):
+    with pytest.raises(ValueError, match="b.model is not the tokenizer .*model.onnx was exported"):
         check_compatible(other, vocabulary_size=other.vocabulary_size, graph_path=graph)
 
 
@@ -105,9 +105,13 @@ def test_omniasr_rejects_a_mismatched_tokenizer_and_closes_the_backend(
     monkeypatch.setitem(sys.modules, "fast_omniasr.backends.onnx",
                         types.SimpleNamespace(ONNXBackend=Backend))
     graph = _stamped(tmp_path, tokenizers["a"])
+    created = []
+    real_backend = Backend.__init__
+    monkeypatch.setattr(Backend, "__init__", lambda self, path, **kw: (
+        created.append(path), real_backend(self, path, **kw))[-1])
     with pytest.raises(ValueError, match="not the tokenizer"):
         model_module.OmniASR(graph, tokenizers["b"])
-    assert closed == [True]
+    assert created == []  # rejected from metadata before the graph was loaded
     model_module.OmniASR(graph, tokenizers["a"])  # the right tokenizer loads
 
 
@@ -163,3 +167,22 @@ def test_stamp_tool_writes_metadata_and_keeps_external_data(tmp_path, tokenizers
     check_compatible(Tokenizer(tokenizers["a"]), graph_path=path)
     with pytest.raises(ValueError, match="outputs .* classes but the tokenizer has"):
         tool.stamp(path, tokenizers["big"])
+
+
+def test_size_mismatch_closes_the_loaded_backend(tmp_path, tokenizers, monkeypatch):
+    closed = []
+
+    class Backend:
+        vocabulary_size = 999
+
+        def __init__(self, path, **kwargs):
+            pass
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setitem(sys.modules, "fast_omniasr.backends.onnx",
+                        types.SimpleNamespace(ONNXBackend=Backend))
+    with pytest.raises(ValueError, match="outputs 999 classes"):
+        model_module.OmniASR(_graph(tmp_path), tokenizers["a"])
+    assert closed == [True]

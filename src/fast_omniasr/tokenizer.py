@@ -36,7 +36,7 @@ def check_compatible(tokenizer: Tokenizer, *, vocabulary_size: int | None = None
     if vocabulary_size is not None and vocabulary_size != tokenizer.vocabulary_size:
         raise ValueError(
             f"The model outputs {vocabulary_size} classes but the tokenizer "
-            f"{tokenizer.path.name} has {tokenizer.vocabulary_size} entries; use the "
+            f"{tokenizer.path} has {tokenizer.vocabulary_size} entries; use the "
             "tokenizer.model exported with this graph"
         )
     if graph_path is None:
@@ -47,12 +47,13 @@ def check_compatible(tokenizer: Tokenizer, *, vocabulary_size: int | None = None
     recorded_size = metadata.get(VOCABULARY_SIZE_KEY)
     if recorded_size is not None and recorded_size != str(tokenizer.vocabulary_size):
         raise ValueError(
-            f"{Path(graph_path).name} was exported for a {recorded_size}-entry tokenizer, "
-            f"but {tokenizer.path.name} has {tokenizer.vocabulary_size} entries"
+            f"{graph_path} was exported for a {recorded_size}-entry tokenizer, "
+            f"but {tokenizer.path} has {tokenizer.vocabulary_size} entries"
         )
     expected = metadata.get(TOKENIZER_SHA256_KEY)
     if expected is not None and expected != tokenizer.sha256():
         raise ValueError(
-            f"{tokenizer.path.name} is not the tokenizer {Path(graph_path).name} was exported "
-            f"with (sha256 {expected[:12]}…); use the tokenizer.model exported with this graph"
+            f"{tokenizer.path} is not the tokenizer {graph_path} was exported with: the "
+            f"graph records the exact file's sha256 {expected[:12]}…; use the tokenizer.model "
+            "exported with this graph"
         )

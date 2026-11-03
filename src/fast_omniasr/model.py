@@ -51,22 +51,25 @@ class OmniASR:
         tools/convert_precision.py); TensorRT engines carry their precision themselves, so
         only the default is accepted there."""
         device, threads = _check_backend_options(backend, device, threads)
+        if backend != "onnx" and precision != "fp32":
+            raise ValueError("precision describes ONNX graphs; a TensorRT engine carries "
+                             "its own precision (choose it when building the engine)")
+        # The tokenizer and the graph's recorded tokenizer identity are checked first, so a
+        # mismatched pair fails before a large graph or engine is loaded.
+        self.tokenizer = Tokenizer(tokenizer_path)
+        if backend == "onnx":
+            check_compatible(self.tokenizer, graph_path=model_path)
         if backend == "onnx":
             from .backends.onnx import ONNXBackend
             self.backend = ONNXBackend(
                 model_path, device=device, threads=threads, precision=precision
             )
         else:
-            if precision != "fp32":
-                raise ValueError("precision describes ONNX graphs; a TensorRT engine carries "
-                                 "its own precision (choose it when building the engine)")
             from .backends.tensorrt import TensorRTBackend
             self.backend = TensorRTBackend(model_path)
         try:
-            self.tokenizer = Tokenizer(tokenizer_path)
             check_compatible(
-                self.tokenizer, vocabulary_size=getattr(self.backend, "vocabulary_size", None),
-                graph_path=model_path if backend == "onnx" else None,
+                self.tokenizer, vocabulary_size=getattr(self.backend, "vocabulary_size", None)
             )
         except BaseException:
             self.backend.close()  # don't leave a loaded session/engine behind

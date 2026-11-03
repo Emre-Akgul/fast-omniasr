@@ -5,7 +5,8 @@ Writes the tokenizer's sha256 and vocabulary size into the ONNX graph's metadata
 load, so a graph paired with a different tokenizer fails instead of decoding garbage.
 export_onnx.py stamps new exports, and tools/convert_precision.py keeps the metadata in
 fp16/bf16 variants. Existing exports can be stamped in place; external weight files are
-left untouched:
+left untouched. The graph file changes, so a published repo must update its sha256 in
+config.json (tools/publish_hub.py does so when republishing):
 
   python tools/stamp_tokenizer.py export/model.onnx export/fp16/model.onnx \\
       --tokenizer export/tokenizer.model
@@ -46,8 +47,11 @@ def stamp(model_path, tokenizer_path):
         graph.metadata_props.add(key=key, value=value)
     # Only the graph proto is rewritten; external tensors keep pointing at their files.
     temporary = model_path.with_name(f".{model_path.name}.stamp")
-    onnx.save_model(graph, str(temporary))
-    temporary.replace(model_path)
+    try:
+        onnx.save_model(graph, str(temporary))
+        temporary.replace(model_path)
+    finally:
+        temporary.unlink(missing_ok=True)
     return values
 
 
