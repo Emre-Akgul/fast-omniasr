@@ -12,7 +12,7 @@ from pathlib import Path
 
 # onnx.proto field numbers
 _MODEL_GRAPH, _MODEL_FUNCTIONS = 7, 25
-_FUNCTION_NODES = 7
+_FUNCTION_NODES, _FUNCTION_ATTRIBUTES = 7, 11  # node, attribute_proto (default values)
 _GRAPH_NODES, _GRAPH_INITIALIZERS, _GRAPH_SPARSE_INITIALIZERS = 1, 5, 15
 _NODE_ATTRIBUTES = 5
 _ATTRIBUTE_TENSORS = (5, 10)  # t, tensors
@@ -23,8 +23,17 @@ _TENSOR_EXTERNAL_DATA, _TENSOR_DATA_LOCATION = 13, 14
 _EXTERNAL = 1
 
 
+_MAX_DEPTH = 100  # protobuf's own nesting limit
+
+
 class _Malformed(ValueError):
     pass
+
+
+def _span(value):
+    if not isinstance(value, tuple):
+        raise _Malformed("a message field has the wrong wire type")
+    return value
 
 
 def _varint(buf, pos, end):
@@ -70,43 +79,50 @@ class _Walker:
     def __init__(self, buf):
         self.buf = buf
         self.locations = set()
+        self.depth = 0
 
     def model(self, start, end):
         for field, span in _fields(self.buf, start, end):
             if field == _MODEL_GRAPH:
-                self.graph(*span)
+                self.graph(*_span(span))
             elif field == _MODEL_FUNCTIONS:
-                for inner, node in _fields(self.buf, *span):
+                for inner, value in _fields(self.buf, *_span(span)):
                     if inner == _FUNCTION_NODES:
-                        self.node(*node)
+                        self.node(*_span(value))
+                    elif inner == _FUNCTION_ATTRIBUTES:
+                        self.attribute(*_span(value))
 
     def graph(self, start, end):
+        self.depth += 1
+        if self.depth > _MAX_DEPTH:
+            raise _Malformed("subgraphs are nested too deeply")
         for field, span in _fields(self.buf, start, end):
             if field == _GRAPH_NODES:
-                self.node(*span)
+                self.node(*_span(span))
             elif field == _GRAPH_INITIALIZERS:
-                self.tensor(*span)
+                self.tensor(*_span(span))
             elif field == _GRAPH_SPARSE_INITIALIZERS:
-                self.sparse(*span)
+                self.sparse(*_span(span))
+        self.depth -= 1
 
     def node(self, start, end):
         for field, span in _fields(self.buf, start, end):
             if field == _NODE_ATTRIBUTES:
-                self.attribute(*span)
+                self.attribute(*_span(span))
 
     def attribute(self, start, end):
         for field, span in _fields(self.buf, start, end):
             if field in _ATTRIBUTE_TENSORS:
-                self.tensor(*span)
+                self.tensor(*_span(span))
             elif field in _ATTRIBUTE_GRAPHS:
-                self.graph(*span)
+                self.graph(*_span(span))
             elif field in _ATTRIBUTE_SPARSE:
-                self.sparse(*span)
+                self.sparse(*_span(span))
 
     def sparse(self, start, end):
         for field, span in _fields(self.buf, start, end):
             if field in _SPARSE_TENSORS:
-                self.tensor(*span)
+                self.tensor(*_span(span))
 
     def tensor(self, start, end):
         external, location = False, None
@@ -114,8 +130,10 @@ class _Walker:
             if field == _TENSOR_DATA_LOCATION:
                 external = value == _EXTERNAL
             elif field == _TENSOR_EXTERNAL_DATA:
-                entry = dict(_fields(self.buf, *value))
+                entry = dict(_fields(self.buf, *_span(value)))
                 key, val = entry.get(1), entry.get(2)
+                if key and val and not (isinstance(key, tuple) and isinstance(val, tuple)):
+                    raise _Malformed("an external-data entry has the wrong wire type")
                 if key and bytes(self.buf[key[0]:key[1]]) == b"location" and val:
                     location = bytes(self.buf[val[0]:val[1]]).decode("utf-8")
         if external:
@@ -134,19 +152,25 @@ def external_data_locations(path: str | Path) -> set[str]:
             walker = _Walker(buf)
             try:
                 walker.model(0, len(buf))
-            except (_Malformed, UnicodeDecodeError) as exc:
+            except (_Malformed, UnicodeDecodeError, TypeError) as exc:
                 raise ValueError(f"{path} is not a valid ONNX model ({exc})") from exc
             return walker.locations
 
 
 def graph_dependencies(graph_name: str, path: str | Path) -> set[str]:
     """External-data files of the graph `graph_name` (a repo-relative POSIX name, read
-    from `path`), as repo-relative names; locations that escape the repo are rejected."""
+    from `path`), as repo-relative names.
+
+    Like ONNX Runtime, a location must stay inside the graph's own directory: absolute
+    paths, `..` out of that directory, and Windows-style paths (backslashes, drive
+    letters, which ONNX Runtime on Linux would read literally) are rejected."""
     directory = posixpath.dirname(graph_name)
     names = set()
     for location in external_data_locations(path):
-        name = posixpath.normpath(posixpath.join(directory, location.replace("\\", "/")))
-        if location.startswith(("/", "\\")) or name == ".." or name.startswith("../"):
+        relative = posixpath.normpath(location)
+        if (not location or "\\" in location or location.startswith("/")
+                or (len(location) > 1 and location[1] == ":")
+                or relative == ".." or relative.startswith("../")):
             raise ValueError(f"{graph_name} has an unsafe external-data location: {location}")
-        names.add(name)
+        names.add(posixpath.join(directory, relative) if directory else relative)
     return names

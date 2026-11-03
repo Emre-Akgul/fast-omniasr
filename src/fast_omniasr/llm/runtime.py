@@ -18,12 +18,18 @@ STOP_REASONS = ("eos", "max_new_tokens", "context_limit")
 
 
 def _language_files(config: dict) -> set[str]:
-    """The language tables config.json declares (and lists), shared by every precision."""
+    """The language tables config.json declares, shared by every precision."""
     languages = config.get("languages")
     if not isinstance(languages, dict):
         return set()
     names = {languages.get("mapping"), languages.get("embeddings")}
-    return {name for name in names if isinstance(name, str) and name in config.get("files", {})}
+    if not all(isinstance(name, str) for name in names):
+        raise ValueError("config.json languages needs 'mapping' and 'embeddings' file names")
+    unlisted = names - config.get("files", {}).keys()
+    if unlisted:
+        raise ValueError(f"config.json declares language tables it does not list: "
+                         f"{', '.join(sorted(unlisted))}")
+    return names
 
 
 @dataclass(frozen=True)

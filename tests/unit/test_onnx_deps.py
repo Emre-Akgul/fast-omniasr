@@ -36,17 +36,46 @@ def test_tensors_in_attributes_subgraphs_and_sparse_initializers(tmp_path):
         "const.bin", "sub.bin", "deep_const.bin", "values.bin", "indices.bin"}
 
 
-@pytest.mark.parametrize("location", ["../outside.bin", "a/../../outside.bin", "/etc/passwd",
-                                      "\\\\server\\share.bin"])
-def test_locations_escaping_the_repo_are_rejected(tmp_path, location):
+@pytest.mark.parametrize("location", [
+    "../outside.bin", "a/../../outside.bin", "/etc/passwd", "\\\\server\\share.bin",
+    "weights\\a.bin", "C:/x.bin", "C:x.bin",
+])
+def test_unsafe_or_non_posix_locations_are_rejected(tmp_path, location):
     path = _write(tmp_path, ob.model_with_external(location))
     with pytest.raises(ValueError, match="unsafe external-data location"):
         graph_dependencies("model.onnx", path)
 
 
-def test_location_inside_a_subdirectory_may_use_dotdot_within_the_repo(tmp_path):
+def test_locations_may_not_leave_the_graph_directory(tmp_path):
+    # ONNX Runtime rejects external data outside the model's directory.
     path = _write(tmp_path, ob.model_with_external("../shared/weights.bin"))
-    assert graph_dependencies("fp16/model.onnx", path) == {"shared/weights.bin"}
+    with pytest.raises(ValueError, match="unsafe external-data location"):
+        graph_dependencies("fp16/model.onnx", path)
+    inside = _write(tmp_path, ob.model_with_external("w/../w2/x.bin"), "inside.onnx")
+    assert graph_dependencies("fp16/model.onnx", inside) == {"fp16/w2/x.bin"}
+
+
+def test_function_default_attribute_tensors_are_found(tmp_path):
+    attribute = (ob._field(1, "value") + ob._field(5, ob.tensor("d", "default.bin"))
+                 + ob._field(20, 4))
+    function = ob._field(1, "f") + ob._field(7, ob.constant_node(ob.tensor("n", "node.bin")))
+    function += ob._field(11, attribute)
+    content = ob.model(ob.graph()) + ob._field(25, function)
+    assert external_data_locations(_write(tmp_path, content)) == {"default.bin", "node.bin"}
+
+
+def test_deep_nesting_is_rejected_cleanly(tmp_path):
+    graph = ob.graph()
+    for _ in range(150):
+        graph = ob.graph(nodes=[ob.if_node(graph)])
+    with pytest.raises(ValueError, match="nested too deeply"):
+        external_data_locations(_write(tmp_path, ob.model(graph)))
+
+
+def test_wrong_wire_type_for_a_message_is_a_value_error(tmp_path):
+    content = ob._field(7, 5)  # graph given as a varint
+    with pytest.raises(ValueError, match="wrong wire type"):
+        external_data_locations(_write(tmp_path, content))
 
 
 @pytest.mark.parametrize("content", [b"not an onnx model", b"\x3a\xff\xff\xff\xff\x0f", b""])
