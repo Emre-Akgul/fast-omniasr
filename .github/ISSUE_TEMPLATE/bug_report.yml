@@ -1,0 +1,74 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest code or command that shows the problem.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Error output or traceback
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: fast-omniasr version
+      description: "`pip show fast-omniasr`, or the commit if installed from source"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and revision
+      description: "e.g. EmreAkgul/omniASR-CTC-300M-v2-ONNX @ main. The exact commit is in .fast-omniasr-snapshot.json inside the downloaded model's cache directory."
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend and precision
+      multiple: true
+      options:
+        - ONNX CPU fp32
+        - ONNX CPU fp16
+        - ONNX CUDA fp32
+        - ONNX CUDA fp16
+        - ONNX CUDA bf16
+        - TensorRT fp32
+        - TensorRT fp16
+        - TensorRT mixed
+        - LLM ONNX
+        - LLM TorchScript
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Paste the output of these commands (the last one only if you use a GPU):
+        python -c "import platform, sys; print(sys.version, platform.platform())"
+        python -m pip list
+        nvidia-smi --query-gpu=driver_version --format=csv,noheader
+        The relevant packages are onnxruntime(-gpu), tensorrt, cuda-python, torch, numpy, huggingface_hub and sentencepiece; you may trim the pip list to those.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: audio
+    attributes:
+      label: Audio
+      description: Format, sample rate, channels and duration of the input (attach a short clip if you can share it).

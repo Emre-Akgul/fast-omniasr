@@ -474,6 +474,10 @@ The integration test also accepts `FAST_OMNIASR_LLM_TEST_WAV` as an audio overri
 CI keeps the lightweight CTC matrix and runs the LLM generation unit tests in a
 separate Python 3.11 job with CPU PyTorch installed.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, the test tiers, reproducing the benchmarks, and the pull-request and release process. Pull requests target the `develop` branch.
+
 ## License
 
 Project code is [MIT](LICENSE) and does not bundle any model weights. Converted ONNX/tokenizer assets are published separately under Apache-2.0 for [300M](https://huggingface.co/EmreAkgul/omniASR-CTC-300M-ONNX), [300M v2](https://huggingface.co/EmreAkgul/omniASR-CTC-300M-v2-ONNX), [1B](https://huggingface.co/EmreAkgul/omniASR-CTC-1B-ONNX), [1B v2](https://huggingface.co/EmreAkgul/omniASR-CTC-1B-v2-ONNX), [3B](https://huggingface.co/EmreAkgul/omniASR-CTC-3B-ONNX), [3B v2](https://huggingface.co/EmreAkgul/omniASR-CTC-3B-v2-ONNX), [7B](https://huggingface.co/EmreAkgul/omniASR-CTC-7B-ONNX), and [7B v2](https://huggingface.co/EmreAkgul/omniASR-CTC-7B-v2-ONNX), per the upstream [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) license (format conversion only, no retraining). Not affiliated with or endorsed by Meta or NVIDIA.
