@@ -136,6 +136,10 @@ def main():
 
     if fold_file(args.output) != 1:
         raise ValueError("Expected exactly one weight-normalized positional convolution")
+    # Tie the graph to its tokenizer; OmniASR rejects a different one on load.
+    from tools.stamp_tokenizer import stamp
+
+    stamp(args.output, tokenizer_path)
     print(args.output)
     print(tokenizer_path)
 

@@ -95,6 +95,8 @@ result = model.transcribe_numpy(waveform, sample_rate=16000)  # or from a NumPy 
 
 Audio must be mono, 16 kHz, at least 400 samples.
 
+The tokenizer must be the one the graph was exported with. On load, the model's output vocabulary has to match the tokenizer's size. Graphs exported by `export_onnx.py` also record the tokenizer's sha256 in their ONNX metadata, so a different tokenizer of the same size is rejected too. Older exports can be stamped in place with `python tools/stamp_tokenizer.py model.onnx fp16/model.onnx --tokenizer tokenizer.model`; fp16/bf16 variants made by `tools/convert_precision.py` keep the stamp. A TensorRT engine carries no metadata, so a local engine gets the vocabulary-size check only; `from_pretrained(backend="tensorrt")` checks the ONNX graph before building the engine.
+
 <details>
 <summary>TensorRT backend</summary>
 
@@ -129,7 +131,7 @@ python build_tensorrt.py artifacts/finetuned/model.onnx \
 
 `--checkpoint` accepts a fairseq2-compatible custom model checkpoint file or the `model` directory within a native sharded fairseq2 step checkpoint. Incompatible checkpoint formats raise a fairseq2 model-checkpoint error. `--model` selects the base architecture and must match the fine-tuned weights. The checkpoint does not reliably carry enough architecture metadata to infer this safely.
 
-Fine-tuned checkpoints are assumed to retain the base model's original tokenizer and token-ID mapping. The exporter infers and downloads that tokenizer from the model generation (`omniASR_CTC_*` uses v1; `omniASR_CTC_*_v2` uses written-v2), checks its vocabulary size against the CTC output as a compatibility sanity check, and saves it beside the graph as `tokenizer.model`. Equal vocabulary sizes do not establish tokenizer identity.
+Fine-tuned checkpoints are assumed to retain the base model's original tokenizer and token-ID mapping. The exporter infers and downloads that tokenizer from the model generation (`omniASR_CTC_*` uses v1; `omniASR_CTC_*_v2` uses written-v2), checks its vocabulary size against the CTC output as a compatibility sanity check, and saves it beside the graph as `tokenizer.model`. Equal vocabulary sizes do not establish tokenizer identity, so the exporter also records the tokenizer's sha256 in the graph, and `OmniASR` checks it on load.
 
 Fine-tuned export supports checkpoints whose architecture, CTC head, and vocabulary remain compatible with one of the eight supported OmniASR CTC model cards. Custom architectures, modified CTC heads or vocabularies, adapter-only checkpoints, LLM variants, and arbitrary Hugging Face model directories are not supported. Merge adapters into a full compatible checkpoint before exporting.
 

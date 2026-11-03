@@ -41,6 +41,9 @@ class ONNXBackend:
             raise ValueError("Expected a batch-one waveform model")
         if len(outputs) != 1 or outputs[0].name != "logits":
             raise ValueError("Expected one output named logits")
+        shape = outputs[0].shape
+        # The vocabulary dimension, when the graph declares it statically.
+        self.vocabulary_size = shape[-1] if shape and isinstance(shape[-1], int) else None
 
     def close(self) -> None:
         """Release the ONNX Runtime session (and its CPU/GPU memory arena). Idempotent;

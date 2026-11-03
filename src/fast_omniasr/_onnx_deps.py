@@ -1,4 +1,5 @@
-"""Find the external-data files an ONNX graph references, without the onnx package.
+"""Read what an ONNX graph references (external-data files) and its metadata_props,
+without the onnx package.
 
 The graph is memory-mapped and its protobuf fields are walked directly; inline weight
 bytes are skipped, never read, so multi-GB graphs are scanned in milliseconds. Every
@@ -11,7 +12,7 @@ import posixpath
 from pathlib import Path
 
 # onnx.proto field numbers
-_MODEL_GRAPH, _MODEL_FUNCTIONS = 7, 25
+_MODEL_GRAPH, _MODEL_METADATA, _MODEL_FUNCTIONS = 7, 14, 25
 _FUNCTION_NODES, _FUNCTION_ATTRIBUTES = 7, 11  # node, attribute_proto (default values)
 _GRAPH_NODES, _GRAPH_INITIALIZERS, _GRAPH_SPARSE_INITIALIZERS = 1, 5, 15
 _NODE_ATTRIBUTES = 5
@@ -174,3 +175,23 @@ def graph_dependencies(graph_name: str, path: str | Path) -> set[str]:
             raise ValueError(f"{graph_name} has an unsafe external-data location: {location}")
         names.add(posixpath.join(directory, relative) if directory else relative)
     return names
+
+
+def model_metadata(path: str | Path) -> dict[str, str]:
+    """The model's metadata_props as {key: value}."""
+    path = Path(path)
+    with path.open("rb") as f:
+        if path.stat().st_size == 0:
+            raise ValueError(f"{path} is empty, not an ONNX model")
+        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as buf:
+            metadata = {}
+            try:
+                for field, span in _fields(buf, 0, len(buf)):
+                    if field == _MODEL_METADATA:
+                        entry = dict(_fields(buf, *_span(span)))
+                        key, value = _span(entry.get(1, (0, 0))), _span(entry.get(2, (0, 0)))
+                        metadata[bytes(buf[key[0]:key[1]]).decode("utf-8")] = bytes(
+                            buf[value[0]:value[1]]).decode("utf-8")
+            except (_Malformed, UnicodeDecodeError) as exc:
+                raise ValueError(f"{path} is not a valid ONNX model ({exc})") from exc
+            return metadata

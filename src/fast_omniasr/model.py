@@ -7,7 +7,7 @@ from .audio import load_audio, prepare_audio
 from .decoder import greedy_token_ids
 from .options import check_device, resolve_threads
 from .tensorrt_builder import DEFAULT_MAX_SAMPLES, DEFAULT_MIN_SAMPLES, DEFAULT_OPT_SAMPLES
-from .tokenizer import Tokenizer
+from .tokenizer import Tokenizer, check_compatible
 
 
 @dataclass(frozen=True)
@@ -64,6 +64,10 @@ class OmniASR:
             self.backend = TensorRTBackend(model_path)
         try:
             self.tokenizer = Tokenizer(tokenizer_path)
+            check_compatible(
+                self.tokenizer, vocabulary_size=getattr(self.backend, "vocabulary_size", None),
+                graph_path=model_path if backend == "onnx" else None,
+            )
         except BaseException:
             self.backend.close()  # don't leave a loaded session/engine behind
             raise
@@ -156,6 +160,10 @@ class OmniASR:
         )
         tokenizer_path = verified["tokenizer.model"]
         model_path = verified[graph]
+        if backend == "tensorrt":
+            # The engine has no metadata of its own: check the graph it is built from,
+            # before a long engine build.
+            check_compatible(Tokenizer(tokenizer_path), graph_path=model_path)
         if backend == "onnx":
             return cls(model_path, tokenizer_path, backend="onnx", device=device,
                        threads=threads, precision=precision)

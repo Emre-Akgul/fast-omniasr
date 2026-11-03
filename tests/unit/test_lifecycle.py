@@ -2,6 +2,7 @@
 
 import sys
 import types
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -15,6 +16,12 @@ from fast_omniasr.llm import OmniASRLLM
 def fake_ort(monkeypatch):
     """Minimal onnxruntime stand-in: a CPU session with the CTC graph's I/O signature."""
     sessions = []
+    from fast_omniasr import model as model_module
+
+    # The graph paths are fake; only the output-size check applies.
+    real_check = model_module.check_compatible
+    monkeypatch.setattr(model_module, "check_compatible", lambda tokenizer, **kwargs: real_check(
+        tokenizer, vocabulary_size=kwargs.get("vocabulary_size")))
 
     class Session:
         def __init__(self, path, sess_options=None, providers=None):
@@ -31,7 +38,7 @@ def fake_ort(monkeypatch):
             return [types.SimpleNamespace(name="audio", type="tensor(float)", shape=[1, "n"])]
 
         def get_outputs(self):
-            return [types.SimpleNamespace(name="logits")]
+            return [types.SimpleNamespace(name="logits", shape=[1, "frames", 4])]
 
         def run(self, names, feeds):
             self.runs += 1
@@ -68,8 +75,10 @@ def test_onnx_backend_context_manager(fake_ort):
 
 
 class _Tokenizer:
+    vocabulary_size = 4
+
     def __init__(self, path):
-        pass
+        self.path = Path(path)
 
     def decode(self, ids):
         return ""
