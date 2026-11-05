@@ -85,7 +85,8 @@ def test_ctc_transcribes_fleurs_clip(ctc, clip):
 
 def _stereo_44k(clip):
     """A FLEURS clip as a 44.1 kHz stereo recording, with the speech in both channels."""
-    soxr = pytest.importorskip("soxr")
+    import soxr  # the resample extra: a missing one should fail this tier, not skip it
+
     waveform, sample_rate = _audio(clip)
     resampled = soxr.resample(waveform, sample_rate, 44100, quality="HQ")
     return np.stack([resampled, resampled], axis=1)

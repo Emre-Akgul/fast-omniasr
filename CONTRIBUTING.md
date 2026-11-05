@@ -21,7 +21,7 @@ Python 3.10 or newer (CI tests 3.10–3.12).
 git clone https://github.com/Emre-Akgul/fast-omniasr && cd fast-omniasr
 git switch develop
 python -m venv .venv && . .venv/bin/activate
-python -m pip install -e ".[dev]"            # lint + unit tests, CPU only
+python -m pip install -e ".[dev,resample]"   # lint + unit tests, CPU only
 python -m pip install -e ".[dev,onnx,hub]"   # + ONNX Runtime CPU and Hub downloads
 ```
 
@@ -43,10 +43,10 @@ Exporting models additionally needs `fairseq2`/`omnilingual-asr` and `onnx`; see
 | tier | command | needs | runs in CI |
 |---|---|---|---|
 | Lint | `python -m ruff check .` | `dev` | every push and PR |
-| Unit | `python -m pytest tests/unit` | `dev` (CPU only, no models, no network) | every push and PR, Python 3.10/3.11/3.12; cache locking also on Windows |
+| Unit | `python -m pytest tests/unit` | `dev,resample` (CPU only, no models, no network; resampling tests skip without `resample`) | every push and PR, Python 3.10/3.11/3.12; cache locking also on Windows |
 | Package | `python -m build`, then install the wheel in a clean venv and run `python tests/packaging/smoke.py <extra>` and `pytest tests/unit` | `build` | every push and PR (`Package` workflow): the wheel's unit suite on Linux, Windows and macOS with Python 3.10 and 3.12, each extra (`onnx`, `hub`, `llm`, `tensorrt`, `resample`) installed alone, and the oldest declared dependency versions (`tests/packaging/minimum-constraints.txt`) |
 | LLM unit | `python -m pytest tests/unit/test_llm.py tests/unit/test_llm_cache.py tests/unit/test_llm_onnx.py` | `dev,llm,onnx` extras and the `onnx` package | every push and PR |
-| Real models, CPU | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_cpu.py tests/integration/test_real_models_edge_cases.py` | `dev,onnx,hub`; downloads ~8 GB | `Real-model CPU validation`: weekly, after each published release, on demand, and on PRs that change the paths listed in `real-models.yml` (the ONNX/LLM runtime, hub, audio and evaluation code; not the TensorRT backend) |
+| Real models, CPU | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_cpu.py tests/integration/test_real_models_edge_cases.py` | `dev,onnx,hub,resample`; downloads ~8 GB | `Real-model CPU validation`: weekly, after each published release, on demand, and on PRs that change the paths listed in `real-models.yml` (the ONNX/LLM runtime, hub, audio and evaluation code; not the TensorRT backend) |
 | FLEURS gates | `python tools/fleurs_eval.py run --model ctc --gate` (and `--model llm`) | `dev,onnx,hub` | same workflow (`fleurs-ctc`, `fleurs-llm`) |
 | GPU / TensorRT | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_tensorrt_fleurs.py`, plus `test_tensorrt*.py`/`test_onnx.py` with the `OMNIASR_*` variables below | a CUDA GPU, `cuda`/`tensorrt` | not in CI: run locally for GPU changes |
 

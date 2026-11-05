@@ -9,15 +9,24 @@ from .options import check_flag
 
 MIN_AUDIO_SAMPLES = 400
 SAMPLE_RATE = 16000
+MIN_SAMPLE_RATE = 1000  # of audio to convert
+MAX_SAMPLE_RATE = 1000000
 
 
 def _sample_rate(sample_rate) -> int:
-    try:
-        value = None if isinstance(sample_rate, bool) else operator.index(sample_rate)
-    except TypeError:
-        value = None
-    if value is None or value < 1:
-        raise ValueError(f"sample_rate must be a positive integer, got {sample_rate!r}")
+    """A whole number of hertz (16000.0 counts, as in strict mode) in a sane range: output
+    size scales with the ratio, so a wrong rate would otherwise exhaust memory or hang."""
+    value = None
+    if isinstance(sample_rate, (float, np.floating)):
+        value = int(sample_rate) if float(sample_rate).is_integer() else None
+    elif not isinstance(sample_rate, bool):
+        try:
+            value = operator.index(sample_rate)
+        except TypeError:
+            pass
+    if value is None or not MIN_SAMPLE_RATE <= value <= MAX_SAMPLE_RATE:
+        raise ValueError(f"sample_rate must be a whole number from {MIN_SAMPLE_RATE} to "
+                         f"{MAX_SAMPLE_RATE} Hz, got {sample_rate!r}")
     return value
 
 
@@ -54,18 +63,16 @@ def prepare_audio(waveform: np.ndarray, sample_rate: int = SAMPLE_RATE, *,
     first downmixes (samples, channels) audio by averaging the channels and resamples to
     16 kHz (the `resample` extra)."""
     check_flag("convert_audio", convert_audio)
-    audio = np.asarray(waveform, dtype=np.float32)
-    if convert_audio:
-        audio = _convert(audio, sample_rate)
-    elif sample_rate != SAMPLE_RATE:
+    if not convert_audio and sample_rate != SAMPLE_RATE:
         raise ValueError(
             "Expected 16 kHz audio; resample before transcription or pass convert_audio=True"
         )
+    audio = np.asarray(waveform, dtype=np.float32)
+    if convert_audio:
+        audio = _convert(audio, sample_rate)
     if audio.ndim != 1:
-        raise ValueError(
-            "Expected a mono, one-dimensional waveform; downmix before transcription or "
-            "pass convert_audio=True"
-        )
+        hint = "" if convert_audio else "; downmix before transcription or pass convert_audio=True"
+        raise ValueError(f"Expected a mono, one-dimensional waveform{hint}")
     if audio.size < MIN_AUDIO_SAMPLES:
         raise ValueError(
             f"At least {MIN_AUDIO_SAMPLES} samples are required by the feature extractor"
