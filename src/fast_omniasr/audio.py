@@ -102,8 +102,12 @@ def load_audio(path: str | Path, *, convert_audio: bool = False) -> np.ndarray:
 
 def _check_chunk_length(chunk_length, maximum: float | None) -> int:
     """Chunk length in seconds, as a sample count."""
-    valid = (isinstance(chunk_length, numbers.Real) and not isinstance(chunk_length, bool)
-             and math.isfinite(chunk_length) and chunk_length * SAMPLE_RATE >= MIN_AUDIO_SAMPLES)
+    try:
+        valid = (isinstance(chunk_length, numbers.Real) and not isinstance(chunk_length, bool)
+                 and math.isfinite(chunk_length)
+                 and chunk_length * SAMPLE_RATE >= MIN_AUDIO_SAMPLES)
+    except OverflowError:  # an integer too large for a float
+        valid = False
     if not valid:
         raise ValueError(f"chunk_length must be a number of seconds, at least "
                          f"{MIN_AUDIO_SAMPLES / SAMPLE_RATE}, got {chunk_length!r}")

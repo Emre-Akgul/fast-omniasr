@@ -142,7 +142,7 @@ for chunk in result.chunks:
     print(chunk.start, chunk.end, chunk.text)
 ```
 
-CTC accepts longer audio directly on ONNX, but accuracy drops sharply past about 20 seconds on some languages. The measurements behind the default are in [docs/long-audio.md](docs/long-audio.md).
+The default is a safe choice rather than a proven best, and it wasn't measured on continuous speech from one speaker. On test recordings that change speaker every few seconds, CTC on chunks past about 20 seconds lost whole spans of speech on some languages, for reasons not yet known. See [docs/long-audio.md](docs/long-audio.md).
 
 The LLM's output is the model's own, repeats included: nothing is detected or filtered. On audio with no speech it can loop until `max_new_tokens`, which `stop_reason` reports. To discourage that, pass `repetition_penalty`, which works as in faster-whisper: `model.transcribe(audio, lang="eng_Latn", repetition_penalty=1.1)`. Values above 1 penalize tokens already generated, and the default of 1 changes nothing.
 

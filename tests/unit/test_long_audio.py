@@ -1,5 +1,7 @@
 """Fixed-length chunking for long recordings (#35)."""
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 import soundfile as sf
@@ -45,10 +47,17 @@ def test_a_recording_below_the_minimum_is_rejected():
         prepare_chunks(noise(399))
 
 
-@pytest.mark.parametrize("value", [0, -1, 0.02, float("nan"), float("inf"), True, "15", None])
+@pytest.mark.parametrize("value", [0, -1, 0.02, float("nan"), float("inf"), True, "15", None,
+                                   10**400])
 def test_invalid_chunk_lengths_are_rejected(value):
     with pytest.raises(ValueError, match="chunk_length"):
         prepare_chunks(noise(800), chunk_length=value)
+
+
+def test_fractional_chunk_lengths_keep_correct_times():
+    chunks = prepare_chunks(noise(16000), chunk_length=0.25)
+    assert [(start, end) for start, end, _ in chunks] == [
+        (0, 0.25), (0.25, 0.5), (0.5, 0.75), (0.75, 1)]
 
 
 def test_conversion_is_opt_in_like_the_strict_api():
@@ -93,6 +102,17 @@ def test_ctc_joins_text_in_order_and_reports_chunks():
     assert [(c.start, c.end, c.text) for c in result.chunks] == [
         (0, 1, "t1"), (1, 2, "t2"), (2, 3, "t3")]
     assert result.logits_shape == (1, 1, 5)
+
+
+def test_ctc_logits_shape_is_the_last_chunks():
+    model = ctc()
+    shapes = iter([(1, 2, 5), (1, 1, 5)])
+
+    def infer(audio):
+        return np.zeros(next(shapes), np.float32)
+
+    model.backend.infer = infer
+    assert model.transcribe_long(noise(2 * 16000), chunk_length=1).logits_shape == (1, 1, 5)
 
 
 def test_ctc_empty_chunks_add_no_spaces():
@@ -178,6 +198,49 @@ def test_llm_reports_a_cut_off_chunk():
     result = long(llm(endless=[2]), max_new_tokens=3)
     assert result.stop_reason == "max_new_tokens"
     assert [c.stop_reason for c in result.chunks] == ["eos", "max_new_tokens", "eos"]
+
+
+def test_llm_reports_the_first_cut_off_reason():
+    model = llm(endless=[1, 3])
+    budgets = iter(["max_new_tokens", "context_limit"])
+    real = model._transcribe_onnx
+
+    def relabel(*args):
+        result = real(*args)
+        if result.stop_reason == "eos":
+            return result
+        return replace(result, stop_reason=next(budgets))
+
+    model._transcribe_onnx = relabel
+    assert long(model, max_new_tokens=3).stop_reason == "max_new_tokens"
+
+
+def test_llm_passes_the_language_to_every_chunk():
+    model = llm()
+    row = np.ones(8, np.float32)
+    model.language_embedding = lambda lang: row
+    seen = []
+    real = model._transcribe_onnx
+
+    def spy(waveform, budget, language, penalty):
+        seen.append(language)
+        return real(waveform, budget, language, penalty)
+
+    model._transcribe_onnx = spy
+    model.transcribe_long(noise(3 * 16000), chunk_length=1, lang="eng_Latn")
+    assert len(seen) == 3 and all(language is row for language in seen)
+
+
+def test_llm_empty_chunks_add_no_spaces():
+    model = llm()
+    model.tokenizer = type("Silent", (), {"decode": lambda self, ids: "" if ids == [11] else "x"})()
+    assert long(model).text == "x x"
+
+
+def test_llm_warning_points_at_the_caller():
+    with pytest.warns(UserWarning, match="lang") as caught:
+        llm().transcribe_long(noise(16000), chunk_length=1)
+    assert caught[0].filename == __file__
 
 
 def test_llm_budget_applies_per_chunk():

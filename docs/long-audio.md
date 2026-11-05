@@ -1,12 +1,16 @@
 # Long audio
 
 `transcribe_long` cuts a recording at fixed intervals, transcribes each chunk on its own and
-joins the text in order. Chunks don't overlap and nothing is reconciled across a cut, like
-faster-whisper, which also cuts audio and joins the results. `.chunks` gives each chunk's
-start and end in seconds and its text, plus its stop reason on the LLM.
+joins the text in order. Chunks don't overlap and nothing is reconciled across a cut. `.chunks`
+gives each chunk's start and end in seconds and its text, plus its stop reason on the LLM.
 
-Audio can be cut mid-word, so a word on a boundary can be damaged. That is the main cost of
-chunking.
+faster-whisper's batched pipeline also transcribes chunks independently with no overlap, but it
+cuts at silence using VAD. Here cuts are fixed, so audio can be cut mid-word and a word on a
+boundary can be damaged. That is the main cost of this approach.
+
+Text is joined with a space, including in scripts written without spaces. On TensorRT, each
+chunk must fit the engine's sample profile: a `chunk_length` above its maximum fails on the
+first chunk, and a last chunk below a custom minimum fails after the others have decoded.
 
 ## Why 15 seconds
 
@@ -29,12 +33,19 @@ CTC word error rate (%):
 | Hindi | 12.7 | 20.0 | 18.6 | 27.4 | 33.3 |
 | Turkish | 21.7 | 30.7 | 29.9 | 34.5 | 42.1 |
 | French | 18.3 | 23.7 | 22.6 | 22.1 | 22.6 |
-| mean | 15.8 | 21.7 | 21.6 | 22.5 | 27.7 |
+| mean | 15.7 | 21.7 | 21.8 | 22.5 | 27.5 |
 
-Past 20 seconds, CTC gets much worse on some languages, and it isn't about the cuts: at 40
-seconds Spanish reached 40.9 and Hindi 56.4, and at 60 seconds English reached 59.9. So an
-unchunked call on long audio can be far worse than chunking, even on ONNX, which accepts any
-length.
+No length wins everywhere: 20 s is the best tested on German, English and French, 10 s on
+Spanish, and 15 s on Turkish, while Hindi did best at 5 s (17.8). 10 s and 15 s tie for the best
+mean. 20 s and above bring large losses on Hindi and Turkish. Other lengths weren't tested on
+Turkish and French.
+
+On these recordings, some languages failed badly on long chunks: Spanish reached 40.9 and Hindi
+56.4 at 40 s, and English 59.9 at 60 s, with whole spans of speech missing. Spanish still degraded
+when chunks were whole utterances, so cuts through speech aren't the cause. The cause is unknown.
+It may be the recordings themselves, which change speaker every few seconds: in a small check, one
+Spanish utterance repeated up to about a minute stayed stable. Don't read this as a limit on
+continuous speech from one speaker, which wasn't measured.
 
 LLM word error rate (%) on English, the alone case being 10.7:
 
@@ -42,10 +53,12 @@ LLM word error rate (%) on English, the alone case being 10.7:
 |---|---|---|---|---|---|
 | 17.6 | 14.2 | 10.9 | 14.9 | 10.4 | 10.2 |
 
-15 seconds is close to the best on every language tested, and it's the segment length of
-upstream's `Unlimited` LLM models. These recordings are one language at a time and small, and
-changing speakers every few seconds is harder than one person talking, so treat the numbers as
-a comparison between lengths, not as expected accuracy. Pass `chunk_length` to use another
+15 seconds is a safe choice, not a proven best. It ties for the best CTC mean, avoids the large
+losses at 20 s and above, did well on English on the LLM, and is the segment length of upstream's
+`Unlimited` LLM models. Differences of a point or so here aren't meaningful: moving where the
+cuts land changed German at 10 s by 1.5 points, and the LLM series above has no clear trend. The
+recordings are small, one language each, and change speaker every few seconds, so these numbers
+compare lengths on this audio and don't predict accuracy. Pass `chunk_length` to use another
 value; the LLM's limit is 30 seconds.
 
 Upstream's `Unlimited` cards decode long audio natively, but this runtime doesn't support them.
