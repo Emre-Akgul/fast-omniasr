@@ -305,8 +305,9 @@ class OmniASRLLM:
         `convert_audio=True` downmixes and resamples audio that isn't mono 16 kHz (the
         `resample` extra); by default it is rejected. `repetition_penalty` above 1
         discourages tokens already generated, as in faster-whisper; 1 leaves the model's
-        output untouched. It can end loops on audio with no speech, but it can also cut
-        long transcripts short, because every generated token stays penalized."""
+        output untouched. It can end loops on audio with no speech, but it can also end a
+        transcript early, because a penalized token can lose to EOS, which is never
+        penalized."""
         if getattr(self, "closed", False):
             raise RuntimeError("This OmniASRLLM model is closed")
         repetition_penalty = _check_repetition_penalty(repetition_penalty)
