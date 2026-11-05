@@ -66,6 +66,21 @@ def test_long_audio_rejected():
         model.transcribe(np.zeros(480001))
 
 
+def test_repetition_penalty_steers_the_torch_decode_loop():
+    model, _ = runtime([3, 3, 2])
+
+    def decoder(context, ids):
+        logits = torch.zeros((1, 10))
+        logits[0, 3], logits[0, 4] = 4.0, 3.0
+        logits[0, 2] = 100.0 if ids.shape[1] > 3 else -1.0
+        return logits
+
+    model.decoder = decoder
+    with pytest.warns(UserWarning, match="lang"):
+        result = model.transcribe(np.zeros(1600, np.float32), repetition_penalty=2.0)
+    assert result.token_ids == [3, 4, 3]
+
+
 def test_conversion_is_opt_in_and_the_length_limit_applies_after_it():
     model, _ = runtime([2])
     stereo = np.zeros((16000, 2), np.float32)

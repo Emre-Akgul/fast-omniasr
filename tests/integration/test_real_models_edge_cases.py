@@ -100,6 +100,20 @@ def test_llm_on_edge_case(llm, name):
     clips.check_text(result.text, expected, clips.reference(entry), _cer)
 
 
+def test_llm_repetition_penalty_ends_the_loop_on_silence(llm):
+    result = llm.transcribe(clips.waveform("silence"), lang=MANIFEST["language"],
+                            repetition_penalty=1.2)
+    assert result.stop_reason == "eos" and len(result.token_ids) < 64
+
+
+def test_llm_repetition_penalty_keeps_legitimately_repeated_speech(llm):
+    entry = MANIFEST["clips"]["repeated_sentence"]
+    result = llm.transcribe(clips.waveform("repeated_sentence"), lang=MANIFEST["language"],
+                            repetition_penalty=1.2)
+    assert result.stop_reason == "eos"
+    clips.check_text(result.text, entry["llm"], clips.reference(entry), _cer)
+
+
 def test_llm_budget_cuts_off_speech(llm):
     result = llm.transcribe(clips.waveform("clipped_speech"), lang=MANIFEST["language"],
                             max_new_tokens=4)
