@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .audio import load_audio, prepare_audio
+from .audio import DEFAULT_CHUNK_LENGTH, load_audio, prepare_audio, prepare_chunks
 from .decoder import greedy_token_ids
 from .options import check_device, resolve_threads
 from .tensorrt_builder import (
@@ -17,10 +17,19 @@ from .tokenizer import Tokenizer, check_compatible
 
 
 @dataclass(frozen=True)
+class TranscriptionChunk:
+    start: float  # seconds into the recording
+    end: float
+    text: str
+    token_ids: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class Transcription:
     text: str
     token_ids: tuple[int, ...]
     logits_shape: tuple[int, ...]
+    chunks: tuple[TranscriptionChunk, ...] = ()  # set by transcribe_long
 
 
 def _check_backend_options(backend: str, device: str | None, threads: int | None):
@@ -105,6 +114,25 @@ class OmniASR:
         (samples, channels) arrays (the `resample` extra); by default they are rejected."""
         return self._transcribe(prepare_audio(waveform, sample_rate,
                                               convert_audio=convert_audio))
+
+    def transcribe_long(self, audio: str | Path | np.ndarray, sample_rate: int = 16000, *,
+                        chunk_length: float = DEFAULT_CHUNK_LENGTH,
+                        convert_audio: bool = False) -> Transcription:
+        """Transcribe a recording of any length by cutting it every `chunk_length` seconds
+        and joining the text in order. Chunks don't overlap and nothing is reconciled across
+        a cut, so a word on a boundary can be damaged; `.chunks` has each chunk's times and
+        text. `logits_shape` is that of the last chunk."""
+        chunks = [(start, end, self._transcribe(audio_chunk))
+                  for start, end, audio_chunk in prepare_chunks(
+                      audio, sample_rate, chunk_length=chunk_length,
+                      convert_audio=convert_audio)]
+        return Transcription(
+            " ".join(result.text for *_, result in chunks if result.text),
+            tuple(token for *_, result in chunks for token in result.token_ids),
+            chunks[-1][2].logits_shape,
+            tuple(TranscriptionChunk(start, end, result.text, result.token_ids)
+                  for start, end, result in chunks),
+        )
 
     def close(self) -> None:
         """Release backend resources: the ONNX Runtime session, or the TensorRT engine,

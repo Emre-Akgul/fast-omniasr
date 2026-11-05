@@ -133,6 +133,17 @@ result = model.transcribe_numpy(waveform, sample_rate=48000, convert_audio=True)
 
 This averages the channels of `(samples, channels)` audio and resamples to 16 kHz with [soxr](https://github.com/dofuuz/python-soxr). The channel order of NumPy input isn't guessed: an array with more channels than samples is rejected. The length limits apply to the converted audio.
 
+For recordings longer than about 15 seconds, use `transcribe_long`, on `OmniASR` and `OmniASRLLM`. It cuts the audio every `chunk_length` seconds (default 15), transcribes the chunks and joins the text in order. There's no overlap handling, so a word on a cut can be damaged:
+
+```python
+result = model.transcribe_long("meeting.wav")
+print(result.text)
+for chunk in result.chunks:
+    print(chunk.start, chunk.end, chunk.text)
+```
+
+The default is a safe choice rather than a proven best, and it wasn't measured on continuous speech from one speaker. On test recordings that change speaker every few seconds, CTC on chunks past about 20 seconds lost whole spans of speech on some languages, for reasons not yet known. See [docs/long-audio.md](docs/long-audio.md).
+
 The LLM's output is the model's own, repeats included: nothing is detected or filtered. On audio with no speech it can loop until `max_new_tokens`, which `stop_reason` reports. To discourage that, pass `repetition_penalty`, which works as in faster-whisper: `model.transcribe(audio, lang="eng_Latn", repetition_penalty=1.1)`. Values above 1 penalize tokens already generated, and the default of 1 changes nothing.
 
 Use it only where loops are the bigger problem, because it can damage real transcripts. On the test clips, 1.1 and 1.2 ended the loops on silence and hum and left a single English sentence unchanged, even said four times, but they changed the text of a two-language clip. EOS is never penalized, so wherever a repeated token only narrowly beats it, the transcript ends there: on a 30-second clip, both values dropped the second sentence, about 40% of the output. It applies to the LLM only: CTC has no generation loop.
