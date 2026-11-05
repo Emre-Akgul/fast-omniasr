@@ -1,4 +1,5 @@
-"""TensorRT engines of the published CTC model, at every precision, on the FLEURS fixtures.
+"""TensorRT engines of the published CTC model, at every precision, on the FLEURS fixtures
+and the edge-case clips.
 
 Opt-in (GPU + TensorRT, downloads ~1.3 GB, builds three engines):
   OMNIASR_REAL_MODELS=1 pytest tests/integration/test_tensorrt_fleurs.py
@@ -30,6 +31,11 @@ _spec = importlib.util.spec_from_file_location("evaluate_precisions",
                                                ROOT / "tools" / "evaluate_precisions.py")
 _metrics = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_metrics)
+_spec = importlib.util.spec_from_file_location(
+    "edge_case_clips", ROOT / "tests" / "fixtures" / "edge_cases" / "clips.py")
+clips = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(clips)
+EDGE_CASES = clips.manifest()["clips"]
 
 
 def _load(precision):
@@ -60,6 +66,16 @@ def test_engine_transcribes_fleurs_clip(engine, clip):
     cer = _metrics.error_rates([clip["reference"]], [first.text])["cer"]
     # The same ceilings as the CPU FP32 run: every precision must stay within them.
     assert cer <= clip["max_cer"]["ctc"], f"{precision} CER {cer:.1f}: {first.text!r}"
+
+
+@pytest.mark.parametrize("name", EDGE_CASES)
+def test_engine_on_edge_case(engine, name):
+    """Includes the engine's default length limits: exactly 400 and 480,000 samples."""
+    _, model = engine
+    entry = EDGE_CASES[name]
+    clips.check_text(model.transcribe_numpy(clips.waveform(name)).text, entry["ctc"],
+                     clips.reference(entry),
+                     lambda reference, text: _metrics.error_rates([reference], [text])["cer"])
 
 
 def _decision_logit_error(logits, reference):
