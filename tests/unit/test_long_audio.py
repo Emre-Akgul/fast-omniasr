@@ -268,3 +268,15 @@ def test_llm_rejects_a_closed_model():
     model.closed = True
     with pytest.raises(RuntimeError, match="closed"):
         model.transcribe_long(noise(16000))
+
+
+def test_silence_with_vad_gives_empty_results():
+    pytest.importorskip("onnxruntime")
+    silent = np.zeros(5 * 16000, np.float32)
+    ctc_result = ctc().transcribe_long(silent, vad_filter=True)
+    assert (ctc_result.text, ctc_result.chunks, ctc_result.logits_shape) == ("", (), ())
+    model = llm()
+    with pytest.warns(UserWarning, match="lang"):
+        llm_result = model.transcribe_long(silent, vad_filter=True)
+    assert (llm_result.text, llm_result.chunks, llm_result.stop_reason) == ("", (), "eos")
+    assert model.onnx.waves == []  # the decoder never ran, so it can't loop on silence

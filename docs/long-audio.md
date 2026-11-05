@@ -5,8 +5,14 @@ joins the text in order. Chunks don't overlap and nothing is reconciled across a
 gives each chunk's start and end in seconds and its text, plus its stop reason on the LLM.
 
 faster-whisper's batched pipeline also transcribes chunks independently with no overlap, but it
-cuts at silence using VAD. Here cuts are fixed, so audio can be cut mid-word and a word on a
-boundary can be damaged. That is the main cost of this approach.
+cuts at silence using VAD. By default cuts here are fixed, so audio can be cut mid-word and a word
+on a boundary can be damaged. That is the main cost of this approach.
+
+`vad_filter=True` works like that batched pipeline, with the same Silero model and defaults: it
+finds speech, joins it into chunks of at most `chunk_length` seconds with the silence left out, and
+keeps each chunk's start and end as times in the original recording. Audio with no speech gives
+empty text and no chunks, so the LLM can't invent text from silence. It needs `onnxruntime`, which
+the `onnx` extra installs, and runs on CPU. It's off by default, so nothing changes unless you ask.
 
 Text is joined with a space, including in scripts written without spaces. On TensorRT, each
 chunk must fit the engine's sample profile: a chunk above its maximum fails on the first chunk,
@@ -47,7 +53,23 @@ It may be the recordings themselves, which change speaker every few seconds: in 
 Spanish utterances, each repeated up to about a minute, stayed roughly stable. Don't read this as a limit on
 continuous speech from one speaker, which wasn't measured.
 
-LLM word error rate (%):
+With `vad_filter=True`, on the same recordings:
+
+| language | 10 s | 15 s | 20 s | 30 s |
+|---|---|---|---|---|
+| German | 20.3 | 15.7 | 17.4 | 18.4 |
+| English | 22.3 | 22.0 | 22.0 | 23.7 |
+| Spanish | 10.1 | 9.9 | 10.1 | 9.9 |
+| Hindi | 24.5 | 22.5 | 20.8 | 21.6 |
+| Turkish | 25.5 | 24.2 | 25.0 | 24.2 |
+| French | 19.9 | 20.3 | 21.0 | 21.4 |
+| mean | 20.4 | 19.1 | 19.4 | 19.9 |
+
+VAD beat fixed cuts at every length on the mean and removed the drop at 30 seconds. It isn't better
+everywhere: Hindi is worse at 10 and 15 seconds, by about 4 points. These recordings also have clean
+half-second gaps between sentences, which is an easy case for VAD, so expect less on natural speech.
+
+LLM word error rate (%), with fixed cuts:
 
 | language | alone | 5 s | 10 s | 15 s | 20 s | 25 s | 30 s |
 |---|---|---|---|---|---|---|---|

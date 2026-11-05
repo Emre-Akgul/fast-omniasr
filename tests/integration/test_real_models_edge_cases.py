@@ -128,6 +128,21 @@ def test_llm_long_audio_reports_each_chunk(llm):
     assert result.text == " ".join(c.text for c in result.chunks if c.text)
 
 
+@pytest.mark.parametrize("name", ["silence", "white_noise", "mains_hum"])
+def test_vad_stops_the_llm_inventing_text_without_speech(llm, name):
+    result = llm.transcribe_long(clips.waveform(name), lang=MANIFEST["language"], vad_filter=True)
+    assert result.text == "" and result.chunks == ()
+
+
+def test_vad_keeps_speech_and_original_times(ctc):
+    silence = np.zeros(10 * clips.SAMPLE_RATE, np.float32)
+    clip = clips.waveform("clipped_speech")
+    result = ctc.transcribe_long(np.concatenate([silence, clip]), vad_filter=True)
+    assert len(result.chunks) == 1 and 9.5 < result.chunks[0].start < 11
+    entry = MANIFEST["clips"]["clipped_speech"]
+    clips.check_text(result.text, entry["ctc"], clips.reference(entry), _cer)
+
+
 def test_llm_budget_cuts_off_speech(llm):
     result = llm.transcribe(clips.waveform("clipped_speech"), lang=MANIFEST["language"],
                             max_new_tokens=4)

@@ -117,19 +117,25 @@ class OmniASR:
 
     def transcribe_long(self, audio: str | Path | np.ndarray, sample_rate: int = 16000, *,
                         chunk_length: float = DEFAULT_CHUNK_LENGTH,
-                        convert_audio: bool = False) -> Transcription:
+                        convert_audio: bool = False, vad_filter: bool = False,
+                        vad_options=None) -> Transcription:
         """Transcribe a recording of any length by cutting it every `chunk_length` seconds
         and joining the text in order. Chunks don't overlap and nothing is reconciled across
         a cut, so a word on a boundary can be damaged; `.chunks` has each chunk's times and
-        text. `logits_shape` is that of the last chunk."""
+        text. `logits_shape` is that of the last chunk, or () if there are none.
+
+        `vad_filter=True` keeps only speech and cuts at silence, using Silero VAD as
+        faster-whisper does (needs onnxruntime); `vad_options` is a `vad.VadOptions`. Audio
+        with no speech then gives empty text and no chunks."""
         chunks = [(start, end, self._transcribe(audio_chunk))
                   for start, end, audio_chunk in prepare_chunks(
                       audio, sample_rate, chunk_length=chunk_length,
-                      convert_audio=convert_audio)]
+                      convert_audio=convert_audio, vad_filter=vad_filter,
+                      vad_options=vad_options)]
         return Transcription(
             " ".join(result.text for *_, result in chunks if result.text),
             tuple(token for *_, result in chunks for token in result.token_ids),
-            chunks[-1][2].logits_shape,
+            chunks[-1][2].logits_shape if chunks else (),
             tuple(TranscriptionChunk(start, end, result.text, result.token_ids)
                   for start, end, result in chunks),
         )
