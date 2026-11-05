@@ -270,9 +270,12 @@ class OmniASRLLM:
         sample_rate: int = 16000,
         max_new_tokens: int = 512,
         lang: str | None = None,
+        convert_audio: bool = False,
     ) -> LLMTranscription:
         """Greedy-decode one clip. `lang` conditions on an upstream language code
-        (e.g. "eng_Latn"); without it the model's learned no-language row is used."""
+        (e.g. "eng_Latn"); without it the model's learned no-language row is used.
+        `convert_audio=True` downmixes and resamples audio that isn't mono 16 kHz (the
+        `resample` extra); by default it is rejected."""
         if getattr(self, "closed", False):
             raise RuntimeError("This OmniASRLLM model is closed")
         if (
@@ -282,9 +285,9 @@ class OmniASRLLM:
         ):
             raise ValueError("max_new_tokens must be a positive integer")
         waveform = (
-            load_audio(audio)
+            load_audio(audio, convert_audio=convert_audio)
             if isinstance(audio, (str, Path))
-            else prepare_audio(audio, sample_rate)
+            else prepare_audio(audio, sample_rate, convert_audio=convert_audio)
         )
         if waveform.shape[1] > 30 * 16000:
             raise ValueError("This runtime supports clips of at most 30 seconds")

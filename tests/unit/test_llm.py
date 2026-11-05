@@ -66,6 +66,16 @@ def test_long_audio_rejected():
         model.transcribe(np.zeros(480001))
 
 
+def test_conversion_is_opt_in_and_the_length_limit_applies_after_it():
+    model, _ = runtime([2])
+    stereo = np.zeros((16000, 2), np.float32)
+    with pytest.raises(ValueError, match="convert_audio=True"):
+        model.transcribe(stereo)
+    assert model.transcribe(stereo, convert_audio=True).stop_reason == "eos"
+    with pytest.raises(ValueError, match="30 seconds"):
+        model.transcribe(np.zeros((480001, 2), np.float32), convert_audio=True)
+
+
 def test_nonfinite_logits_rejected():
     model, _ = runtime([])
     model.decoder = lambda context, ids: torch.full((1, 10), float("nan"))

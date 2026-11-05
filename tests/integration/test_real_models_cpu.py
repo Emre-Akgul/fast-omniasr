@@ -83,6 +83,22 @@ def test_ctc_transcribes_fleurs_clip(ctc, clip):
     assert cer <= clip["max_cer"]["ctc"], f"CTC CER {cer:.1f} on {clip['file']}: {first.text!r}"
 
 
+def _stereo_44k(clip):
+    """A FLEURS clip as a 44.1 kHz stereo recording, with the speech in both channels."""
+    import soxr  # the resample extra: a missing one should fail this tier, not skip it
+
+    waveform, sample_rate = _audio(clip)
+    resampled = soxr.resample(waveform, sample_rate, 44100, quality="HQ")
+    return np.stack([resampled, resampled], axis=1)
+
+
+@pytest.mark.parametrize("clip", MANIFEST["clips"], ids=lambda c: c["fleurs_language"])
+def test_ctc_converts_audio_when_asked(ctc, clip):
+    result = ctc.transcribe_numpy(_stereo_44k(clip), 44100, convert_audio=True)
+    cer = _cer(clip["reference"], result.text)
+    assert cer <= clip["max_cer"]["ctc"], f"CTC CER {cer:.1f} on {clip['file']}: {result.text!r}"
+
+
 # Runs before the LLM tests (file order), so the LLM is not resident alongside two CTC models.
 def test_ctc_handles_silence_and_rejects_use_after_close():
     from fast_omniasr import OmniASR
@@ -100,6 +116,15 @@ def test_ctc_handles_silence_and_rejects_use_after_close():
 def test_llm_transcribes_fleurs_clip(llm, clip):
     waveform, sample_rate = _audio(clip)
     result = llm.transcribe(waveform, sample_rate=sample_rate, lang=clip["lang"])
+    assert result.stop_reason == "eos"
+    cer = _cer(clip["reference"], result.text)
+    assert cer <= clip["max_cer"]["llm"], f"LLM CER {cer:.1f} on {clip['file']}: {result.text!r}"
+
+
+@pytest.mark.parametrize("clip", MANIFEST["clips"], ids=lambda c: c["fleurs_language"])
+def test_llm_converts_audio_when_asked(llm, clip):
+    result = llm.transcribe(_stereo_44k(clip), sample_rate=44100, lang=clip["lang"],
+                            convert_audio=True)
     assert result.stop_reason == "eos"
     cer = _cer(clip["reference"], result.text)
     assert cer <= clip["max_cer"]["llm"], f"LLM CER {cer:.1f} on {clip['file']}: {result.text!r}"

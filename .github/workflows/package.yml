@@ -68,7 +68,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extra: [onnx, hub, llm, tensorrt]
+        extra: [onnx, hub, llm, tensorrt, resample]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -102,8 +102,8 @@ jobs:
           path: dist
       - name: Install the wheel with lower-bound dependencies
         run: |
-          python -m pip install "$(ls dist/*.whl)[onnx,hub]" "pytest>=8" \
+          python -m pip install "$(ls dist/*.whl)[onnx,hub,resample]" "pytest>=8" \
             --constraint tests/packaging/minimum-constraints.txt
           python -m pip list
-      - run: python tests/packaging/smoke.py onnx+hub
+      - run: python tests/packaging/smoke.py minimum
       - run: python -m pytest tests/unit -q

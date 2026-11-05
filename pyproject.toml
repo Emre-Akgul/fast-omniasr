@@ -17,6 +17,7 @@ onnx = ["onnxruntime>=1.23,<2"]
 cuda = ["onnxruntime-gpu[cuda,cudnn]>=1.23,<2"]
 tensorrt = ["cuda-python>=12"]
 hub = ["huggingface_hub>=0.23"]
+resample = ["soxr>=0.5"]
 dev = ["pytest>=8", "ruff>=0.9"]
 
 [tool.setuptools.packages.find]
