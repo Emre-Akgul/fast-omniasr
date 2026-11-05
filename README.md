@@ -133,6 +133,10 @@ result = model.transcribe_numpy(waveform, sample_rate=48000, convert_audio=True)
 
 This averages the channels of `(samples, channels)` audio and resamples to 16 kHz with [soxr](https://github.com/dofuuz/python-soxr). The channel order of NumPy input isn't guessed: an array with more channels than samples is rejected. The length limits apply to the converted audio.
 
+The LLM's output is the model's own, repeats included: nothing is detected or filtered. On audio with no speech it can loop until `max_new_tokens`, which `stop_reason` reports. To discourage that, pass `repetition_penalty`, which works as in faster-whisper: `model.transcribe(audio, lang="eng_Latn", repetition_penalty=1.1)`. Values above 1 penalize tokens already generated, and the default of 1 changes nothing.
+
+Use it only where loops are the bigger problem, because it can damage real transcripts. On the test clips, 1.1 and 1.2 ended the loops on silence and hum and left a single English sentence unchanged, even said four times, but they changed the text of a two-language clip. EOS is never penalized, so wherever a repeated token only narrowly beats it, the transcript ends there: on a 30-second clip, both values dropped the second sentence, about 40% of the output. It applies to the LLM only: CTC has no generation loop.
+
 The tokenizer must be the one the graph was exported with. On load, the model's output vocabulary has to match the tokenizer's size. Graphs exported by `export_onnx.py` also record the tokenizer's sha256 in their ONNX metadata, so a different tokenizer of the same size is rejected too. Older exports can be stamped in place with `python tools/stamp_tokenizer.py model.onnx fp16/model.onnx --tokenizer tokenizer.model`; fp16/bf16 variants made by `tools/convert_precision.py` keep the stamp. Stamping changes the graph file, so a published repo needs its `config.json` checksums regenerated (republish it). The check compares the exact tokenizer file bytes. A TensorRT engine carries no metadata, so a local engine gets the vocabulary-size check only; `from_pretrained(backend="tensorrt")` checks the ONNX graph before building the engine.
 
 <details>

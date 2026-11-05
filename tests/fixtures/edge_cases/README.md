@@ -27,6 +27,8 @@ These are recorded behaviour, not targets:
   `silence` and `stutter` run out the budget and `mains_hum` reaches EOS after 210 tokens.
   The test pins the stop reason so a change is noticed, not because it's wanted. `silence` is
   digital zero: faint added noise changes the result, so it says nothing about room silence.
+  `repetition_penalty=1.2` ends the loops on `silence` and `mains_hum`, not on `stutter`, and
+  it cuts about 40% of the transcript on `longest_clip`, so it is no general fix.
 - CTC returns empty text on all three no-speech clips, and repeated text on `stutter`, where
   only determinism is checked.
 - `code_switching` has high error rates because the English half comes out garbled on both

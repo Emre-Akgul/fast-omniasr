@@ -1,6 +1,8 @@
 """Greedy decoding with full-prefix or explicit-cache OmniASR LLM-ASR graphs."""
 
 import json
+import math
+import numbers
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +32,31 @@ def _language_files(config: dict) -> set[str]:
         raise ValueError(f"config.json declares language tables it does not list: "
                          f"{', '.join(sorted(unlisted))}")
     return names
+
+
+def _check_repetition_penalty(penalty) -> float:
+    try:
+        valid = (isinstance(penalty, numbers.Real) and not isinstance(penalty, (bool, np.bool_))
+                 and math.isfinite(penalty) and penalty > 0)
+    except OverflowError:  # an integer too large for a float
+        valid = False
+    if not valid:
+        raise ValueError(f"repetition_penalty must be a positive number, got {penalty!r}")
+    return float(penalty)
+
+
+def _next_token(logits, generated, penalty) -> int:
+    """Greedy choice after the repetition penalty, with the same rule as faster-whisper
+    (CTranslate2): each token generated so far has its score multiplied by `penalty` if
+    negative and divided by it otherwise, so values above 1 discourage repeats."""
+    if not generated or penalty == 1:
+        return int(logits.argmax(-1).item())
+    values = logits.float().cpu().numpy() if hasattr(logits, "cpu") else logits
+    values = np.array(values, dtype=np.float32, copy=True).reshape(-1)
+    ids = np.unique(generated)
+    scores = values[ids]
+    values[ids] = np.where(scores < 0, scores * penalty, scores / penalty)
+    return int(values.argmax())
 
 
 @dataclass(frozen=True)
@@ -271,13 +298,19 @@ class OmniASRLLM:
         max_new_tokens: int = 512,
         lang: str | None = None,
         convert_audio: bool = False,
+        repetition_penalty: float = 1,
     ) -> LLMTranscription:
         """Greedy-decode one clip. `lang` conditions on an upstream language code
         (e.g. "eng_Latn"); without it the model's learned no-language row is used.
         `convert_audio=True` downmixes and resamples audio that isn't mono 16 kHz (the
-        `resample` extra); by default it is rejected."""
+        `resample` extra); by default it is rejected. `repetition_penalty` above 1
+        discourages tokens already generated, as in faster-whisper; 1 leaves the model's
+        output untouched. It can end loops on audio with no speech, but it can also end a
+        transcript early, because a penalized token can lose to EOS, which is never
+        penalized."""
         if getattr(self, "closed", False):
             raise RuntimeError("This OmniASRLLM model is closed")
+        repetition_penalty = _check_repetition_penalty(repetition_penalty)
         if (
             not isinstance(max_new_tokens, int)
             or isinstance(max_new_tokens, bool)
@@ -304,10 +337,11 @@ class OmniASRLLM:
             if getattr(self, "closed", False):
                 raise RuntimeError("This OmniASRLLM model is closed")
             if getattr(self, "backend", "torch") == "onnx":
-                return self._transcribe_onnx(waveform, max_new_tokens, language)
-            return self._transcribe_torch(waveform, max_new_tokens, language)
+                return self._transcribe_onnx(waveform, max_new_tokens, language,
+                                             repetition_penalty)
+            return self._transcribe_torch(waveform, max_new_tokens, language, repetition_penalty)
 
-    def _transcribe_torch(self, waveform, max_new_tokens, language=None):
+    def _transcribe_torch(self, waveform, max_new_tokens, language=None, repetition_penalty=1):
         import torch
 
         with torch.inference_mode():
@@ -336,7 +370,7 @@ class OmniASRLLM:
                     logits = self.decoder(context, ids)
                 if not torch.isfinite(logits).all():
                     raise RuntimeError("Decoder produced non-finite logits")
-                token = int(logits.argmax(-1).item())
+                token = _next_token(logits, generated, repetition_penalty)
                 if token == self.config["eos_idx"]:
                     reason = "eos"
                     break
@@ -344,7 +378,7 @@ class OmniASRLLM:
                 tokens.append(token)
         return LLMTranscription(self.tokenizer.decode(generated), generated, reason)
 
-    def _transcribe_onnx(self, waveform, max_new_tokens, language=None):
+    def _transcribe_onnx(self, waveform, max_new_tokens, language=None, repetition_penalty=1):
         context = self.onnx.encode(waveform)
         if language is not None:
             context = np.array(context, copy=True)
@@ -359,7 +393,7 @@ class OmniASRLLM:
         for index in range(budget):
             if not np.isfinite(logits).all():
                 raise RuntimeError("Decoder produced non-finite logits")
-            next_token = int(logits.argmax(-1).item())
+            next_token = _next_token(logits, generated, repetition_penalty)
             if next_token == self.config["eos_idx"]:
                 reason = "eos"
                 break
