@@ -6,7 +6,13 @@ import numpy as np
 from .audio import load_audio, prepare_audio
 from .decoder import greedy_token_ids
 from .options import check_device, resolve_threads
-from .tensorrt_builder import DEFAULT_MAX_SAMPLES, DEFAULT_MIN_SAMPLES, DEFAULT_OPT_SAMPLES
+from .tensorrt_builder import (
+    DEFAULT_MAX_SAMPLES,
+    DEFAULT_MIN_SAMPLES,
+    DEFAULT_OPT_SAMPLES,
+    TensorRTBuildOptions,
+    check_build_options,
+)
 from .tokenizer import Tokenizer, check_compatible
 
 
@@ -119,6 +125,7 @@ class OmniASR:
                          min_samples: int | None = None,
                          opt_samples: int | None = None,
                          max_samples: int | None = None,
+                         build_options: TensorRTBuildOptions | None = None,
                          device: str | None = None, threads: int | None = None,
                          local_files_only: bool = False):
         """Download and verify model/tokenizer assets from a Hugging Face Hub repo.
@@ -141,6 +148,8 @@ class OmniASR:
         `engine_cache_dir` (default
         `~/.cache/fast-omniasr/tensorrt`) keyed by the ONNX content, precision, profile and
         local TensorRT/GPU identity. A later call with the same key reuses the cached engine.
+        `build_options` (TensorRTBuildOptions) tunes the engine build: workspace size,
+        optimization level and a reusable timing cache. Non-default options are part of the key.
 
         `backend="onnx"` accepts precision "fp32" (default), "fp16" or "bf16": the half
         variants keep MatMul weights in half precision. Only the chosen graph, the
@@ -161,6 +170,9 @@ class OmniASR:
                 "min_samples, opt_samples and max_samples are only used with "
                 "backend='tensorrt'"
             )
+        if backend == "onnx" and build_options is not None:
+            raise ValueError("build_options is only used with backend='tensorrt'")
+        check_build_options(build_options)
         if backend == "tensorrt" and precision not in ("fp32", "fp16", "mixed"):
             raise ValueError(
                 "backend='tensorrt' requires precision='fp32', 'fp16' or 'mixed'"
@@ -206,6 +218,7 @@ class OmniASR:
                 min_samples=DEFAULT_MIN_SAMPLES if min_samples is None else min_samples,
                 opt_samples=DEFAULT_OPT_SAMPLES if opt_samples is None else opt_samples,
                 max_samples=DEFAULT_MAX_SAMPLES if max_samples is None else max_samples,
+                options=build_options,
                 cache_dir=engine_cache_dir,
                 **rebuild,
             )

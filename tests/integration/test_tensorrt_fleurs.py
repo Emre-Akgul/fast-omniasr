@@ -78,6 +78,30 @@ def test_engine_on_edge_case(engine, name):
                      lambda reference, text: _metrics.error_rates([reference], [text])["cer"])
 
 
+def test_build_options_tune_the_engine_without_changing_transcripts(tmp_path):
+    """Workspace, optimization level and a timing cache build a separate engine that
+    transcribes the same; a corrupt timing cache is replaced, not fatal."""
+    pytest.importorskip("tensorrt")
+    from fast_omniasr import OmniASR, TensorRTBuildOptions
+
+    pinned = MANIFEST["models"]["ctc"]
+    timing_cache = tmp_path / "timing.cache"
+    timing_cache.write_bytes(b"not a timing cache")
+    common = {"revision": pinned["revision"], "backend": "tensorrt", "precision": "fp32",
+              "engine_cache_dir": tmp_path / "engines",
+              "cache_dir": os.environ.get("OMNIASR_CACHE_DIR") or None}
+    waveform, sample_rate = sf.read(FIXTURES / MANIFEST["clips"][0]["file"], dtype="float32")
+    with OmniASR.from_pretrained(pinned["repo"], **common) as default:
+        expected = default.transcribe_numpy(waveform, sample_rate).token_ids
+    for level in (2, 4):  # the second build reads the cache the first one wrote
+        options = TensorRTBuildOptions(workspace_bytes=2 * 1024**3, optimization_level=level,
+                                       timing_cache=timing_cache)
+        with OmniASR.from_pretrained(pinned["repo"], build_options=options, **common) as model:
+            assert model.transcribe_numpy(waveform, sample_rate).token_ids == expected
+        assert timing_cache.stat().st_size > 1000  # real measurements replaced the junk
+    assert len(list((tmp_path / "engines").glob("*/model.engine"))) == 3
+
+
 def _decision_logit_error(logits, reference):
     """Largest error on the FP32-chosen token's logit over all frames: what decides the
     greedy CTC output (tail logits of the 10,288-entry vocabulary don't)."""

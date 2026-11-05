@@ -1,4 +1,5 @@
 """Standalone OmniASR runtime. Conversion dependencies are deliberately separate."""
 from .model import OmniASR, Transcription
+from .tensorrt_builder import TensorRTBuildOptions
 
-__all__ = ["OmniASR", "Transcription"]
+__all__ = ["OmniASR", "TensorRTBuildOptions", "Transcription"]

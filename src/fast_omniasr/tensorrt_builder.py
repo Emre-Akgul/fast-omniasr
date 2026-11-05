@@ -1,6 +1,9 @@
 """Shared TensorRT engine build logic, used by build_tensorrt.py and OmniASR.from_pretrained()."""
 import operator
 import os
+import uuid
+import warnings
+from dataclasses import dataclass
 from pathlib import Path
 
 from .audio import MIN_AUDIO_SAMPLES
@@ -11,6 +14,9 @@ BUILDER_CONFIG_VERSION = 2
 DEFAULT_MIN_SAMPLES = MIN_AUDIO_SAMPLES
 DEFAULT_OPT_SAMPLES = 80000
 DEFAULT_MAX_SAMPLES = 480000
+
+DEFAULT_WORKSPACE_BYTES = 1024**3
+MAX_OPTIMIZATION_LEVEL = 5  # TensorRT silently clamps anything higher
 
 PRECISIONS = ("fp32", "fp16", "mixed")
 # The precision-sensitive part of the OmniASR CTC graph under FP16 is its convolutional
@@ -73,6 +79,111 @@ def pin_sensitive_layers(trt, network) -> int:
     return pinned
 
 
+def _integer(name: str, value, low: int, high: int) -> int:
+    try:
+        number = None if isinstance(value, bool) else operator.index(value)
+    except TypeError:
+        number = None
+    if number is None or not low <= number <= high:
+        raise ValueError(f"{name} must be an integer from {low} to {high}, got {value!r}")
+    return number
+
+
+@dataclass(frozen=True)
+class TensorRTBuildOptions:
+    """Build settings beyond precision and the sample profile.
+
+    `workspace_bytes` limits the workspace memory available to one layer: raising it can
+    fix builds that fail for lack of workspace or let TensorRT pick faster algorithms.
+    `optimization_level` (0 to 5) trades build time for optimization effort; None keeps
+    TensorRT's default. `timing_cache` is a file of timing measurements, read before the
+    build and updated after it, which speeds up later builds of similar graphs. It is only
+    an optimization, so a file that's missing, unreadable or can't be saved costs a warning
+    at most, never the build. Builds sharing one file replace it whole, so the last one to
+    finish wins. Engines built with different options are cached separately; the defaults
+    keep the cache keys they have always had.
+    """
+
+    workspace_bytes: int = DEFAULT_WORKSPACE_BYTES
+    optimization_level: int | None = None
+    timing_cache: str | Path | None = None
+
+    def __post_init__(self):
+        object.__setattr__(self, "workspace_bytes",
+                           _integer("workspace_bytes", self.workspace_bytes, 1, 2**63 - 1))
+        if self.optimization_level is not None:
+            object.__setattr__(self, "optimization_level",
+                               _integer("optimization_level", self.optimization_level, 0,
+                                        MAX_OPTIMIZATION_LEVEL))
+        if self.timing_cache is not None:
+            path = Path(self.timing_cache)
+            if not str(self.timing_cache) or not path.name:
+                raise ValueError(f"timing_cache must be a file path, got {self.timing_cache!r}")
+            object.__setattr__(self, "timing_cache", path)
+
+    def identity(self) -> dict:
+        """The settings that differ from the defaults, for the engine-cache key. Only the
+        use of a timing cache counts: its location doesn't affect the engine, and its
+        contents only guide algorithm choice and change with every build."""
+        identity = {}
+        if self.workspace_bytes != DEFAULT_WORKSPACE_BYTES:
+            identity["workspace_bytes"] = self.workspace_bytes
+        if self.optimization_level is not None:
+            identity["optimization_level"] = self.optimization_level
+        if self.timing_cache is not None:
+            identity["timing_cache"] = True
+        return identity
+
+
+def _load_timing_cache(config, path: Path) -> None:
+    """Attach the timing cache at `path`, starting empty if it can't be read. TensorRT
+    logs corrupt contents and starts empty by itself. No failure here may stop the build."""
+    try:
+        serialized = path.read_bytes()
+    except FileNotFoundError:
+        serialized = b""
+    except (OSError, ValueError) as exc:
+        warnings.warn(f"Could not read the timing cache {path}: {exc}; starting empty",
+                      stacklevel=3)
+        serialized = b""
+    try:
+        attached = config.set_timing_cache(config.create_timing_cache(serialized), False)
+    except Exception as exc:  # noqa: BLE001 -- only an optimization; TensorRT raises many types
+        warnings.warn(f"Could not use the timing cache {path}: {exc}", stacklevel=3)
+        return
+    if not attached:
+        warnings.warn(f"TensorRT rejected the timing cache {path}; building without it",
+                      stacklevel=3)
+
+
+def _save_timing_cache(config, path: Path) -> None:
+    """Replace the file atomically, with the permissions of a new file. The engine is
+    already saved, so a failure here only costs the measurements and must not propagate."""
+    temporary = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        cache = config.get_timing_cache()
+        if cache is None:  # never attached
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_bytes(bytes(cache.serialize()))
+        os.replace(temporary, path)
+    except Exception as exc:  # noqa: BLE001 -- only an optimization; TensorRT raises many types
+        warnings.warn(f"Could not save the timing cache {path}: {exc}", stacklevel=3)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except (OSError, ValueError):  # ValueError: a path the OS can't represent
+            pass
+
+
+def check_build_options(options) -> TensorRTBuildOptions:
+    if options is None:
+        return TensorRTBuildOptions()
+    if not isinstance(options, TensorRTBuildOptions):
+        raise TypeError(f"options must be a TensorRTBuildOptions, got {options!r}")
+    return options
+
+
 def validate_profile(min_samples: int, opt_samples: int, max_samples: int) -> tuple[int, int, int]:
     try:
         min_samples, opt_samples, max_samples = (
@@ -93,10 +204,12 @@ def validate_profile(min_samples: int, opt_samples: int, max_samples: int) -> tu
 def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: str = "fp32",
                   min_samples: int = DEFAULT_MIN_SAMPLES,
                   opt_samples: int = DEFAULT_OPT_SAMPLES,
-                  max_samples: int = DEFAULT_MAX_SAMPLES) -> Path:
+                  max_samples: int = DEFAULT_MAX_SAMPLES,
+                  options: TensorRTBuildOptions | None = None) -> Path:
     """`precision`: "fp32"; "fp16" (fastest, small transcript differences from FP32); or
     "mixed" (FP16 with the precision-sensitive convolutional front end kept in FP32:
-    closest to FP32, about twice the FP16 latency)."""
+    closest to FP32, about twice the FP16 latency). `options`: see TensorRTBuildOptions."""
+    options = check_build_options(options)
     if precision not in PRECISIONS:
         raise ValueError("precision must be 'fp32', 'fp16' or 'mixed'")
     min_samples, opt_samples, max_samples = validate_profile(
@@ -116,7 +229,11 @@ def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: s
         raise RuntimeError("\n".join(str(parser.get_error(i)) for i in range(parser.num_errors)))
     config = builder.create_builder_config()
     config.clear_flag(trt.BuilderFlag.TF32)
-    config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 1024**3)
+    config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, options.workspace_bytes)
+    if options.optimization_level is not None:
+        config.builder_optimization_level = options.optimization_level
+    if options.timing_cache is not None:
+        _load_timing_cache(config, options.timing_cache)
     if precision in ("fp16", "mixed"):
         config.set_flag(trt.BuilderFlag.FP16)
     if precision == "mixed":
@@ -136,4 +253,6 @@ def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: s
     tmp_path = output_path.with_name(output_path.name + ".tmp")
     tmp_path.write_bytes(bytes(serialized))
     os.replace(tmp_path, output_path)
+    if options.timing_cache is not None:
+        _save_timing_cache(config, options.timing_cache)
     return output_path
