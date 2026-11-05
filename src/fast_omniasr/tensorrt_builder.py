@@ -1,7 +1,8 @@
 """Shared TensorRT engine build logic, used by build_tensorrt.py and OmniASR.from_pretrained()."""
 import operator
 import os
-import tempfile
+import uuid
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -96,9 +97,11 @@ class TensorRTBuildOptions:
     fix builds that fail for lack of workspace or let TensorRT pick faster algorithms.
     `optimization_level` (0 to 5) trades build time for optimization effort; None keeps
     TensorRT's default. `timing_cache` is a file of timing measurements, read before the
-    build and updated after it, which speeds up later builds of similar graphs. A missing
-    or unusable file just means a full build. Engines built with different options are
-    cached separately; the defaults keep the cache keys they have always had.
+    build and updated after it, which speeds up later builds of similar graphs. It is only
+    an optimization, so a file that's missing, unreadable or can't be saved costs a warning
+    at most, never the build. Builds sharing one file replace it whole, so the last one to
+    finish wins. Engines built with different options are cached separately; the defaults
+    keep the cache keys they have always had.
     """
 
     workspace_bytes: int = DEFAULT_WORKSPACE_BYTES
@@ -113,11 +116,17 @@ class TensorRTBuildOptions:
                                _integer("optimization_level", self.optimization_level, 0,
                                         MAX_OPTIMIZATION_LEVEL))
         if self.timing_cache is not None:
-            object.__setattr__(self, "timing_cache", Path(self.timing_cache))
+            if not str(self.timing_cache):
+                raise ValueError("timing_cache must be a file path, got an empty path")
+            path = Path(self.timing_cache).expanduser()
+            if path.is_dir():
+                raise ValueError(f"timing_cache must be a file, but {path} is a directory")
+            object.__setattr__(self, "timing_cache", path)
 
     def identity(self) -> dict:
         """The settings that differ from the defaults, for the engine-cache key. Only the
-        use of a timing cache counts: its contents and location change with every build."""
+        use of a timing cache counts: its location doesn't affect the engine, and its
+        contents only guide algorithm choice and change with every build."""
         identity = {}
         if self.workspace_bytes != DEFAULT_WORKSPACE_BYTES:
             identity["workspace_bytes"] = self.workspace_bytes
@@ -129,28 +138,38 @@ class TensorRTBuildOptions:
 
 
 def _load_timing_cache(config, path: Path) -> None:
-    """Attach the timing cache at `path`. TensorRT itself drops an unreadable one with a
-    logged warning, and starts from an empty cache."""
+    """Attach the timing cache at `path`, or an empty one if it can't be read. TensorRT
+    logs corrupt contents and starts empty by itself."""
     try:
         serialized = path.read_bytes()
     except FileNotFoundError:
         serialized = b""
+    except OSError as exc:
+        warnings.warn(f"Could not read the timing cache {path}: {exc}; starting empty",
+                      stacklevel=3)
+        serialized = b""
     if not config.set_timing_cache(config.create_timing_cache(serialized), False):
-        raise RuntimeError(f"TensorRT rejected the timing cache {path}")
+        warnings.warn(f"TensorRT rejected the timing cache {path}; building without it",
+                      stacklevel=3)
 
 
 def _save_timing_cache(config, path: Path) -> None:
-    """Replace the file atomically: several builds may share one timing cache."""
-    serialized = bytes(config.get_timing_cache().serialize())
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".")
+    """Replace the file atomically, with the usual permissions of a new file. The engine
+    is already saved, so a failure here only costs the measurements."""
+    cache = config.get_timing_cache()
+    if cache is None:  # TensorRT rejected it before the build
+        return
+    temporary = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        with os.fdopen(descriptor, "wb") as file:
-            file.write(serialized)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_bytes(bytes(cache.serialize()))
         os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+    except OSError as exc:
+        warnings.warn(f"Could not save the timing cache {path}: {exc}", stacklevel=3)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def check_build_options(options) -> TensorRTBuildOptions:
@@ -225,11 +244,11 @@ def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: s
     serialized = builder.build_serialized_network(network, config)
     if serialized is None:
         raise RuntimeError("TensorRT build failed; inspect the builder log")
-    if options.timing_cache is not None:
-        _save_timing_cache(config, options.timing_cache)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = output_path.with_name(output_path.name + ".tmp")
     tmp_path.write_bytes(bytes(serialized))
     os.replace(tmp_path, output_path)
+    if options.timing_cache is not None:
+        _save_timing_cache(config, options.timing_cache)
     return output_path

@@ -1,7 +1,10 @@
 """build_engine precision recipes, exercised with a fake tensorrt module (no GPU)."""
 
+import os
+import stat
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
@@ -237,10 +240,57 @@ def test_timing_cache_is_reused_and_replaced(fake_trt, tmp_path):
     assert path.read_bytes() == b"measurements"
 
 
-def test_rejected_timing_cache_fails_instead_of_being_ignored(fake_trt, tmp_path):
+def test_rejected_timing_cache_warns_and_still_builds(fake_trt, tmp_path):
     fake_trt["accept_timing_cache"] = False
-    with pytest.raises(RuntimeError, match="rejected the timing cache"):
-        _build_with(tmp_path, timing_cache=tmp_path / "timing.bin")
+    with pytest.warns(UserWarning, match="rejected the timing cache"):
+        engine = _build_with(tmp_path, timing_cache=tmp_path / "timing.bin")
+    assert engine.read_bytes() == b"engine"
+
+
+def test_unreadable_timing_cache_warns_and_starts_empty(fake_trt, tmp_path, monkeypatch):
+    path = tmp_path / "timing.bin"
+    path.write_bytes(b"earlier")
+    real_read = Path.read_bytes
+
+    def denied(self):
+        if self == path:
+            raise PermissionError("denied")
+        return real_read(self)
+
+    monkeypatch.setattr(Path, "read_bytes", denied)
+    with pytest.warns(UserWarning, match="Could not read the timing cache"):
+        engine = _build_with(tmp_path, timing_cache=path)
+    assert fake_trt["cache_read"] == b""
+    assert engine.read_bytes() == b"engine"
+
+
+def test_timing_cache_save_failure_keeps_the_finished_engine(fake_trt, tmp_path, monkeypatch):
+    path = tmp_path / "timing.bin"
+    path.write_bytes(b"earlier")
+    real_replace = os.replace
+
+    def replace(source, target):
+        if Path(target) == path:
+            raise PermissionError("denied")
+        real_replace(source, target)
+
+    monkeypatch.setattr(tensorrt_builder.os, "replace", replace)
+    with pytest.warns(UserWarning, match="Could not save the timing cache"):
+        engine = _build_with(tmp_path, timing_cache=path)
+    assert engine.read_bytes() == b"engine"
+    assert path.read_bytes() == b"earlier"  # replaced whole or not at all
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["out.engine", "timing.bin"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes")
+def test_timing_cache_gets_normal_file_permissions(fake_trt, tmp_path):
+    path = tmp_path / "timing.bin"
+    previous = os.umask(0o002)
+    try:
+        _build_with(tmp_path, timing_cache=path)
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o664
 
 
 def test_failed_build_leaves_the_timing_cache_alone(fake_trt, tmp_path):
@@ -262,10 +312,16 @@ def test_failed_build_leaves_the_timing_cache_alone(fake_trt, tmp_path):
     ({"optimization_level": 6}, "optimization_level"),
     ({"optimization_level": True}, "optimization_level"),
     ({"optimization_level": "3"}, "optimization_level"),
+    ({"timing_cache": ""}, "empty path"),
 ])
 def test_invalid_options_are_rejected(options, message):
     with pytest.raises(ValueError, match=message):
         TensorRTBuildOptions(**options)
+
+
+def test_timing_cache_cannot_be_a_directory(tmp_path):
+    with pytest.raises(ValueError, match="is a directory"):
+        TensorRTBuildOptions(timing_cache=tmp_path)
 
 
 def test_options_are_normalized():

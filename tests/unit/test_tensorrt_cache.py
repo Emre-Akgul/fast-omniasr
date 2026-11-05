@@ -623,6 +623,35 @@ def _from_pretrained_with(monkeypatch, tmp_path, failures):
         monkeypatch.setattr(model.OmniASR, "__init__", real_init)
 
 
+def test_from_pretrained_keeps_build_options_on_every_build(monkeypatch, tmp_path):
+    from fast_omniasr import OmniASR, hub, model
+
+    monkeypatch.setattr(hub, "download_verified", lambda *a, **k: (
+        {}, {"model.onnx": tmp_path / "m.onnx", "tokenizer.model": tmp_path / "t.model"},
+        *((None,) if k.get("return_snapshot") else ())))
+    seen = []
+
+    def fake_cache(onnx_path, **kwargs):
+        seen.append(kwargs["options"])
+        return tmp_path / "e.engine"
+
+    monkeypatch.setattr(tensorrt_cache, "get_or_build_engine", fake_cache)
+    monkeypatch.setattr(tensorrt_cache, "recorded_engine_sha256", lambda path: "digest")
+    monkeypatch.setattr(model, "Tokenizer", lambda path: None)
+    monkeypatch.setattr(model, "check_compatible", lambda *a, **k: None)
+    failures = [_deserialize_error()]
+
+    def fake_init(self, *args, **kwargs):
+        if failures:
+            raise failures.pop(0)
+        self.backend = types.SimpleNamespace(closed=False, close=lambda: None)
+
+    monkeypatch.setattr(model.OmniASR, "__init__", fake_init)
+    options = TensorRTBuildOptions(optimization_level=2)
+    OmniASR.from_pretrained("o/r", backend="tensorrt", precision="fp32", build_options=options)
+    assert seen == [options, options]  # the first build and the retry
+
+
 def _deserialize_error():
     from fast_omniasr.backends.tensorrt import EngineDeserializationError
 

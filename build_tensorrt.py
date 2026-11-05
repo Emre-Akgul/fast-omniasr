@@ -9,6 +9,7 @@ from fast_omniasr.tensorrt_builder import (
     DEFAULT_WORKSPACE_BYTES,
     TensorRTBuildOptions,
     build_engine,
+    validate_profile,
 )
 
 
@@ -32,6 +33,7 @@ def main():
         options = TensorRTBuildOptions(workspace_bytes=args.workspace_bytes,
                                        optimization_level=args.optimization_level,
                                        timing_cache=args.timing_cache)
+        validate_profile(args.min_samples, args.opt_samples, args.max_samples)
     except ValueError as exc:
         parser.error(str(exc))
     build_engine(
