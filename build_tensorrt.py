@@ -6,6 +6,8 @@ from fast_omniasr.tensorrt_builder import (
     DEFAULT_MAX_SAMPLES,
     DEFAULT_MIN_SAMPLES,
     DEFAULT_OPT_SAMPLES,
+    DEFAULT_WORKSPACE_BYTES,
+    TensorRTBuildOptions,
     build_engine,
 )
 
@@ -19,7 +21,19 @@ def main():
     parser.add_argument("--min-samples", type=int, default=DEFAULT_MIN_SAMPLES)
     parser.add_argument("--opt-samples", type=int, default=DEFAULT_OPT_SAMPLES)
     parser.add_argument("--max-samples", type=int, default=DEFAULT_MAX_SAMPLES)
+    parser.add_argument("--workspace-bytes", type=int, default=DEFAULT_WORKSPACE_BYTES,
+                        help="workspace memory limit per layer")
+    parser.add_argument("--optimization-level", type=int,
+                        help="0 to 5; TensorRT's default when omitted")
+    parser.add_argument("--timing-cache", type=Path,
+                        help="file of timing measurements, reused and updated by each build")
     args = parser.parse_args()
+    try:
+        options = TensorRTBuildOptions(workspace_bytes=args.workspace_bytes,
+                                       optimization_level=args.optimization_level,
+                                       timing_cache=args.timing_cache)
+    except ValueError as exc:
+        parser.error(str(exc))
     build_engine(
         args.model,
         args.output,
@@ -27,6 +41,7 @@ def main():
         min_samples=args.min_samples,
         opt_samples=args.opt_samples,
         max_samples=args.max_samples,
+        options=options,
     )
     print(args.output)
 

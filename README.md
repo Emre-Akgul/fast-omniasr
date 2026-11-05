@@ -99,6 +99,21 @@ model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-300M-v2-ONNX", backend="t
 
 The first call downloads the ONNX asset, builds a local engine, and caches it under `~/.cache/fast-omniasr/tensorrt/<key>/model.engine`. The cache key includes the SHA-256 of the ONNX graph and of every external-data weights file it references, the precision, profile, TensorRT version and the CUDA major it was built for (`cu12`/`cu13`), and the identity (name and compute capability) of the current CUDA device, so replacing only a weights file, switching GPU model, or switching TensorRT's CUDA flavor rebuilds the engine. The driver version, device index and `cuda-python` version are not part of the key. Each cached engine's size and SHA-256 are recorded and checked before reuse: a corrupted or replaced engine is rebuilt with a warning, and an engine TensorRT cannot deserialize is rebuilt once before `from_pretrained` gives up. The default profile accepts 400 to 480,000 samples and optimizes for 80,000 samples. Advanced users can pass `min_samples`, `opt_samples`, and `max_samples`; a changed profile creates a separate cached engine. `precision="fp16"` warns once per process about its accuracy caveat; `"mixed"` builds a separate engine with the feature extractor and positional convolution kept in FP32.
 
+To tune the build, pass `build_options` (or the matching `build_tensorrt.py` flags):
+
+```python
+from fast_omniasr import OmniASR, TensorRTBuildOptions
+
+options = TensorRTBuildOptions(
+    workspace_bytes=2 * 1024**3,          # workspace memory limit per layer (default 1 GiB)
+    optimization_level=4,                 # 0 to 5 (default: TensorRT's own, currently 3)
+    timing_cache="trt-timing.cache",      # reused and updated by each build
+)
+model = OmniASR.from_pretrained(repo, backend="tensorrt", precision="fp16", build_options=options)
+```
+
+A timing cache cuts rebuild time, for example from 18 s to 6 s rebuilding the 300M model at FP32. A missing or unreadable file just means a full build. Non-default options are part of the cache key, so each combination gets its own engine; using a timing cache counts, but not its contents or path. With the defaults, existing cached engines stay valid.
+
 `OmniASR` and `OmniASRLLM` release their ONNX Runtime sessions or TensorRT engine on `close()` or when leaving a `with` block (`with OmniASR.from_pretrained(...) as model:`); `close()` is idempotent, and transcribing afterwards raises `RuntimeError`. An `OmniASR` instance may be shared across threads. With the TensorRT backend, each instance owns one execution context and its buffers, so concurrent calls are serialized (never mixed); create one instance per worker for parallel GPU throughput. `OmniASRLLM` instances may also be shared: each `transcribe()` runs its encode and full decode loop alone (calls are serialized), so concurrent requests never mix; use one instance per worker for parallel throughput.
 
 Or supply local assets directly (no download, no `hub` extra needed):

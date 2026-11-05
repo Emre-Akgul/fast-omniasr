@@ -23,7 +23,9 @@ from .tensorrt_builder import (
     DEFAULT_OPT_SAMPLES,
     MIXED_RECIPE,
     PRECISIONS,
+    TensorRTBuildOptions,
     build_engine,
+    check_build_options,
     validate_profile,
 )
 
@@ -254,6 +256,7 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
                          min_samples: int = DEFAULT_MIN_SAMPLES,
                          opt_samples: int = DEFAULT_OPT_SAMPLES,
                          max_samples: int = DEFAULT_MAX_SAMPLES,
+                         options: TensorRTBuildOptions | None = None,
                          cache_dir: str | Path | None = None,
                          rebuild: bool = False,
                          discard_sha256: str | None = None) -> Path:
@@ -271,6 +274,7 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
     min_samples, opt_samples, max_samples = validate_profile(
         min_samples, opt_samples, max_samples
     )
+    options = check_build_options(options)
     onnx_path = Path(onnx_path)
     root = Path(cache_dir) if cache_dir is not None else _DEFAULT_CACHE_ROOT
     metadata = {
@@ -279,6 +283,7 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
         "precision": precision,
         **({"mixed_recipe": MIXED_RECIPE} if precision == "mixed" else {}),
         "profile": {"min": min_samples, "opt": opt_samples, "max": max_samples},
+        **({"build_options": options.identity()} if options.identity() else {}),
         "tf32": False,
         "builder_config_version": BUILDER_CONFIG_VERSION,
         **_local_environment(),
@@ -313,7 +318,7 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
         # A crash mid-build must not leave a record that vouches for a partial engine.
         metadata_path.unlink(missing_ok=True)
         build_engine(onnx_path, engine_path, precision=precision, min_samples=min_samples,
-                     opt_samples=opt_samples, max_samples=max_samples)
+                     opt_samples=opt_samples, max_samples=max_samples, options=options)
         _write_metadata(metadata_path, {**metadata, "engine": _engine_record(engine_path)})
     return engine_path
 

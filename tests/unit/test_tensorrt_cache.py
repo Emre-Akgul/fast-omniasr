@@ -7,6 +7,7 @@ import types
 import pytest
 
 from fast_omniasr import tensorrt_cache
+from fast_omniasr.tensorrt_builder import TensorRTBuildOptions
 from fast_omniasr.tensorrt_cache import get_or_build_engine
 
 FAKE_ENV = {
@@ -20,10 +21,13 @@ FAKE_ENV = {
 @pytest.fixture
 def counting_builder(monkeypatch):
     calls = []
+    built_options = []
+    monkeypatch.setattr(tensorrt_cache, "_built_options", built_options, raising=False)
 
     def fake_build_engine(onnx_path, output_path, *, precision, min_samples, opt_samples,
-                           max_samples):
+                           max_samples, options=None):
         calls.append(precision)
+        built_options.append(options)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(f"FAKE ENGINE {precision}".encode())
         return output_path
@@ -675,3 +679,65 @@ def test_malformed_engine_record_triggers_a_rebuild(counting_builder, onnx_a, tm
     with pytest.warns(UserWarning, match="recorded checksum"):
         get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
     assert len(counting_builder) == 2
+
+
+def _metadata(engine_path):
+    return json.loads((engine_path.parent / "metadata.json").read_text(encoding="utf-8"))
+
+
+def test_default_options_keep_the_existing_cache_key(counting_builder, onnx_a, tmp_path):
+    cache_dir = tmp_path / "cache"
+    implicit = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir)
+    explicit = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir,
+                                   options=TensorRTBuildOptions())
+    assert implicit == explicit
+    assert counting_builder == ["fp32"]
+    assert "build_options" not in _metadata(implicit)
+
+
+@pytest.mark.parametrize("options,recorded", [
+    (TensorRTBuildOptions(workspace_bytes=2**31), {"workspace_bytes": 2**31}),
+    (TensorRTBuildOptions(optimization_level=4), {"optimization_level": 4}),
+    (TensorRTBuildOptions(optimization_level=3), {"optimization_level": 3}),
+    (TensorRTBuildOptions(timing_cache="timing.bin"), {"timing_cache": True}),
+])
+def test_each_non_default_option_gets_its_own_engine(counting_builder, onnx_a, tmp_path,
+                                                     options, recorded):
+    cache_dir = tmp_path / "cache"
+    default = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir)
+    custom = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir, options=options)
+    assert custom != default
+    assert _metadata(custom)["build_options"] == recorded
+    assert tensorrt_cache._built_options[-1] == options
+    get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir, options=options)
+    assert len(counting_builder) == 2  # the second custom call reused its engine
+
+
+def test_timing_cache_location_does_not_change_the_key(counting_builder, onnx_a, tmp_path):
+    cache_dir = tmp_path / "cache"
+    first = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir,
+                                options=TensorRTBuildOptions(timing_cache="a.bin"))
+    second = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir,
+                                 options=TensorRTBuildOptions(timing_cache="b.bin"))
+    assert first == second and len(counting_builder) == 1
+
+
+def test_options_must_be_build_options(counting_builder, onnx_a, tmp_path):
+    with pytest.raises(TypeError, match="TensorRTBuildOptions"):
+        get_or_build_engine(onnx_a, precision="fp32", cache_dir=tmp_path / "cache",
+                            options={"workspace_bytes": 1})
+    assert counting_builder == []
+
+
+def test_from_pretrained_rejects_build_options_on_onnx():
+    from fast_omniasr import OmniASR
+
+    with pytest.raises(ValueError, match="build_options is only used"):
+        OmniASR.from_pretrained("o/r", build_options=TensorRTBuildOptions())
+
+
+def test_from_pretrained_rejects_bad_build_options_before_downloading():
+    from fast_omniasr import OmniASR
+
+    with pytest.raises(TypeError, match="TensorRTBuildOptions"):
+        OmniASR.from_pretrained("o/r", backend="tensorrt", precision="fp32", build_options=1)
