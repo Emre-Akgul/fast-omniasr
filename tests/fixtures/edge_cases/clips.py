@@ -134,7 +134,7 @@ def reference(clip):
 def check_text(text, expected, reference, cer):
     """Assert a transcript meets a clip's `ctc`/`llm` entry; `cer(reference, text)` scores it."""
     if "text" in expected:
-        assert text == expected["text"]
+        assert text == expected["text"], repr(text)
     if "contains" in expected:
         assert expected["contains"] in text, text
     if "max_cer" in expected:

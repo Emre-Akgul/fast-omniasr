@@ -23,8 +23,12 @@ models. Stop reasons apply to the LLM only: CTC has no generation loop.
 These are recorded behaviour, not targets:
 
 - The LLM invents text when there is no speech, and on `silence`, `mains_hum` and `stutter`
-  it repeats itself until `max_new_tokens`. The test pins that stop reason so a change is
-  noticed, not because it's wanted. CTC returns empty text on all three no-speech clips.
+  it is still repeating itself at the 64-token budget these clips use. At the default 512,
+  `silence` and `stutter` run out the budget and `mains_hum` reaches EOS after 210 tokens.
+  The test pins the stop reason so a change is noticed, not because it's wanted. `silence` is
+  digital zero: faint added noise changes the result, so it says nothing about room silence.
+- CTC returns empty text on all three no-speech clips, and repeated text on `stutter`, where
+  only determinism is checked.
 - `code_switching` has high error rates because the English half comes out garbled on both
   models, even at matched levels and with `lang` set. Only the end of the Turkish half is
   checked exactly.

@@ -60,7 +60,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -e ".[dev,onnx,hub]"
-      - name: Run the published models on the FLEURS fixtures
+      - name: Run the published models on the FLEURS and edge-case fixtures
         run: python -m pytest tests/integration/test_real_models_cpu.py tests/integration/test_real_models_edge_cases.py tests/unit/test_fleurs_fixtures.py -v -rs
 
   fleurs-gate:
