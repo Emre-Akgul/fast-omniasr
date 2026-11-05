@@ -2,6 +2,7 @@
 
 import json
 import math
+import numbers
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,8 +35,12 @@ def _language_files(config: dict) -> set[str]:
 
 
 def _check_repetition_penalty(penalty) -> float:
-    if (isinstance(penalty, bool) or not isinstance(penalty, (int, float, np.floating))
-            or not math.isfinite(penalty) or penalty <= 0):
+    try:
+        valid = (isinstance(penalty, numbers.Real) and not isinstance(penalty, (bool, np.bool_))
+                 and math.isfinite(penalty) and penalty > 0)
+    except OverflowError:  # an integer too large for a float
+        valid = False
+    if not valid:
         raise ValueError(f"repetition_penalty must be a positive number, got {penalty!r}")
     return float(penalty)
 
@@ -300,7 +305,8 @@ class OmniASRLLM:
         `convert_audio=True` downmixes and resamples audio that isn't mono 16 kHz (the
         `resample` extra); by default it is rejected. `repetition_penalty` above 1
         discourages tokens already generated, as in faster-whisper; 1 leaves the model's
-        output untouched."""
+        output untouched. It can end loops on audio with no speech, but it can also cut
+        long transcripts short, because every generated token stays penalized."""
         if getattr(self, "closed", False):
             raise RuntimeError("This OmniASRLLM model is closed")
         repetition_penalty = _check_repetition_penalty(repetition_penalty)

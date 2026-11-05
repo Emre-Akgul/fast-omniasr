@@ -71,6 +71,11 @@ def test_penalty_below_one_favours_repeats_as_upstream_allows():
     assert _next_token(logits, [1], 0.5) == 1
 
 
+def test_the_whole_history_is_penalized_not_just_the_last_token():
+    logits = np.array([[0.0, 4.0, 3.0, 2.5]], np.float32)
+    assert _next_token(logits, [1, 2], 2.0) == 3  # 2.5 beats 4 / 2 and 3 / 2
+
+
 def test_only_generated_tokens_are_penalized():
     logits = np.array([[0.0, 4.0, 3.0]], np.float32)
     assert _next_token(logits, [2], 2.0) == 1
@@ -82,9 +87,21 @@ def test_scores_are_not_modified_in_place():
     np.testing.assert_array_equal(logits, [[0.0, 4.0, 3.0]])
 
 
-def test_torch_logits_work_too():
+@pytest.mark.parametrize("dtype", ["float32", "float16", "bfloat16"])
+def test_torch_logits_work_in_every_precision(dtype):
     torch = pytest.importorskip("torch")
-    assert _next_token(torch.tensor([[0.0, 4.0, 3.0]]), [1], 2.0) == 2
+    logits = torch.tensor([[0.0, 4.0, 3.0]], dtype=getattr(torch, dtype))
+    assert _next_token(logits, [1], 2.0) == 2
+
+
+def test_bos_is_not_part_of_the_penalized_history():
+    # Token 0 is BOS here: it stays the best choice, so it isn't being penalized.
+    result = transcribe(model([5.0, 0.0, 0.0, 4.0, 3.0], limit=1), repetition_penalty=2.0)
+    assert result.token_ids == [0]
+
+
+def test_penalty_below_one_is_accepted():
+    assert transcribe(model([0.0, 0.0, 0.0, 4.0, 3.0]), repetition_penalty=0.5).token_ids == [3] * 3
 
 
 def test_default_keeps_the_exact_greedy_output():
@@ -100,15 +117,16 @@ def test_penalty_of_one_is_the_default():
 
 def test_penalty_steers_the_onnx_decode_loop():
     result = transcribe(model([0.0, 0.0, 0.0, 4.0, 3.0]), repetition_penalty=2.0)
-    assert result.token_ids == [3, 4, 3]  # 4 / 2 < 3, then 3 / 2 < 2 for both
+    assert result.token_ids == [3, 4, 3]  # 3 is penalized to 2, then 4 to 1.5 and 3 to 2
 
 
-@pytest.mark.parametrize("value", [0, -1, -0.5, float("nan"), float("inf"), True, "1.2", None])
+@pytest.mark.parametrize("value", [0, -1, -0.5, float("nan"), float("inf"), True, np.bool_(True),
+                                   "1.2", None, 10**400])
 def test_invalid_penalties_are_rejected(value):
     with pytest.raises(ValueError, match="repetition_penalty"):
         model([0.0, 0.0, 0.0]).transcribe(np.zeros(1600, np.float32), repetition_penalty=value)
 
 
 def test_integer_and_numpy_penalties_are_accepted():
-    for value in (2, np.float32(2.0)):
+    for value in (2, np.int64(2), np.float32(2.0)):
         assert transcribe(model([0.0, 0.0, 0.0, 4.0, 3.0]), repetition_penalty=value).token_ids
