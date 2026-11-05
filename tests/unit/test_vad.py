@@ -49,7 +49,8 @@ def test_long_silence_between_sentences_is_skipped():
     waveform = np.concatenate([speech(), gap, speech(1)])
     chunks = prepare_chunks(waveform, vad_filter=True, chunk_length=15)
     assert len(chunks) == 1  # both fit one 15 s chunk, joined without the silence
-    assert chunks[0][1] > 20 and chunks[0][2].shape[1] < 11 * 16000
+    assert chunks[0][1] > 20
+    assert 7 * 16000 < chunks[0][2].shape[1] < 11 * 16000  # both sentences, no silence
 
 
 def test_chunks_stay_within_chunk_length():
@@ -71,9 +72,47 @@ def test_cuts_land_in_silence():
         assert boundary > 56000 or boundary < 2000  # this sentence's speech ends near 56,000
 
 
-def test_vad_options_are_used_and_chunk_length_still_caps_speech():
+def test_chunks_are_normalized_on_their_own():
+    waveform = np.concatenate([np.zeros(16000, np.float32), speech()])
+    _, _, audio = prepare_chunks(waveform, vad_filter=True)[0]
+    assert abs(audio.mean()) < 1e-3 and audio.std() == pytest.approx(1, abs=0.05)
+
+
+def test_unbroken_speech_is_capped_at_the_chunk_length():
+    waveform = np.tile(speech(), 3)
+    chunks = prepare_chunks(waveform, vad_filter=True, chunk_length=3)
+    assert len(chunks) > 1 and all(audio.shape[1] <= 3 * 16000 for *_, audio in chunks)
+
+
+def test_a_vad_options_object_is_used_as_given():
     spans = speech_chunks(speech(), 30, VadOptions(threshold=0.99, min_speech_duration_ms=30000))
     assert spans == []
+
+
+def test_a_dict_of_options_works_and_gets_the_chunk_limit():
+    waveform = np.tile(speech(), 3)
+    chunks = prepare_chunks(waveform, vad_filter=True, chunk_length=3,
+                            vad_options={"threshold": 0.5, "max_speech_duration_s": 999})
+    assert all(audio.shape[1] <= 3 * 16000 for *_, audio in chunks)
+
+
+def test_bad_vad_options_are_rejected():
+    with pytest.raises(TypeError, match="VadOptions or a dict"):
+        speech_chunks(speech(), 15, "aggressive")
+
+
+def test_speech_longer_than_a_chunk_is_rejected_as_upstream():
+    with pytest.raises(ValueError, match="longer than the"):
+        speech_chunks(np.tile(speech(), 3), 3, VadOptions())
+
+
+def test_a_chunk_under_the_minimum_is_dropped(monkeypatch):
+    from fast_omniasr import vad
+
+    monkeypatch.setattr(vad, "speech_chunks", lambda *a: [[{"start": 0, "end": 399}],
+                                                          [{"start": 500, "end": 900}]])
+    chunks = prepare_chunks(speech(), vad_filter=True)
+    assert [(start, end) for start, end, _ in chunks] == [(500 / 16000, 900 / 16000)]
 
 
 def test_vad_options_need_vad_filter():
@@ -87,8 +126,8 @@ def test_vad_filter_must_be_a_bool():
 
 
 def test_non_finite_audio_is_rejected_before_vad():
-    waveform = speech()
-    waveform[10] = np.nan
+    waveform = np.concatenate([speech(), np.zeros(10 * 16000, np.float32)])
+    waveform[-1000] = np.nan  # in silence, so normalizing the speech wouldn't catch it
     with pytest.raises(ValueError, match="NaN or infinity"):
         prepare_chunks(waveform, vad_filter=True)
 

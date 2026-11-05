@@ -270,6 +270,13 @@ def test_llm_rejects_a_closed_model():
         model.transcribe_long(noise(16000))
 
 
+def test_ctc_closed_model_is_rejected_before_any_vad_work():
+    model = ctc()
+    model.backend.closed = True
+    with pytest.raises(RuntimeError, match="closed"):
+        model.transcribe_long(np.zeros(16000, np.float32), vad_filter=True)
+
+
 def test_silence_with_vad_gives_empty_results():
     pytest.importorskip("onnxruntime")
     silent = np.zeros(5 * 16000, np.float32)

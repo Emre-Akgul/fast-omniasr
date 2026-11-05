@@ -6,7 +6,7 @@ assets/silero_vad_v6.onnx. Both licenses are in assets/. Needs onnxruntime.
 """
 
 import functools
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -285,17 +285,34 @@ class SileroVADModel:
         return out
 
 
-def speech_chunks(audio: np.ndarray, chunk_length: float, options: VadOptions | None = None,
+def _vad_options(options, chunk_length: float) -> VadOptions:
+    """As in faster-whisper's batched pipeline: a VadOptions is used as given, while the
+    default and a dict get `max_speech_duration_s` set to the chunk length."""
+    if isinstance(options, VadOptions):
+        return options
+    if options is None:
+        return VadOptions(min_silence_duration_ms=160, max_speech_duration_s=chunk_length)
+    if isinstance(options, dict):
+        return VadOptions(**{**options, "max_speech_duration_s": chunk_length})
+    raise TypeError(f"vad_options must be a VadOptions or a dict, got {options!r}")
+
+
+def speech_chunks(audio: np.ndarray, chunk_length: float, options=None,
                   sampling_rate: int = 16000) -> list[list[dict[str, int]]]:
-    """Group the speech in `audio` into chunks of at most `chunk_length` seconds, like
-    faster-whisper's batched pipeline: a chunk is a list of {"start", "end"} sample spans."""
-    options = options or VadOptions(min_silence_duration_ms=160)
-    spans = get_speech_timestamps(audio, replace(options, max_speech_duration_s=chunk_length),
-                                  sampling_rate)
+    """Group the speech in `audio` into chunks of at most `chunk_length` seconds of audio,
+    like faster-whisper's batched pipeline: a chunk is a list of {"start", "end"} sample
+    spans. Raises ValueError for a span longer than a chunk, as upstream does."""
+    spans = get_speech_timestamps(audio, _vad_options(options, chunk_length), sampling_rate)
     limit = chunk_length * sampling_rate
     chunks, current, duration = [], [], 0
     for span in spans:
         length = span["end"] - span["start"]
+        if length > limit:
+            raise ValueError(
+                f"Speech at {span['start'] / sampling_rate:.2f}s lasts "
+                f"{length / sampling_rate:.2f}s, longer than the {chunk_length}s chunk length; "
+                "use a larger chunk_length or smaller speech_pad_ms"
+            )
         if current and duration + length > limit:
             chunks.append(current)
             current, duration = [], 0

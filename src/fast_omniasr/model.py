@@ -125,8 +125,12 @@ class OmniASR:
         text. `logits_shape` is that of the last chunk, or () if there are none.
 
         `vad_filter=True` keeps only speech and cuts at silence, using Silero VAD as
-        faster-whisper does (needs onnxruntime); `vad_options` is a `vad.VadOptions`. Audio
-        with no speech then gives empty text and no chunks."""
+        faster-whisper does (needs onnxruntime); `vad_options` is a `vad.VadOptions` or a
+        dict of its fields. A chunk then holds at most `chunk_length` seconds of audio, but
+        its `start` and `end` can span more, since silence is left out. If the VAD finds no
+        speech, the result has empty text and no chunks."""
+        if self.closed:
+            raise RuntimeError("This OmniASR model is closed")
         chunks = [(start, end, self._transcribe(audio_chunk))
                   for start, end, audio_chunk in prepare_chunks(
                       audio, sample_rate, chunk_length=chunk_length,

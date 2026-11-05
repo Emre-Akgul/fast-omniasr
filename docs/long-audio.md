@@ -9,14 +9,20 @@ cuts at silence using VAD. By default cuts here are fixed, so audio can be cut m
 on a boundary can be damaged. That is the main cost of this approach.
 
 `vad_filter=True` works like that batched pipeline, with the same Silero model and defaults: it
-finds speech, joins it into chunks of at most `chunk_length` seconds with the silence left out, and
-keeps each chunk's start and end as times in the original recording. Audio with no speech gives
-empty text and no chunks, so the LLM can't invent text from silence. It needs `onnxruntime`, which
-the `onnx` extra installs, and runs on CPU. It's off by default, so nothing changes unless you ask.
+finds speech, joins it into chunks of at most `chunk_length` seconds of audio with the silence left
+out, and keeps each chunk's start and end as times in the original recording, so `end - start` can
+exceed `chunk_length`. When the VAD finds no speech, the decoder doesn't run and the result has empty
+text and no chunks. That stops the LLM inventing text from silence and plain noise. Non-speech the
+VAD mistakes for speech, such as tones or reversed speech in our tests, still reaches the decoder,
+and the LLM can still invent text from it.
+
+It needs `onnxruntime`, which the `onnx` extra installs, and runs on CPU. It's off by default, so
+nothing changes unless you ask.
 
 Text is joined with a space, including in scripts written without spaces. On TensorRT, each
-chunk must fit the engine's sample profile: a chunk above its maximum fails on the first chunk,
-and a last chunk below a custom minimum fails after the others have decoded.
+chunk must fit the engine's sample profile. A chunk outside it fails when it's reached, which with
+fixed cuts is the first chunk for one that's too long and the last for one that's too short, and
+with VAD can be any chunk, after the earlier ones have decoded.
 
 ## Why 15 seconds
 
@@ -66,7 +72,8 @@ With `vad_filter=True`, on the same recordings:
 | mean | 20.4 | 19.1 | 19.4 | 19.9 |
 
 VAD beat fixed cuts at every length on the mean and removed the drop at 30 seconds. It isn't better
-everywhere: Hindi is worse at 10 and 15 seconds, by about 4 points. These recordings also have clean
+everywhere: Hindi is worst, about 4 points higher at 10 and 15 seconds, German is higher at 10 and 20
+seconds, and English is higher at 20 and level at 30. These recordings also have clean
 half-second gaps between sentences, which is an easy case for VAD, so expect less on natural speech.
 
 LLM word error rate (%), with fixed cuts:
