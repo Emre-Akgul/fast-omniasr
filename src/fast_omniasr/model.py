@@ -88,11 +88,17 @@ class OmniASR:
         ids = greedy_token_ids(logits)
         return Transcription(self.tokenizer.decode(ids), tuple(ids), tuple(logits.shape))
 
-    def transcribe(self, path: str | Path) -> Transcription:
-        return self._transcribe(load_audio(path))
+    def transcribe(self, path: str | Path, *, convert_audio: bool = False) -> Transcription:
+        """Transcribe a mono 16 kHz file. `convert_audio=True` downmixes and resamples other
+        formats first (the `resample` extra); by default they are rejected."""
+        return self._transcribe(load_audio(path, convert_audio=convert_audio))
 
-    def transcribe_numpy(self, waveform: np.ndarray, sample_rate: int = 16000) -> Transcription:
-        return self._transcribe(prepare_audio(waveform, sample_rate))
+    def transcribe_numpy(self, waveform: np.ndarray, sample_rate: int = 16000,
+                         *, convert_audio: bool = False) -> Transcription:
+        """Transcribe a mono 16 kHz waveform. `convert_audio=True` also takes other rates and
+        (samples, channels) arrays (the `resample` extra); by default they are rejected."""
+        return self._transcribe(prepare_audio(waveform, sample_rate,
+                                              convert_audio=convert_audio))
 
     def close(self) -> None:
         """Release backend resources: the ONNX Runtime session, or the TensorRT engine,

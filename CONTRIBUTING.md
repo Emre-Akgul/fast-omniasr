@@ -31,6 +31,7 @@ Optional extras, as needed:
 |---|---|
 | `onnx` / `cuda` | ONNX Runtime CPU / CUDA (`onnxruntime-gpu`) |
 | `hub` | `from_pretrained` downloads (`huggingface_hub`) |
+| `resample` | `convert_audio=True` for audio that isn't 16 kHz (`soxr`) |
 | `tensorrt` | the TensorRT backend (`cuda-python`; TensorRT itself is installed separately) |
 | `llm` | the TorchScript LLM baseline and LLM tests (`torch`) |
 
@@ -43,7 +44,7 @@ Exporting models additionally needs `fairseq2`/`omnilingual-asr` and `onnx`; see
 |---|---|---|---|
 | Lint | `python -m ruff check .` | `dev` | every push and PR |
 | Unit | `python -m pytest tests/unit` | `dev` (CPU only, no models, no network) | every push and PR, Python 3.10/3.11/3.12; cache locking also on Windows |
-| Package | `python -m build`, then install the wheel in a clean venv and run `python tests/packaging/smoke.py <extra>` and `pytest tests/unit` | `build` | every push and PR (`Package` workflow): the wheel's unit suite on Linux, Windows and macOS with Python 3.10 and 3.12, each extra (`onnx`, `hub`, `llm`, `tensorrt`) installed alone, and the oldest declared dependency versions (`tests/packaging/minimum-constraints.txt`) |
+| Package | `python -m build`, then install the wheel in a clean venv and run `python tests/packaging/smoke.py <extra>` and `pytest tests/unit` | `build` | every push and PR (`Package` workflow): the wheel's unit suite on Linux, Windows and macOS with Python 3.10 and 3.12, each extra (`onnx`, `hub`, `llm`, `tensorrt`, `resample`) installed alone, and the oldest declared dependency versions (`tests/packaging/minimum-constraints.txt`) |
 | LLM unit | `python -m pytest tests/unit/test_llm.py tests/unit/test_llm_cache.py tests/unit/test_llm_onnx.py` | `dev,llm,onnx` extras and the `onnx` package | every push and PR |
 | Real models, CPU | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_cpu.py tests/integration/test_real_models_edge_cases.py` | `dev,onnx,hub`; downloads ~8 GB | `Real-model CPU validation`: weekly, after each published release, on demand, and on PRs that change the paths listed in `real-models.yml` (the ONNX/LLM runtime, hub, audio and evaluation code; not the TensorRT backend) |
 | FLEURS gates | `python tools/fleurs_eval.py run --model ctc --gate` (and `--model llm`) | `dev,onnx,hub` | same workflow (`fleurs-ctc`, `fleurs-llm`) |

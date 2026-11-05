@@ -1,6 +1,6 @@
 """Smoke-test an *installed* fast-omniasr (wheel, not the source tree) with one extra.
 
-  python tests/packaging/smoke.py core|onnx|hub|llm|tensorrt|onnx+hub
+  python tests/packaging/smoke.py core|onnx|hub|llm|tensorrt|resample|minimum
 
 Checks that the package imports from site-packages, that the extra's runtime dependency is
 importable and works through the library's own code path, and that nothing pulls in a
@@ -72,6 +72,15 @@ def llm():
     assert torch.zeros(2).sum().item() == 0
 
 
+def resample():
+    import numpy as np
+
+    from fast_omniasr.audio import prepare_audio
+
+    stereo = np.zeros((44100, 2), np.float32)
+    assert prepare_audio(stereo, 44100, convert_audio=True).shape == (1, 16000)
+
+
 def tensorrt():
     # cuda-python is installable without a GPU; the bindings must import.
     try:
@@ -82,12 +91,15 @@ def tensorrt():
 
 
 CHECKS = {"core": [], "onnx": [onnx], "hub": [hub], "llm": [llm], "tensorrt": [tensorrt],
-          "onnx+hub": [onnx, hub]}
+          "resample": [resample], "minimum": [onnx, hub, resample]}
 # Dependencies an extra must not drag in (each extra is tested on its own).
-UNEXPECTED = {"core": ["onnxruntime", "torch", "huggingface_hub"],
-              "onnx": ["torch", "huggingface_hub"], "hub": ["onnxruntime", "torch"],
-              "llm": ["huggingface_hub"], "tensorrt": ["onnxruntime", "torch"],
-              "onnx+hub": ["torch"]}
+UNEXPECTED = {"core": ["onnxruntime", "torch", "huggingface_hub", "soxr"],
+              "onnx": ["torch", "huggingface_hub", "soxr"],
+              "hub": ["onnxruntime", "torch", "soxr"],
+              "llm": ["huggingface_hub", "soxr"],
+              "tensorrt": ["onnxruntime", "torch", "soxr"],
+              "resample": ["onnxruntime", "torch", "huggingface_hub"],
+              "minimum": ["torch"]}
 
 
 def main(extra):
