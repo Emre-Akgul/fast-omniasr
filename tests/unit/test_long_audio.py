@@ -48,7 +48,7 @@ def test_a_recording_below_the_minimum_is_rejected():
 
 
 @pytest.mark.parametrize("value", [0, -1, 0.02, float("nan"), float("inf"), True, "15", None,
-                                   10**400])
+                                   10**400, 1e308])
 def test_invalid_chunk_lengths_are_rejected(value):
     with pytest.raises(ValueError, match="chunk_length"):
         prepare_chunks(noise(800), chunk_length=value)

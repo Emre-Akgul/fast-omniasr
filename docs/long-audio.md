@@ -9,8 +9,8 @@ cuts at silence using VAD. Here cuts are fixed, so audio can be cut mid-word and
 boundary can be damaged. That is the main cost of this approach.
 
 Text is joined with a space, including in scripts written without spaces. On TensorRT, each
-chunk must fit the engine's sample profile: a `chunk_length` above its maximum fails on the
-first chunk, and a last chunk below a custom minimum fails after the others have decoded.
+chunk must fit the engine's sample profile: a chunk above its maximum fails on the first chunk,
+and a last chunk below a custom minimum fails after the others have decoded.
 
 ## Why 15 seconds
 
@@ -43,8 +43,8 @@ Turkish and French.
 On these recordings, some languages failed badly on long chunks: Spanish reached 40.9 and Hindi
 56.4 at 40 s, and English 59.9 at 60 s, with whole spans of speech missing. Spanish still degraded
 when chunks were whole utterances, so cuts through speech aren't the cause. The cause is unknown.
-It may be the recordings themselves, which change speaker every few seconds: in a small check, one
-Spanish utterance repeated up to about a minute stayed stable. Don't read this as a limit on
+It may be the recordings themselves, which change speaker every few seconds: in a small check, four
+Spanish utterances, each repeated up to about a minute, stayed roughly stable. Don't read this as a limit on
 continuous speech from one speaker, which wasn't measured.
 
 LLM word error rate (%) on English, the alone case being 10.7:

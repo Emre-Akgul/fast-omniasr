@@ -104,7 +104,7 @@ def _check_chunk_length(chunk_length, maximum: float | None) -> int:
     """Chunk length in seconds, as a sample count."""
     try:
         valid = (isinstance(chunk_length, numbers.Real) and not isinstance(chunk_length, bool)
-                 and math.isfinite(chunk_length)
+                 and math.isfinite(chunk_length * SAMPLE_RATE)
                  and chunk_length * SAMPLE_RATE >= MIN_AUDIO_SAMPLES)
     except OverflowError:  # an integer too large for a float
         valid = False
