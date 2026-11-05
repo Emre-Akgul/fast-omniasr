@@ -47,14 +47,15 @@ It may be the recordings themselves, which change speaker every few seconds: in 
 Spanish utterances, each repeated up to about a minute, stayed roughly stable. Don't read this as a limit on
 continuous speech from one speaker, which wasn't measured.
 
-LLM word error rate (%) on English, the alone case being 10.7:
+LLM word error rate (%):
 
-| 5 s | 10 s | 15 s | 20 s | 25 s | 30 s |
-|---|---|---|---|---|---|
-| 17.6 | 14.2 | 10.9 | 14.9 | 10.4 | 10.2 |
+| language | alone | 5 s | 10 s | 15 s | 20 s | 25 s | 30 s |
+|---|---|---|---|---|---|---|---|
+| English | 10.7 | 17.6 | 14.2 | 10.9 | 14.9 | 10.4 | 10.2 |
+| Turkish | 8.4 | - | - | 12.5 | 11.4 | - | 12.2 |
 
 15 seconds is a safe choice, not a proven best. It ties for the best CTC mean, avoids the large
-losses at 20 s and above, did well on English on the LLM, and is the segment length of upstream's
+losses at 20 s and above, is close to the alone case on English on the LLM and within a point or so of the other lengths on Turkish, and is the segment length of upstream's
 `Unlimited` LLM models. Differences of a point or so here aren't meaningful: moving where the
 cuts land changed German at 10 s by 1.5 points, and the LLM series above has no clear trend. The
 recordings are small, one language each, and change speaker every few seconds, so these numbers
