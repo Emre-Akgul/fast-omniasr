@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..audio import load_audio, prepare_audio
+from ..audio import DEFAULT_CHUNK_LENGTH, load_audio, prepare_audio, prepare_chunks
 from ..options import check_device, check_flag, resolve_threads
 from ..precision import check_precision
 from ..tokenizer import Tokenizer
@@ -60,10 +60,20 @@ def _next_token(logits, generated, penalty) -> int:
 
 
 @dataclass(frozen=True)
+class LLMTranscriptionChunk:
+    start: float  # seconds into the recording
+    end: float
+    text: str
+    token_ids: list[int]
+    stop_reason: str  # one of STOP_REASONS
+
+
+@dataclass(frozen=True)
 class LLMTranscription:
     text: str
     token_ids: list[int]
     stop_reason: str  # one of STOP_REASONS
+    chunks: tuple[LLMTranscriptionChunk, ...] = ()  # set by transcribe_long
 
 
 class OmniASRLLM:
@@ -308,6 +318,19 @@ class OmniASRLLM:
         output untouched. It can end loops on audio with no speech, but it can also end a
         transcript early, because a penalized token can lose to EOS, which is never
         penalized."""
+        max_new_tokens, repetition_penalty = self._check_request(max_new_tokens,
+                                                                 repetition_penalty)
+        waveform = (
+            load_audio(audio, convert_audio=convert_audio)
+            if isinstance(audio, (str, Path))
+            else prepare_audio(audio, sample_rate, convert_audio=convert_audio)
+        )
+        if waveform.shape[1] > 30 * 16000:
+            raise ValueError("This runtime supports clips of at most 30 seconds")
+        self._warn_without_language(lang)
+        return self._decode(waveform, max_new_tokens, self._language(lang), repetition_penalty)
+
+    def _check_request(self, max_new_tokens, repetition_penalty):
         if getattr(self, "closed", False):
             raise RuntimeError("This OmniASRLLM model is closed")
         repetition_penalty = _check_repetition_penalty(repetition_penalty)
@@ -317,22 +340,23 @@ class OmniASRLLM:
             or max_new_tokens < 1
         ):
             raise ValueError("max_new_tokens must be a positive integer")
-        waveform = (
-            load_audio(audio, convert_audio=convert_audio)
-            if isinstance(audio, (str, Path))
-            else prepare_audio(audio, sample_rate, convert_audio=convert_audio)
-        )
-        if waveform.shape[1] > 30 * 16000:
-            raise ValueError("This runtime supports clips of at most 30 seconds")
+        return max_new_tokens, repetition_penalty
+
+    @staticmethod
+    def _warn_without_language(lang):
         if lang is None:
             import warnings
 
             warnings.warn(
                 "Transcribing without a `lang` code can degrade quality, as upstream warns; "
                 "pass e.g. lang='eng_Latn'",
-                stacklevel=2,
+                stacklevel=3,
             )
-        language = None if lang is None else self.language_embedding(lang)
+
+    def _language(self, lang):
+        return None if lang is None else self.language_embedding(lang)
+
+    def _decode(self, waveform, max_new_tokens, language, repetition_penalty):
         with self._ensure_lock("_lock"):  # one request at a time per instance
             if getattr(self, "closed", False):
                 raise RuntimeError("This OmniASRLLM model is closed")
@@ -340,6 +364,41 @@ class OmniASRLLM:
                 return self._transcribe_onnx(waveform, max_new_tokens, language,
                                              repetition_penalty)
             return self._transcribe_torch(waveform, max_new_tokens, language, repetition_penalty)
+
+    def transcribe_long(
+        self,
+        audio: str | Path | np.ndarray,
+        *,
+        sample_rate: int = 16000,
+        chunk_length: float = DEFAULT_CHUNK_LENGTH,
+        max_new_tokens: int = 512,
+        lang: str | None = None,
+        convert_audio: bool = False,
+        repetition_penalty: float = 1,
+    ) -> LLMTranscription:
+        """Transcribe a recording of any length by cutting it every `chunk_length` seconds
+        (at most 30) and joining the text in order. Chunks don't overlap and nothing is
+        reconciled across a cut, so a word on a boundary can be damaged. `max_new_tokens`
+        applies per chunk. `.chunks` has each chunk's times, text and stop reason, and
+        `stop_reason` is "eos" only if every chunk reached it, otherwise the first other."""
+        max_new_tokens, repetition_penalty = self._check_request(max_new_tokens,
+                                                                 repetition_penalty)
+        chunks = prepare_chunks(audio, sample_rate, chunk_length=chunk_length,
+                                convert_audio=convert_audio, max_chunk_length=30)
+        self._warn_without_language(lang)
+        language = self._language(lang)
+        results = []
+        for start, end, waveform in chunks:
+            result = self._decode(waveform, max_new_tokens, language, repetition_penalty)
+            results.append(LLMTranscriptionChunk(start, end, result.text, result.token_ids,
+                                                 result.stop_reason))
+        reasons = [chunk.stop_reason for chunk in results if chunk.stop_reason != "eos"]
+        return LLMTranscription(
+            " ".join(chunk.text for chunk in results if chunk.text),
+            [token for chunk in results for token in chunk.token_ids],
+            reasons[0] if reasons else "eos",
+            tuple(results),
+        )
 
     def _transcribe_torch(self, waveform, max_new_tokens, language=None, repetition_penalty=1):
         import torch

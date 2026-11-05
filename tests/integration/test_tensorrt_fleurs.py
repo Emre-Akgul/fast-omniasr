@@ -78,6 +78,12 @@ def test_engine_on_edge_case(engine, name):
                      lambda reference, text: _metrics.error_rates([reference], [text])["cer"])
 
 
+def test_engine_transcribes_past_its_profile_in_chunks(engine):
+    _, model = engine
+    result = model.transcribe_long(np.tile(clips.waveform("longest_clip"), 2))
+    assert [chunk.end for chunk in result.chunks] == [15.0 * i for i in range(1, 5)]
+
+
 def test_build_options_tune_the_engine_without_changing_transcripts(tmp_path):
     """Workspace, optimization level and a timing cache build a separate engine that
     transcribes the same; a corrupt timing cache is replaced, not fatal."""

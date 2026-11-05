@@ -114,6 +114,20 @@ def test_llm_repetition_penalty_keeps_legitimately_repeated_speech(llm):
     clips.check_text(result.text, entry["llm"], clips.reference(entry), _cer)
 
 
+def test_ctc_long_audio_keeps_both_languages_in_order(ctc):
+    result = ctc.transcribe_long(clips.waveform("longest_clip"))
+    assert [chunk.end for chunk in result.chunks] == [15.0, 30.0]
+    assert "people" not in result.text.split("sundular")[-1]
+    assert "sundular" in result.text
+
+
+def test_llm_long_audio_reports_each_chunk(llm):
+    result = llm.transcribe_long(clips.waveform("longest_clip"), lang=MANIFEST["language"])
+    assert [chunk.end for chunk in result.chunks] == [15.0, 30.0]
+    assert result.stop_reason in ("eos", "max_new_tokens")
+    assert result.text == " ".join(c.text for c in result.chunks if c.text)
+
+
 def test_llm_budget_cuts_off_speech(llm):
     result = llm.transcribe(clips.waveform("clipped_speech"), lang=MANIFEST["language"],
                             max_new_tokens=4)
