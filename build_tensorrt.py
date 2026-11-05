@@ -26,7 +26,7 @@ def main():
                         help="workspace memory limit per layer")
     parser.add_argument("--optimization-level", type=int,
                         help="0 to 5; TensorRT's default when omitted")
-    parser.add_argument("--timing-cache", type=Path,
+    parser.add_argument("--timing-cache",
                         help="file of timing measurements, reused and updated by each build")
     args = parser.parse_args()
     try:

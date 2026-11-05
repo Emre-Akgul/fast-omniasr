@@ -118,10 +118,7 @@ class TensorRTBuildOptions:
         if self.timing_cache is not None:
             if not str(self.timing_cache):
                 raise ValueError("timing_cache must be a file path, got an empty path")
-            path = Path(self.timing_cache).expanduser()
-            if path.is_dir():
-                raise ValueError(f"timing_cache must be a file, but {path} is a directory")
-            object.__setattr__(self, "timing_cache", path)
+            object.__setattr__(self, "timing_cache", Path(self.timing_cache))
 
     def identity(self) -> dict:
         """The settings that differ from the defaults, for the engine-cache key. Only the
@@ -138,34 +135,40 @@ class TensorRTBuildOptions:
 
 
 def _load_timing_cache(config, path: Path) -> None:
-    """Attach the timing cache at `path`, or an empty one if it can't be read. TensorRT
-    logs corrupt contents and starts empty by itself."""
+    """Attach the timing cache at `path`, starting empty if it can't be read. TensorRT
+    logs corrupt contents and starts empty by itself. No failure here may stop the build."""
     try:
         serialized = path.read_bytes()
     except FileNotFoundError:
         serialized = b""
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         warnings.warn(f"Could not read the timing cache {path}: {exc}; starting empty",
                       stacklevel=3)
         serialized = b""
-    if not config.set_timing_cache(config.create_timing_cache(serialized), False):
+    try:
+        attached = config.set_timing_cache(config.create_timing_cache(serialized), False)
+    except Exception as exc:  # noqa: BLE001 -- only an optimization; TensorRT raises many types
+        warnings.warn(f"Could not use the timing cache {path}: {exc}", stacklevel=3)
+        return
+    if not attached:
         warnings.warn(f"TensorRT rejected the timing cache {path}; building without it",
                       stacklevel=3)
 
 
 def _save_timing_cache(config, path: Path) -> None:
-    """Replace the file atomically, with the usual permissions of a new file. The engine
-    is already saved, so a failure here only costs the measurements."""
-    cache = config.get_timing_cache()
-    if cache is None:  # TensorRT rejected it before the build
-        return
+    """Replace the file atomically, with the permissions of a new file. The engine is
+    already saved, so a failure here only costs the measurements and must not propagate."""
     temporary = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     try:
+        cache = config.get_timing_cache()
+        if cache is None:  # never attached
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary.write_bytes(bytes(cache.serialize()))
         os.replace(temporary, path)
-    except OSError as exc:
+    except Exception as exc:  # noqa: BLE001 -- only an optimization; TensorRT raises many types
         warnings.warn(f"Could not save the timing cache {path}: {exc}", stacklevel=3)
+    finally:
         try:
             temporary.unlink(missing_ok=True)
         except OSError:

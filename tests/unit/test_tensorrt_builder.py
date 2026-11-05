@@ -83,6 +83,7 @@ def fake_trt(monkeypatch):
 
     class Config:
         builder_optimization_level = 3
+        timing_cache = None
 
         def __init__(self):
             self.flags = set()
@@ -103,8 +104,9 @@ def fake_trt(monkeypatch):
 
         def set_timing_cache(self, cache, ignore_mismatch):
             built["ignore_mismatch"] = ignore_mismatch
-            self.timing_cache = cache
-            return built.get("accept_timing_cache", True)
+            accepted = built.get("accept_timing_cache", True)
+            self.timing_cache = cache if accepted else None
+            return accepted
 
         def get_timing_cache(self):
             return self.timing_cache
@@ -135,6 +137,7 @@ def fake_trt(monkeypatch):
         def parse_from_file(self, path):
             return True
 
+    built["config_type"], built["timing_cache_type"] = Config, TimingCache
     trt = types.SimpleNamespace(
         Logger=type("Logger", (), {"INFO": 0, "__init__": lambda self, level: None}),
         Builder=Builder, OnnxParser=Parser,
@@ -319,9 +322,44 @@ def test_invalid_options_are_rejected(options, message):
         TensorRTBuildOptions(**options)
 
 
-def test_timing_cache_cannot_be_a_directory(tmp_path):
-    with pytest.raises(ValueError, match="is a directory"):
-        TensorRTBuildOptions(timing_cache=tmp_path)
+def test_timing_cache_at_a_directory_warns_and_still_builds(fake_trt, tmp_path):
+    with pytest.warns(UserWarning, match="timing cache"):
+        engine = _build_with(tmp_path, timing_cache=tmp_path)
+    assert engine.read_bytes() == b"engine"
+
+
+@pytest.mark.parametrize("name", ["create_timing_cache", "set_timing_cache", "get_timing_cache"])
+def test_tensorrt_errors_in_the_timing_cache_never_stop_the_build(fake_trt, tmp_path, monkeypatch,
+                                                                  name):
+    config = fake_trt["config_type"]
+
+    def fail(self, *args):
+        raise RuntimeError("TensorRT failure")
+
+    monkeypatch.setattr(config, name, fail)
+    with pytest.warns(UserWarning, match="timing cache"):
+        engine = _build_with(tmp_path, timing_cache=tmp_path / "timing.bin")
+    assert engine.read_bytes() == b"engine"
+
+
+def test_serialize_failure_keeps_the_engine_and_leaves_no_temp_file(fake_trt, tmp_path, monkeypatch):
+    def fail(self):
+        raise RuntimeError("TensorRT failure")
+
+    monkeypatch.setattr(fake_trt["timing_cache_type"], "serialize", fail)
+    with pytest.warns(UserWarning, match="Could not save"):
+        engine = _build_with(tmp_path, timing_cache=tmp_path / "timing.bin")
+    assert engine.read_bytes() == b"engine"
+    assert [p.name for p in tmp_path.iterdir()] == ["out.engine"]
+
+
+def test_constructing_options_does_not_touch_the_filesystem(monkeypatch):
+    def fail(self):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "is_dir", fail)
+    monkeypatch.setattr(Path, "exists", fail)
+    assert TensorRTBuildOptions(timing_cache="x" * 300).timing_cache.name == "x" * 300
 
 
 def test_options_are_normalized():

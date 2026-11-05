@@ -112,7 +112,7 @@ options = TensorRTBuildOptions(
 model = OmniASR.from_pretrained(repo, backend="tensorrt", precision="fp16", build_options=options)
 ```
 
-A timing cache roughly halves rebuild time or better. It is only an optimization: a missing, corrupt or unwritable file costs a warning at most, never the build. Builds sharing one file replace it whole, so the last to finish wins. Non-default options are part of the cache key, so each combination gets its own engine; using a timing cache counts, but not its contents or path. With the defaults, existing cached engines stay valid.
+A timing cache roughly halves rebuild time or better. It is only an optimization: a missing, corrupt or unwritable file costs a warning at most, and the build still finishes. Builds sharing one file replace it whole, so the last to finish wins. Non-default options are part of the cache key, so each combination gets its own engine; using a timing cache counts, but not its contents or path. With the defaults, existing cached engines stay valid.
 
 `OmniASR` and `OmniASRLLM` release their ONNX Runtime sessions or TensorRT engine on `close()` or when leaving a `with` block (`with OmniASR.from_pretrained(...) as model:`); `close()` is idempotent, and transcribing afterwards raises `RuntimeError`. An `OmniASR` instance may be shared across threads. With the TensorRT backend, each instance owns one execution context and its buffers, so concurrent calls are serialized (never mixed); create one instance per worker for parallel GPU throughput. `OmniASRLLM` instances may also be shared: each `transcribe()` runs its encode and full decode loop alone (calls are serialized), so concurrent requests never mix; use one instance per worker for parallel throughput.
 
