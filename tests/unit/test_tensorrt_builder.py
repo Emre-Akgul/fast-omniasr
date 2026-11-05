@@ -315,7 +315,10 @@ def test_failed_build_leaves_the_timing_cache_alone(fake_trt, tmp_path):
     ({"optimization_level": 6}, "optimization_level"),
     ({"optimization_level": True}, "optimization_level"),
     ({"optimization_level": "3"}, "optimization_level"),
-    ({"timing_cache": ""}, "empty path"),
+    ({"timing_cache": ""}, "must be a file path"),
+    ({"timing_cache": "."}, "must be a file path"),
+    ({"timing_cache": "/"}, "must be a file path"),
+    ({"timing_cache": Path("")}, "must be a file path"),
 ])
 def test_invalid_options_are_rejected(options, message):
     with pytest.raises(ValueError, match=message):
@@ -351,6 +354,12 @@ def test_serialize_failure_keeps_the_engine_and_leaves_no_temp_file(fake_trt, tm
         engine = _build_with(tmp_path, timing_cache=tmp_path / "timing.bin")
     assert engine.read_bytes() == b"engine"
     assert [p.name for p in tmp_path.iterdir()] == ["out.engine"]
+
+
+def test_path_the_os_cannot_represent_warns_and_still_builds(fake_trt, tmp_path):
+    with pytest.warns(UserWarning, match="timing cache"):
+        engine = _build_with(tmp_path, timing_cache=tmp_path / "bad\0name")
+    assert engine.read_bytes() == b"engine"
 
 
 def test_constructing_options_does_not_touch_the_filesystem(monkeypatch):

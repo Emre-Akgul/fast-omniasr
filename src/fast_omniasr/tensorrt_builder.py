@@ -116,9 +116,10 @@ class TensorRTBuildOptions:
                                _integer("optimization_level", self.optimization_level, 0,
                                         MAX_OPTIMIZATION_LEVEL))
         if self.timing_cache is not None:
-            if not str(self.timing_cache):
-                raise ValueError("timing_cache must be a file path, got an empty path")
-            object.__setattr__(self, "timing_cache", Path(self.timing_cache))
+            path = Path(self.timing_cache)
+            if not str(self.timing_cache) or not path.name:
+                raise ValueError(f"timing_cache must be a file path, got {self.timing_cache!r}")
+            object.__setattr__(self, "timing_cache", path)
 
     def identity(self) -> dict:
         """The settings that differ from the defaults, for the engine-cache key. Only the
@@ -171,7 +172,7 @@ def _save_timing_cache(config, path: Path) -> None:
     finally:
         try:
             temporary.unlink(missing_ok=True)
-        except OSError:
+        except (OSError, ValueError):  # ValueError: a path the OS can't represent
             pass
 
 
