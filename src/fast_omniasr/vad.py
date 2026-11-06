@@ -311,7 +311,7 @@ def speech_chunks(audio: np.ndarray, chunk_length: float, options=None,
             raise ValueError(
                 f"Speech at {span['start'] / sampling_rate:.2f}s lasts "
                 f"{length / sampling_rate:.2f}s, longer than the {chunk_length}s chunk length; "
-                "use a larger chunk_length or smaller speech_pad_ms"
+                "use a larger chunk_length, a smaller speech_pad_ms, or set max_speech_duration_s"
             )
         if current and duration + length > limit:
             chunks.append(current)

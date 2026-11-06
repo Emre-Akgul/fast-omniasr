@@ -389,7 +389,7 @@ class OmniASRLLM:
         dict of its fields. A chunk then holds at most `chunk_length` seconds of audio, but
         its `start` and `end` can span more, since silence is left out. If the VAD finds no
         speech, the decoder doesn't run and the result has empty text and no chunks.
-        Non-speech the VAD mistakes for speech, such as music, is still decoded."""
+        Non-speech the VAD mistakes for speech, such as some tones, is still decoded."""
         max_new_tokens, repetition_penalty = self._check_request(max_new_tokens,
                                                                  repetition_penalty)
         chunks = prepare_chunks(audio, sample_rate, chunk_length=chunk_length,
@@ -399,8 +399,6 @@ class OmniASRLLM:
         language = self._language(lang)
         results = []
         for start, end, waveform in chunks:
-            if waveform.shape[1] > 30 * 16000:  # possible with custom vad_options
-                raise ValueError("This runtime supports clips of at most 30 seconds")
             result = self._decode(waveform, max_new_tokens, language, repetition_penalty)
             results.append(LLMTranscriptionChunk(start, end, result.text, result.token_ids,
                                                  result.stop_reason))

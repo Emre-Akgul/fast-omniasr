@@ -142,7 +142,7 @@ for chunk in result.chunks:
     print(chunk.start, chunk.end, chunk.text)
 ```
 
-Pass `vad_filter=True` to cut at silence and skip non-speech, using Silero VAD as faster-whisper does (needs the `onnx` extra). `chunks` keep their times in the original recording. When the VAD finds no speech, the result has empty text, though non-speech it mistakes for speech, such as music, is still transcribed. It lowered CTC error on the test recordings, which have clean pauses, though not on every language.
+Pass `vad_filter=True` to cut at silence and skip non-speech, using Silero VAD as faster-whisper does (needs the `onnx` extra). `chunks` keep their times in the original recording. When the VAD finds no speech, the result has empty text, though non-speech it mistakes for speech, such as some tones, is still transcribed. It lowered CTC error on the test recordings, which have clean pauses, though not on every language.
 
 The default is a safe choice rather than a proven best, and it wasn't measured on continuous speech from one speaker. On test recordings that change speaker every few seconds, CTC on chunks past about 20 seconds lost whole spans of speech on some languages, for reasons not yet known. See [docs/long-audio.md](docs/long-audio.md).
 
