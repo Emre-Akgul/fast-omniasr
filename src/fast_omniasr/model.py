@@ -139,15 +139,15 @@ class OmniASR:
         if not word_timestamps:
             ids = greedy_token_ids(logits)
             return Transcription(self.tokenizer.decode(ids), tuple(ids), tuple(logits.shape))
-        if abs(audio.shape[-1] - logits.shape[1] * FRAME_STRIDE) > 2 * FRAME_WINDOW:
+        tokens = greedy_tokens(logits)
+        if logits.shape[1] != (audio.shape[-1] - FRAME_WINDOW) // FRAME_STRIDE + 1:
             raise ValueError(f"word_timestamps needs a model with {FRAME_STRIDE} samples per "
                              f"frame, but {audio.shape[-1]} samples gave "
                              f"{logits.shape[1]} frames")
-        tokens = greedy_tokens(logits)
         ids = [token for token, _, _ in tokens]
         times = tuple((_frame_time(start), _frame_time(end)) for _, start, end in tokens)
         words = tuple(Word(times[word[0]][0], times[word[-1]][1],
-                           self.tokenizer.decode([ids[index] for index in word]))
+                           self.tokenizer.decode([ids[index] for index in word]).strip())
                       for word in self.tokenizer.split_words(ids))
         return Transcription(self.tokenizer.decode(ids), tuple(ids), tuple(logits.shape),
                              words=words, token_times=times)

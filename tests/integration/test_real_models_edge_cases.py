@@ -156,7 +156,7 @@ def test_ctc_word_times_follow_the_audio(ctc):
     # Silence can change the model's wording, so compare the words both runs share.
     shared = list(zip(timed.words[:4], delayed.words[:4]))
     assert all(before.word == after.word for before, after in shared)
-    assert all(abs(after.start - before.start - 3) <= 0.06 for before, after in shared)
+    assert all(abs(after.start - before.start - 3) <= 0.021 for before, after in shared)
 
 
 def test_ctc_word_times_survive_vad(ctc):

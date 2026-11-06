@@ -12,7 +12,7 @@ PIECES = {0: "<blank>", 1: "<pad>", 2: "a", 3: "b", 4: " ", 5: "▁c"}
 
 
 def logits(frames, vocabulary=6):
-    values = np.zeros((1, len(frames), vocabulary), np.float32)
+    values = np.zeros((1, len(frames), vocabulary + 1), np.float32)
     values[0, np.arange(len(frames)), frames] = 1
     return values
 
@@ -117,9 +117,35 @@ def test_silence_has_no_words():
     assert result.words == () and result.token_times == ()
 
 
-def test_a_different_frame_stride_is_refused():
+@pytest.mark.parametrize("given", [99, 101, 50, 200])
+def test_a_frame_count_that_misses_the_stride_is_refused(given):
     with pytest.raises(ValueError, match="320 samples per frame"):
-        model([2] * 50).transcribe_numpy(audio_for(100), word_timestamps=True)
+        model([2] * given).transcribe_numpy(audio_for(100), word_timestamps=True)
+
+
+@pytest.mark.parametrize("samples, frames", [
+    (400, 1), (639, 1), (720, 2), (960, 2), (16000, 49), (480000, 1499), (480320, 1500)])
+def test_every_length_from_the_real_model_is_accepted(samples, frames):
+    audio = np.random.default_rng(0).normal(size=samples).astype(np.float32)
+    assert model([0] * frames).transcribe_numpy(audio, word_timestamps=True).words == ()
+
+
+def test_malformed_logits_get_the_usual_error():
+    instance = model([2])
+    instance.backend.infer = lambda audio: np.zeros((5, 6), np.float32)
+    with pytest.raises(ValueError, match=r"Expected logits"):
+        instance.transcribe_numpy(audio_for(5), word_timestamps=True)
+
+
+def test_an_unknown_token_alone_rejoins_the_text():
+    PIECES[6] = "<unk>"
+    try:
+        instance = model([6])
+        instance.tokenizer._processor.decode = lambda ids: " ? "
+        assert instance.transcribe_numpy(audio_for(1), word_timestamps=True).words == (
+            Word(0.0, 0.02, "?"),)
+    finally:
+        del PIECES[6]
 
 
 def test_transcribe_reads_files(tmp_path):
@@ -153,7 +179,7 @@ def test_fixed_chunks_record_their_samples():
 
 
 def test_long_audio_times_are_in_the_recording():
-    second = 16000 // 320  # frames, near enough for the stride check
+    second = 49  # frames in one second
     result = model([0, 2, *[0] * (second - 2)], [3, 0, *[0] * (second - 2)]
                    ).transcribe_long(np.random.default_rng(0).normal(size=2 * 16000)
                                      .astype(np.float32), chunk_length=1,

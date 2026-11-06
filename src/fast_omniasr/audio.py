@@ -152,7 +152,8 @@ def prepare_chunks(audio: str | Path | np.ndarray, sample_rate: int = SAMPLE_RAT
                    chunk_length: float = DEFAULT_CHUNK_LENGTH, convert_audio: bool = False,
                    max_chunk_length: float | None = None, vad_filter: bool = False,
                    vad_options=None):
-    """Cut one recording at fixed intervals, with no overlap: a list of AudioChunk. Each chunk is normalized on its own, like a separate clip.
+    """Cut one recording at fixed intervals, with no overlap: a list of AudioChunk. Each
+    chunk is normalized on its own, like a separate clip.
     A last chunk too short to transcribe (under 25 ms) is dropped.
 
     `vad_filter=True` instead finds speech with Silero VAD, as faster-whisper does: chunks
