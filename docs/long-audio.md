@@ -5,12 +5,24 @@ joins the text in order. Chunks don't overlap and nothing is reconciled across a
 gives each chunk's start and end in seconds and its text, plus its stop reason on the LLM.
 
 faster-whisper's batched pipeline also transcribes chunks independently with no overlap, but it
-cuts at silence using VAD. Here cuts are fixed, so audio can be cut mid-word and a word on a
-boundary can be damaged. That is the main cost of this approach.
+cuts at silence using VAD. By default cuts here are fixed, so audio can be cut mid-word and a word
+on a boundary can be damaged. That is the main cost of this approach.
+
+`vad_filter=True` works like that batched pipeline, with the same Silero model and defaults: it
+finds speech, joins it into chunks of at most `chunk_length` seconds of audio with the silence left
+out, and keeps each chunk's start and end as times in the original recording, so `end - start` can
+exceed `chunk_length`. When the VAD finds no speech, the decoder doesn't run and the result has empty
+text and no chunks. That stops the LLM inventing text from silence and plain noise. Non-speech the
+VAD mistakes for speech, such as tones or reversed speech in our tests, still reaches the decoder,
+and the LLM can still invent text from it.
+
+It needs `onnxruntime`, which the `onnx` extra installs, and runs on CPU. It's off by default, so
+nothing changes unless you ask.
 
 Text is joined with a space, including in scripts written without spaces. On TensorRT, each
-chunk must fit the engine's sample profile: a chunk above its maximum fails on the first chunk,
-and a last chunk below a custom minimum fails after the others have decoded.
+chunk must fit the engine's sample profile. A chunk outside it fails when it's reached, which with
+fixed cuts is the first chunk for one that's too long and the last for one that's too short, and
+with VAD can be any chunk, after the earlier ones have decoded.
 
 ## Why 15 seconds
 
@@ -47,7 +59,24 @@ It may be the recordings themselves, which change speaker every few seconds: in 
 Spanish utterances, each repeated up to about a minute, stayed roughly stable. Don't read this as a limit on
 continuous speech from one speaker, which wasn't measured.
 
-LLM word error rate (%):
+With `vad_filter=True`, on the same recordings:
+
+| language | 10 s | 15 s | 20 s | 30 s |
+|---|---|---|---|---|
+| German | 20.3 | 15.7 | 17.4 | 18.4 |
+| English | 22.3 | 22.0 | 22.0 | 23.7 |
+| Spanish | 10.1 | 9.9 | 10.1 | 9.9 |
+| Hindi | 24.5 | 22.5 | 20.8 | 21.6 |
+| Turkish | 25.5 | 24.2 | 25.0 | 24.2 |
+| French | 19.9 | 20.3 | 21.0 | 21.4 |
+| mean | 20.4 | 19.1 | 19.4 | 19.9 |
+
+VAD beat fixed cuts at every length on the mean and removed the drop at 30 seconds. It isn't better
+everywhere: Hindi is worst, about 4 points higher at 10 and 15 seconds, German is higher at 10 and 20
+seconds, and English is higher at 20 and level at 30. These recordings also have clean
+half-second gaps between sentences, which is an easy case for VAD, so expect less on natural speech.
+
+LLM word error rate (%), with fixed cuts:
 
 | language | alone | 5 s | 10 s | 15 s | 20 s | 25 s | 30 s |
 |---|---|---|---|---|---|---|---|

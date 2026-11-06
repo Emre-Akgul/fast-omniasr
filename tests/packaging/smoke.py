@@ -42,6 +42,9 @@ def onnx():
     from fast_omniasr.backends.onnx import ONNXBackend
 
     assert "CPUExecutionProvider" in ort.get_available_providers()
+    from fast_omniasr.vad import get_vad_model
+
+    get_vad_model()  # the bundled model shipped in the wheel and loads
     try:
         ONNXBackend(Path(tempfile.gettempdir()) / "missing-model.onnx")
     except Exception as exc:  # noqa: BLE001 -- ORT's own error for a missing file

@@ -27,6 +27,8 @@ on:
       - src/fast_omniasr/model.py
       - src/fast_omniasr/backends/onnx.py
       - src/fast_omniasr/audio.py
+      - src/fast_omniasr/vad.py
+      - src/fast_omniasr/assets/**
       - src/fast_omniasr/tokenizer.py
       - src/fast_omniasr/decoder.py
       - src/fast_omniasr/precision.py

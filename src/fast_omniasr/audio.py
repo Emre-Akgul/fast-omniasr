@@ -116,18 +116,42 @@ def _check_chunk_length(chunk_length, maximum: float | None) -> int:
     return int(chunk_length * SAMPLE_RATE)
 
 
+def _speech_chunks(mono: np.ndarray, chunk_length: float, options) -> list:
+    from .vad import speech_chunks  # needs onnxruntime
+
+    chunks = []
+    for spans in speech_chunks(mono, chunk_length, options):
+        speech = np.concatenate([mono[span["start"]:span["end"]] for span in spans])
+        if speech.size >= MIN_AUDIO_SAMPLES:
+            chunks.append((spans[0]["start"] / SAMPLE_RATE, spans[-1]["end"] / SAMPLE_RATE,
+                           _normalize(speech)))
+    return chunks
+
+
 def prepare_chunks(audio: str | Path | np.ndarray, sample_rate: int = SAMPLE_RATE, *,
                    chunk_length: float = DEFAULT_CHUNK_LENGTH, convert_audio: bool = False,
-                   max_chunk_length: float | None = None):
+                   max_chunk_length: float | None = None, vad_filter: bool = False,
+                   vad_options=None):
     """Cut one recording at fixed intervals, with no overlap: a list of (start second, end
     second, normalized chunk). Each chunk is normalized on its own, like a separate clip.
-    A last chunk too short to transcribe (under 25 ms) is dropped."""
+    A last chunk too short to transcribe (under 25 ms) is dropped.
+
+    `vad_filter=True` instead finds speech with Silero VAD, as faster-whisper does: chunks
+    hold only speech, joined up to `chunk_length`, and start and end stay times in the
+    original recording. Audio with no speech gives an empty list."""
     size = _check_chunk_length(chunk_length, max_chunk_length)
+    check_flag("vad_filter", vad_filter)
+    if vad_options is not None and not vad_filter:
+        raise ValueError("vad_options needs vad_filter=True")
     if isinstance(audio, (str, Path)):
         audio, sample_rate = sf.read(audio, dtype="float32")
     mono = _mono_16k(audio, sample_rate, convert_audio)
     if mono.size < MIN_AUDIO_SAMPLES:
         _normalize(mono)  # the usual error
+    if vad_filter:
+        if not np.isfinite(mono).all():
+            raise ValueError("Audio contains NaN or infinity")
+        return _speech_chunks(mono, size / SAMPLE_RATE, vad_options)
     starts = range(0, mono.size, size)
     return [(start / SAMPLE_RATE, min(start + size, mono.size) / SAMPLE_RATE,
              _normalize(mono[start:start + size]))

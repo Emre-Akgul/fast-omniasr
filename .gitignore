@@ -33,3 +33,4 @@ results/
 *.ckpt
 *.model
 artifacts/llm-*/
+!src/fast_omniasr/assets/*.onnx

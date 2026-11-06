@@ -375,16 +375,26 @@ class OmniASRLLM:
         lang: str | None = None,
         convert_audio: bool = False,
         repetition_penalty: float = 1,
+        vad_filter: bool = False,
+        vad_options=None,
     ) -> LLMTranscription:
         """Transcribe a recording of any length by cutting it every `chunk_length` seconds
         (at most 30) and joining the text in order. Chunks don't overlap and nothing is
         reconciled across a cut, so a word on a boundary can be damaged. `max_new_tokens`
         applies per chunk. `.chunks` has each chunk's times, text and stop reason, and
-        `stop_reason` is "eos" only if every chunk reached it, otherwise the first other."""
+        `stop_reason` is "eos" only if every chunk reached it, otherwise the first other.
+
+        `vad_filter=True` keeps only speech and cuts at silence, using Silero VAD as
+        faster-whisper does (needs onnxruntime); `vad_options` is a `vad.VadOptions` or a
+        dict of its fields. A chunk then holds at most `chunk_length` seconds of audio, but
+        its `start` and `end` can span more, since silence is left out. If the VAD finds no
+        speech, the decoder doesn't run and the result has empty text and no chunks.
+        Non-speech the VAD mistakes for speech, such as some tones, is still decoded."""
         max_new_tokens, repetition_penalty = self._check_request(max_new_tokens,
                                                                  repetition_penalty)
         chunks = prepare_chunks(audio, sample_rate, chunk_length=chunk_length,
-                                convert_audio=convert_audio, max_chunk_length=30)
+                                convert_audio=convert_audio, max_chunk_length=30,
+                                vad_filter=vad_filter, vad_options=vad_options)
         self._warn_without_language(lang)
         language = self._language(lang)
         results = []
