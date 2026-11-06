@@ -20,6 +20,9 @@ hub = ["huggingface_hub>=0.23"]
 resample = ["soxr>=0.5"]
 dev = ["pytest>=8", "ruff>=0.9"]
 
+[project.scripts]
+fast-omniasr = "fast_omniasr.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
