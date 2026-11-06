@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import soundfile
 
 ROOT = Path(__file__).resolve().parents[2]
 PINNED = json.loads((ROOT / "tests/fixtures/fleurs/manifest.json").read_text(encoding="utf-8"))
@@ -168,6 +169,24 @@ def test_ctc_word_times_survive_vad(ctc):
     resumed = next(word for word in result.words if word.start > audio.size / 16000)
     assert resumed.word == alone.words[0].word
     assert abs(resumed.start - (audio.size + gap) / 16000 - alone.words[0].start) <= 0.1
+
+
+@pytest.mark.parametrize("kind, extra", [("ctc", ["--word-timestamps"]),
+                                         ("llm", ["--lang", "eng_Latn", "--low-memory"])])
+def test_cli_transcribes_with_the_published_models(kind, extra, tmp_path, capsys):
+    from fast_omniasr.cli import main
+
+    repo, options = _options(kind)
+    path = tmp_path / "clip.wav"
+    soundfile.write(path, clips.waveform("clipped_speech"), clips.SAMPLE_RATE)
+    arguments = ["transcribe", str(path), "--model", repo, "--revision", options["revision"],
+                 "--kind", kind, "--device", "cpu", "--json", *extra]
+    if options["cache_dir"]:
+        arguments += ["--cache-dir", options["cache_dir"]]
+    assert main(arguments) == 0
+    result = json.loads(capsys.readouterr().out)
+    entry = MANIFEST["clips"]["clipped_speech"]
+    clips.check_text(result["text"], entry[kind], clips.reference(entry), _cer)
 
 
 def test_llm_budget_cuts_off_speech(llm):

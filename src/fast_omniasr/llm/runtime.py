@@ -59,6 +59,24 @@ def _next_token(logits, generated, penalty) -> int:
     return int(values.argmax())
 
 
+def list_languages(repo_id: str, *, revision: str | None = None,
+                   cache_dir: str | Path | None = None,
+                   local_files_only: bool = False) -> list[str]:
+    """The language codes a published model accepts, sorted. Downloads only the code table."""
+    from ..hub import download_verified
+
+    def mapping(config):
+        names = {(config.get("languages") or {}).get("mapping")} - {None}
+        if not names:
+            raise ValueError(f"{repo_id} has no language table")
+        return names
+
+    _, verified = download_verified(repo_id, mapping, revision=revision, cache_dir=cache_dir,
+                                    dependencies=True, local_files_only=local_files_only)
+    path = next(iter(verified.values()))
+    return sorted(json.loads(path.read_text(encoding="utf-8")))
+
+
 @dataclass(frozen=True)
 class LLMTranscriptionChunk:
     start: float  # seconds into the recording
