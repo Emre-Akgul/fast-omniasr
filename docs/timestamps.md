@@ -10,7 +10,7 @@ Greedy decoding collapses repeated frames into tokens and drops blanks. Each tok
 
 ## Words
 
-A word ends at a whitespace token and starts at a token with leading whitespace. Whitespace tokens belong to no word, though `token_times` still has their times. Control tokens are left out. A `Word` has `start`, `end` and `word`, where `start` is that of its first token and `end` that of its last, apart from the removed gaps described under Limits. `<unk>` decodes to ` ⁇ `, so a word holding it contains spaces.
+A word ends at a whitespace token and starts at a token with leading whitespace. Whitespace tokens belong to no word, though `token_times` still has their times. Control tokens are left out. A `Word` has `start`, `end` and `word`, where `start` is that of its first token and `end` that of its last, apart from the removed gaps described under Limits. `<unk>` decodes to ` ⁇ `, so a word that holds it alongside other tokens contains spaces.
 
 Text written without spaces, such as Chinese, Japanese or Thai, comes out as one long word, and faster-whisper's per-character split for those languages isn't applied, since CTC isn't told the language. Use `token_times` there.
 
