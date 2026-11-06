@@ -3,6 +3,7 @@ import math
 import numbers
 import operator
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import soundfile as sf
@@ -100,6 +101,24 @@ def load_audio(path: str | Path, *, convert_audio: bool = False) -> np.ndarray:
     return prepare_audio(audio, sample_rate, convert_audio=convert_audio)
 
 
+class AudioChunk(NamedTuple):
+    start: float  # seconds into the recording
+    end: float
+    audio: np.ndarray
+    spans: tuple[tuple[int, int], ...]  # the parts of the recording it holds, in samples
+
+
+def silence_before(spans: tuple[tuple[int, int], ...], seconds: float) -> float:
+    """Seconds to add to a time in a chunk to get the time in the recording, which is what
+    faster-whisper's SpeechTimestampsMap gives. A time past the last span uses that span."""
+    kept = 0
+    for start, end in spans:
+        kept += end - start
+        if seconds * SAMPLE_RATE < kept:
+            break
+    return (start - (kept - (end - start))) / SAMPLE_RATE
+
+
 def _check_chunk_length(chunk_length, maximum: float | None) -> int:
     """Chunk length in seconds, as a sample count."""
     try:
@@ -123,8 +142,9 @@ def _speech_chunks(mono: np.ndarray, chunk_length: float, options) -> list:
     for spans in speech_chunks(mono, chunk_length, options):
         speech = np.concatenate([mono[span["start"]:span["end"]] for span in spans])
         if speech.size >= MIN_AUDIO_SAMPLES:
-            chunks.append((spans[0]["start"] / SAMPLE_RATE, spans[-1]["end"] / SAMPLE_RATE,
-                           _normalize(speech)))
+            chunks.append(AudioChunk(spans[0]["start"] / SAMPLE_RATE,
+                                     spans[-1]["end"] / SAMPLE_RATE, _normalize(speech),
+                                     tuple((span["start"], span["end"]) for span in spans)))
     return chunks
 
 
@@ -132,8 +152,8 @@ def prepare_chunks(audio: str | Path | np.ndarray, sample_rate: int = SAMPLE_RAT
                    chunk_length: float = DEFAULT_CHUNK_LENGTH, convert_audio: bool = False,
                    max_chunk_length: float | None = None, vad_filter: bool = False,
                    vad_options=None):
-    """Cut one recording at fixed intervals, with no overlap: a list of (start second, end
-    second, normalized chunk). Each chunk is normalized on its own, like a separate clip.
+    """Cut one recording at fixed intervals, with no overlap: a list of AudioChunk. Each
+    chunk is normalized on its own, like a separate clip.
     A last chunk too short to transcribe (under 25 ms) is dropped.
 
     `vad_filter=True` instead finds speech with Silero VAD, as faster-whisper does: chunks
@@ -153,6 +173,7 @@ def prepare_chunks(audio: str | Path | np.ndarray, sample_rate: int = SAMPLE_RAT
             raise ValueError("Audio contains NaN or infinity")
         return _speech_chunks(mono, size / SAMPLE_RATE, vad_options)
     starts = range(0, mono.size, size)
-    return [(start / SAMPLE_RATE, min(start + size, mono.size) / SAMPLE_RATE,
-             _normalize(mono[start:start + size]))
+    return [AudioChunk(start / SAMPLE_RATE, min(start + size, mono.size) / SAMPLE_RATE,
+                       _normalize(mono[start:start + size]),
+                       ((start, min(start + size, mono.size)),))
             for start in starts if mono.size - start >= MIN_AUDIO_SAMPLES]

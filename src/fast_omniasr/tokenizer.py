@@ -24,6 +24,20 @@ class Tokenizer:
     def decode(self, ids: list[int]) -> str:
         return self._processor.decode(ids)
 
+    def split_words(self, ids: list[int]) -> list[list[int]]:
+        """Group token positions into words. A word ends at a whitespace token and starts
+        at a token with leading whitespace (`\\u2581` in SentencePiece). Text written
+        without spaces is one word."""
+        words, current = [], []
+        for index, token in enumerate(ids):
+            piece = self._processor.id_to_piece(token).replace("\u2581", " ")
+            if piece[:1].isspace() and current:
+                words.append(current)
+                current = []
+            if piece.strip() and not self._processor.is_control(token):
+                current.append(index)
+        return words + [current] if current else words
+
 
 def check_compatible(tokenizer: Tokenizer, *, vocabulary_size: int | None = None,
                      graph_path: str | Path | None = None) -> None:

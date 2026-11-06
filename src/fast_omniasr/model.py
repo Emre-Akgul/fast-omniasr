@@ -1,11 +1,18 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 
-from .audio import DEFAULT_CHUNK_LENGTH, load_audio, prepare_audio, prepare_chunks
-from .decoder import greedy_token_ids
-from .options import check_device, resolve_threads
+from .audio import (
+    DEFAULT_CHUNK_LENGTH,
+    SAMPLE_RATE,
+    load_audio,
+    prepare_audio,
+    prepare_chunks,
+    silence_before,
+)
+from .decoder import FRAME_STRIDE, FRAME_WINDOW, greedy_token_ids, greedy_tokens
+from .options import check_device, check_flag, resolve_threads
 from .tensorrt_builder import (
     DEFAULT_MAX_SAMPLES,
     DEFAULT_MIN_SAMPLES,
@@ -17,11 +24,20 @@ from .tokenizer import Tokenizer, check_compatible
 
 
 @dataclass(frozen=True)
+class Word:
+    start: float  # seconds into the audio
+    end: float
+    word: str
+
+
+@dataclass(frozen=True)
 class TranscriptionChunk:
     start: float  # seconds into the recording
     end: float
     text: str
     token_ids: tuple[int, ...]
+    words: tuple[Word, ...] = ()  # set by word_timestamps=True
+    token_times: tuple[tuple[float, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -30,6 +46,26 @@ class Transcription:
     token_ids: tuple[int, ...]
     logits_shape: tuple[int, ...]
     chunks: tuple[TranscriptionChunk, ...] = ()  # set by transcribe_long
+    words: tuple[Word, ...] = ()  # set by word_timestamps=True
+    token_times: tuple[tuple[float, float], ...] = ()  # (start, end) of each of token_ids
+
+
+def _frame_time(frame: int) -> float:
+    return frame * FRAME_STRIDE / SAMPLE_RATE
+
+
+def _shifted(start: float, end: float, spans) -> tuple[float, float]:
+    # faster-whisper picks the span by the midpoint, so one that crosses a cut stays in one.
+    shift = silence_before(spans, (start + end) / 2)
+    return round(start + shift, 3), round(end + shift, 3)
+
+
+def _to_recording(result: Transcription, spans) -> Transcription:
+    """Move a chunk's times to the recording it was cut from."""
+    words = tuple(Word(*_shifted(word.start, word.end, spans), word.word)
+                  for word in result.words)
+    times = tuple(_shifted(*token, spans) for token in result.token_times)
+    return replace(result, words=words, token_times=times)
 
 
 def _check_backend_options(backend: str, device: str | None, threads: int | None):
@@ -96,29 +132,48 @@ class OmniASR:
     def closed(self) -> bool:
         return getattr(self.backend, "closed", False)
 
-    def _transcribe(self, audio: np.ndarray) -> Transcription:
+    def _transcribe(self, audio: np.ndarray, word_timestamps: bool = False) -> Transcription:
         if self.closed:
             raise RuntimeError("This OmniASR model is closed")
         logits = self.backend.infer(audio)
-        ids = greedy_token_ids(logits)
-        return Transcription(self.tokenizer.decode(ids), tuple(ids), tuple(logits.shape))
+        if not word_timestamps:
+            ids = greedy_token_ids(logits)
+            return Transcription(self.tokenizer.decode(ids), tuple(ids), tuple(logits.shape))
+        tokens = greedy_tokens(logits)
+        if logits.shape[1] != (audio.shape[-1] - FRAME_WINDOW) // FRAME_STRIDE + 1:
+            raise ValueError(f"word_timestamps needs a model with {FRAME_STRIDE} samples per "
+                             f"frame, but {audio.shape[-1]} samples gave "
+                             f"{logits.shape[1]} frames")
+        ids = [token for token, _, _ in tokens]
+        times = tuple((_frame_time(start), _frame_time(end)) for _, start, end in tokens)
+        words = tuple(Word(times[word[0]][0], times[word[-1]][1],
+                           self.tokenizer.decode([ids[index] for index in word]).strip())
+                      for word in self.tokenizer.split_words(ids))
+        return Transcription(self.tokenizer.decode(ids), tuple(ids), tuple(logits.shape),
+                             words=words, token_times=times)
 
-    def transcribe(self, path: str | Path, *, convert_audio: bool = False) -> Transcription:
+    def transcribe(self, path: str | Path, *, convert_audio: bool = False,
+                   word_timestamps: bool = False) -> Transcription:
         """Transcribe a mono 16 kHz file. `convert_audio=True` downmixes and resamples other
-        formats first (the `resample` extra); by default they are rejected."""
-        return self._transcribe(load_audio(path, convert_audio=convert_audio))
+        formats first (the `resample` extra); by default they are rejected.
+        `word_timestamps=True` also sets `.words` and `.token_times`; see docs/timestamps.md."""
+        check_flag("word_timestamps", word_timestamps)
+        return self._transcribe(load_audio(path, convert_audio=convert_audio), word_timestamps)
 
     def transcribe_numpy(self, waveform: np.ndarray, sample_rate: int = 16000,
-                         *, convert_audio: bool = False) -> Transcription:
+                         *, convert_audio: bool = False,
+                         word_timestamps: bool = False) -> Transcription:
         """Transcribe a mono 16 kHz waveform. `convert_audio=True` also takes other rates and
-        (samples, channels) arrays (the `resample` extra); by default they are rejected."""
+        (samples, channels) arrays (the `resample` extra); by default they are rejected.
+        `word_timestamps=True` also sets `.words` and `.token_times`; see docs/timestamps.md."""
+        check_flag("word_timestamps", word_timestamps)
         return self._transcribe(prepare_audio(waveform, sample_rate,
-                                              convert_audio=convert_audio))
+                                              convert_audio=convert_audio), word_timestamps)
 
     def transcribe_long(self, audio: str | Path | np.ndarray, sample_rate: int = 16000, *,
                         chunk_length: float = DEFAULT_CHUNK_LENGTH,
                         convert_audio: bool = False, vad_filter: bool = False,
-                        vad_options=None) -> Transcription:
+                        vad_options=None, word_timestamps: bool = False) -> Transcription:
         """Transcribe a recording of any length by cutting it every `chunk_length` seconds
         and joining the text in order. Chunks don't overlap and nothing is reconciled across
         a cut, so a word on a boundary can be damaged; `.chunks` has each chunk's times and
@@ -128,20 +183,27 @@ class OmniASR:
         faster-whisper does (needs onnxruntime); `vad_options` is a `vad.VadOptions` or a
         dict of its fields. A chunk then holds at most `chunk_length` seconds of audio, but
         its `start` and `end` can span more, since silence is left out. If the VAD finds no
-        speech, the result has empty text and no chunks."""
+        speech, the result has empty text and no chunks.
+
+        `word_timestamps=True` also sets `.words` and `.token_times`, as times in the original
+        recording, on the result and on each chunk; see docs/timestamps.md."""
         if self.closed:
             raise RuntimeError("This OmniASR model is closed")
-        chunks = [(start, end, self._transcribe(audio_chunk))
-                  for start, end, audio_chunk in prepare_chunks(
-                      audio, sample_rate, chunk_length=chunk_length,
-                      convert_audio=convert_audio, vad_filter=vad_filter,
-                      vad_options=vad_options)]
+        check_flag("word_timestamps", word_timestamps)
+        chunks = [(chunk.start, chunk.end,
+                   _to_recording(self._transcribe(chunk.audio, word_timestamps), chunk.spans))
+                  for chunk in prepare_chunks(audio, sample_rate, chunk_length=chunk_length,
+                                              convert_audio=convert_audio,
+                                              vad_filter=vad_filter, vad_options=vad_options)]
         return Transcription(
             " ".join(result.text for *_, result in chunks if result.text),
             tuple(token for *_, result in chunks for token in result.token_ids),
             chunks[-1][2].logits_shape if chunks else (),
-            tuple(TranscriptionChunk(start, end, result.text, result.token_ids)
+            tuple(TranscriptionChunk(start, end, result.text, result.token_ids, result.words,
+                                     result.token_times)
                   for start, end, result in chunks),
+            tuple(word for *_, result in chunks for word in result.words),
+            tuple(times for *_, result in chunks for times in result.token_times),
         )
 
     def close(self) -> None:
@@ -216,7 +278,6 @@ class OmniASR:
                 "backend='tensorrt' requires precision='fp32', 'fp16' or 'mixed'"
             )
         from .hub import download_verified
-        from .options import check_flag
 
         check_flag("local_files_only", local_files_only)
 

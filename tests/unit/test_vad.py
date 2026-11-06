@@ -38,7 +38,7 @@ def test_speech_keeps_its_original_times_after_leading_silence():
     waveform = np.concatenate([np.zeros(10 * 16000, np.float32), speech()])
     chunks = prepare_chunks(waveform, vad_filter=True)
     assert len(chunks) == 1
-    start, end, audio = chunks[0]
+    start, end, audio, _ = chunks[0]
     assert 9.5 < start < 10.8
     assert end == pytest.approx(waveform.size / 16000, abs=0.5)
     assert audio.shape[1] < 6 * 16000  # the silence isn't in the chunk
@@ -58,7 +58,7 @@ def test_chunks_stay_within_chunk_length():
     waveform = np.concatenate([part for _ in range(8) for part in (speech(), gap)])
     chunks = prepare_chunks(waveform, vad_filter=True, chunk_length=10)
     assert len(chunks) > 2
-    assert all(audio.shape[1] <= 10 * 16000 for *_, audio in chunks)
+    assert all(audio.shape[1] <= 10 * 16000 for _, _, audio, _ in chunks)
     assert [start for start, *_ in chunks] == sorted(start for start, *_ in chunks)
 
 
@@ -67,21 +67,21 @@ def test_cuts_land_in_silence():
     clip = speech()
     waveform = np.concatenate([part for _ in range(6) for part in (clip, gap)])
     period = clip.size + gap.size
-    for start, end, _ in prepare_chunks(waveform, vad_filter=True, chunk_length=10):
+    for start, end, *_ in prepare_chunks(waveform, vad_filter=True, chunk_length=10):
         boundary = (end * 16000) % period
         assert boundary > 56000 or boundary < 2000  # this sentence's speech ends near 56,000
 
 
 def test_chunks_are_normalized_on_their_own():
     waveform = np.concatenate([np.zeros(16000, np.float32), speech()])
-    _, _, audio = prepare_chunks(waveform, vad_filter=True)[0]
+    _, _, audio, _ = prepare_chunks(waveform, vad_filter=True)[0]
     assert abs(audio.mean()) < 1e-3 and audio.std() == pytest.approx(1, abs=0.05)
 
 
 def test_unbroken_speech_is_capped_at_the_chunk_length():
     waveform = np.tile(speech(), 3)
     chunks = prepare_chunks(waveform, vad_filter=True, chunk_length=3)
-    assert len(chunks) > 1 and all(audio.shape[1] <= 3 * 16000 for *_, audio in chunks)
+    assert len(chunks) > 1 and all(audio.shape[1] <= 3 * 16000 for _, _, audio, _ in chunks)
 
 
 def test_a_vad_options_object_is_used_as_given():
@@ -93,7 +93,7 @@ def test_a_dict_of_options_works_and_gets_the_chunk_limit():
     waveform = np.tile(speech(), 3)
     chunks = prepare_chunks(waveform, vad_filter=True, chunk_length=3,
                             vad_options={"threshold": 0.5, "max_speech_duration_s": 999})
-    assert all(audio.shape[1] <= 3 * 16000 for *_, audio in chunks)
+    assert all(audio.shape[1] <= 3 * 16000 for _, _, audio, _ in chunks)
 
 
 def test_bad_vad_options_are_rejected():
@@ -112,7 +112,7 @@ def test_a_chunk_under_the_minimum_is_dropped(monkeypatch):
     monkeypatch.setattr(vad, "speech_chunks", lambda *a: [[{"start": 0, "end": 399}],
                                                           [{"start": 500, "end": 900}]])
     chunks = prepare_chunks(speech(), vad_filter=True)
-    assert [(start, end) for start, end, _ in chunks] == [(500 / 16000, 900 / 16000)]
+    assert [(start, end) for start, end, *_ in chunks] == [(500 / 16000, 900 / 16000)]
 
 
 def test_vad_options_need_vad_filter():
