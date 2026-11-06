@@ -398,7 +398,7 @@ class OmniASRLLM:
         self._warn_without_language(lang)
         language = self._language(lang)
         results = []
-        for start, end, waveform in chunks:
+        for start, end, waveform, _ in chunks:
             result = self._decode(waveform, max_new_tokens, language, repetition_penalty)
             results.append(LLMTranscriptionChunk(start, end, result.text, result.token_ids,
                                                  result.stop_reason))

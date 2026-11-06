@@ -143,6 +143,33 @@ def test_vad_keeps_speech_and_original_times(ctc):
     clips.check_text(result.text, entry["ctc"], clips.reference(entry), _cer)
 
 
+def test_ctc_word_times_follow_the_audio(ctc):
+    audio = clips.waveform("clipped_speech")
+    plain = ctc.transcribe_numpy(audio)
+    timed = ctc.transcribe_numpy(audio, word_timestamps=True)
+    assert (timed.text, timed.token_ids) == (plain.text, plain.token_ids)
+    assert " ".join(word.word for word in timed.words) == " ".join(plain.text.split())
+    assert all(word.start < word.end for word in timed.words)
+    assert timed.words[-1].end <= audio.size / 16000
+    delayed = ctc.transcribe_numpy(np.r_[np.zeros(3 * 16000, audio.dtype), audio],
+                                   word_timestamps=True)
+    # Silence can change the model's wording, so compare the words both runs share.
+    shared = list(zip(timed.words[:4], delayed.words[:4]))
+    assert all(before.word == after.word for before, after in shared)
+    assert all(abs(after.start - before.start - 3) <= 0.06 for before, after in shared)
+
+
+def test_ctc_word_times_survive_vad(ctc):
+    audio = clips.waveform("clipped_speech")
+    gap = 5 * 16000
+    result = ctc.transcribe_long(np.r_[audio, np.zeros(gap, audio.dtype), audio],
+                                 vad_filter=True, word_timestamps=True)
+    alone = ctc.transcribe_numpy(audio, word_timestamps=True)
+    resumed = next(word for word in result.words if word.start > audio.size / 16000)
+    assert resumed.word == alone.words[0].word
+    assert abs(resumed.start - (audio.size + gap) / 16000 - alone.words[0].start) <= 0.1
+
+
 def test_llm_budget_cuts_off_speech(llm):
     result = llm.transcribe(clips.waveform("clipped_speech"), lang=MANIFEST["language"],
                             max_new_tokens=4)

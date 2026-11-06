@@ -17,13 +17,13 @@ def noise(samples, seed=0):
 
 def test_chunks_cover_the_recording_in_order_without_overlap():
     chunks = prepare_chunks(noise(45 * 16000), chunk_length=15)
-    assert [(start, end) for start, end, _ in chunks] == [(0, 15), (15, 30), (30, 45)]
-    assert [audio.shape for *_, audio in chunks] == [(1, 240000)] * 3
+    assert [(start, end) for start, end, *_ in chunks] == [(0, 15), (15, 30), (30, 45)]
+    assert [audio.shape for _, _, audio, _ in chunks] == [(1, 240000)] * 3
 
 
 def test_the_last_chunk_is_shorter():
     chunks = prepare_chunks(noise(20 * 16000), chunk_length=15)
-    assert [(start, end) for start, end, _ in chunks] == [(0, 15), (15, 20)]
+    assert [(start, end) for start, end, *_ in chunks] == [(0, 15), (15, 20)]
 
 
 def test_each_chunk_is_normalized_on_its_own():
@@ -56,7 +56,7 @@ def test_invalid_chunk_lengths_are_rejected(value):
 
 def test_fractional_chunk_lengths_keep_correct_times():
     chunks = prepare_chunks(noise(16000), chunk_length=0.25)
-    assert [(start, end) for start, end, _ in chunks] == [
+    assert [(start, end) for start, end, *_ in chunks] == [
         (0, 0.25), (0.25, 0.5), (0.5, 0.75), (0.75, 1)]
 
 

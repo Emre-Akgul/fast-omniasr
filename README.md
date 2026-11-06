@@ -146,6 +146,16 @@ Pass `vad_filter=True` to cut at silence and skip non-speech, using Silero VAD a
 
 The default is a safe choice rather than a proven best, and it wasn't measured on continuous speech from one speaker. On test recordings that change speaker every few seconds, CTC on chunks past about 20 seconds lost whole spans of speech on some languages, for reasons not yet known. See [docs/long-audio.md](docs/long-audio.md).
 
+For CTC models, pass `word_timestamps=True` to `transcribe`, `transcribe_numpy` or `transcribe_long` to get word and token times, as faster-whisper does. In `transcribe_long` they are times in the original recording, even with `vad_filter=True`:
+
+```python
+result = model.transcribe("speech.wav", word_timestamps=True)
+for word in result.words:
+    print(word.start, word.end, word.word)
+```
+
+They have 20 ms resolution, and a word's times cover only the frames where the model emitted it, not its full sound. See [docs/timestamps.md](docs/timestamps.md).
+
 The LLM's output is the model's own, repeats included: nothing is detected or filtered. On audio with no speech it can loop until `max_new_tokens`, which `stop_reason` reports. To discourage that, pass `repetition_penalty`, which works as in faster-whisper: `model.transcribe(audio, lang="eng_Latn", repetition_penalty=1.1)`. Values above 1 penalize tokens already generated, and the default of 1 changes nothing.
 
 Use it only where loops are the bigger problem, because it can damage real transcripts. On the test clips, 1.1 and 1.2 ended the loops on silence and hum and left a single English sentence unchanged, even said four times, but they changed the text of a two-language clip. EOS is never penalized, so wherever a repeated token only narrowly beats it, the transcript ends there: on a 30-second clip, both values dropped the second sentence, about 40% of the output. It applies to the LLM only: CTC has no generation loop.
