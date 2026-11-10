@@ -33,6 +33,13 @@ def core():
     for frame, token in enumerate([1, 1, 0, 2]):
         logits[0, frame, token] = 1
     assert greedy_token_ids(logits) == [1, 2]  # repeats collapsed, blank (0) removed
+    from importlib.metadata import entry_points
+
+    from fast_omniasr.cli import main as cli
+
+    scripts = entry_points(group="console_scripts")
+    assert "fast-omniasr" in [script.name for script in scripts]
+    assert cli(["diagnose", "--json"]) == 0  # works with no optional dependency
     return fast_omniasr
 
 

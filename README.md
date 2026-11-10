@@ -61,6 +61,19 @@ hub.delete_cached("EmreAkgul/omniASR-CTC-300M-v2-ONNX")  # "main"; or a revision
 
 `local_files_only=True` (on `OmniASR.from_pretrained` and `OmniASRLLM.from_pretrained`) never contacts the Hub: it verifies and loads the cached copy of the revision (for a branch or tag, the commit recorded when it was downloaded) or raises `hub.LocalBundleNotFoundError` saying which files are missing (e.g. another precision was downloaded) or fail verification. It also works on a read-only cache. `model.snapshot` records the repo, the requested revision, the commit it resolved to and the local directory. `delete_cached` takes the same lock as downloads, so it never removes a bundle mid-download. Download failures leave the cache unchanged; a checksum mismatch names the `delete_cached` call that clears a damaged copy. These helpers live in `fast_omniasr.hub`.
 
+From the command line, after installing the `onnx` (or `cuda`) and `hub` extras (`pip install "fast-omniasr[onnx,hub]"`):
+
+```bash
+fast-omniasr transcribe speech.wav --model EmreAkgul/omniASR-CTC-300M-v2-ONNX
+fast-omniasr transcribe meeting.wav --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --vad --json
+fast-omniasr transcribe clip.wav --model EmreAkgul/omniASR-LLM-300M-v2-ONNX --kind llm --lang eng_Latn
+fast-omniasr languages --model EmreAkgul/omniASR-LLM-300M-v2-ONNX
+fast-omniasr inspect --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --json
+fast-omniasr diagnose
+```
+
+Output is UTF-8. With `--json`, `transcribe` writes one JSON object per line, one per audio file, with the same fields as the result object plus `path`. A file that fails gets `path` and `error` instead, the rest still run, and the exit code is 1. `inspect` and `diagnose` write one JSON object and `languages` one JSON array. Options for the other model kind, such as `--lang` on CTC, are usage errors. `--chunk-length` and `--vad` imply `--long`, which uses `transcribe_long`. `diagnose` loads no model and lists versions, ONNX Runtime providers, whether TensorRT imports, and cached models. `inspect` loads the model, so it needs the same extras as `transcribe`. `languages` downloads only the code table and prints codes in lower case, and `--lang` accepts either case. `python -m fast_omniasr` works the same way.
+
 ### Precision (fp32, fp16, bf16)
 
 Every published model — CTC and LLM — ships float32 graphs plus `fp16/` and `bf16/`
