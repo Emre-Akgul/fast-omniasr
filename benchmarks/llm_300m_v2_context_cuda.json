@@ -1,0 +1,60 @@
+{
+  "model": "EmreAkgul/omniASR-LLM-300M-v2-ONNX",
+  "commit": "dfd02a38ca9050cc83411ff28317278c683df103",
+  "precision": "fp16",
+  "tokens": 64,
+  "repeats": 15,
+  "results": [
+    {
+      "seconds": 5.0,
+      "context_shape": [
+        1,
+        251,
+        4096
+      ],
+      "context_mib": 3.92,
+      "encode_to_host_ms": 56.7087,
+      "encode_on_device_ms": 56.2216,
+      "prefill_from_host_ms": 45.173,
+      "prefill_from_device_ms": 44.6653,
+      "prefill_logits_identical": true,
+      "transcribe_ms": 637.3386,
+      "saved_ms": 0.9948,
+      "saved_share": 0.0016
+    },
+    {
+      "seconds": 15.0,
+      "context_shape": [
+        1,
+        751,
+        4096
+      ],
+      "context_mib": 11.73,
+      "encode_to_host_ms": 133.7344,
+      "encode_on_device_ms": 132.4587,
+      "prefill_from_host_ms": 135.7549,
+      "prefill_from_device_ms": 134.543,
+      "prefill_logits_identical": true,
+      "transcribe_ms": 1266.1889,
+      "saved_ms": 2.4877,
+      "saved_share": 0.002
+    },
+    {
+      "seconds": 30.0,
+      "context_shape": [
+        1,
+        1501,
+        4096
+      ],
+      "context_mib": 23.45,
+      "encode_to_host_ms": 274.587,
+      "encode_on_device_ms": 271.4444,
+      "prefill_from_host_ms": 303.7038,
+      "prefill_from_device_ms": 301.2903,
+      "prefill_logits_identical": true,
+      "transcribe_ms": 1903.0142,
+      "saved_ms": 5.5561,
+      "saved_share": 0.0029
+    }
+  ]
+}
