@@ -169,6 +169,7 @@ def cudart(monkeypatch):
     monkeypatch.setitem(sys.modules, "cuda", types.ModuleType("cuda"))
     monkeypatch.setitem(sys.modules, "cuda.bindings", bindings)
     monkeypatch.setitem(sys.modules, "cuda.bindings.runtime", fake)
+    fake_driver(monkeypatch, active={0: True})  # by default the caller's GPU is in use
     return fake
 
 
@@ -217,3 +218,39 @@ def test_a_missing_gpu_names_the_device_index():
 
     assert "on device_index=1" in provider_failure("CUDAExecutionProvider", 1)
     assert provider_failure("CUDAExecutionProvider", None).endswith("did not initialize")
+
+
+def fake_driver(monkeypatch, active):
+    driver = types.SimpleNamespace(
+        cuInit=lambda flags: (0,),
+        cuDevicePrimaryCtxGetState=lambda device: (0, 0, int(active.get(device, False))),
+    )
+    sys.modules["cuda.bindings"].driver = driver
+    monkeypatch.setitem(sys.modules, "cuda.bindings.driver", driver)
+
+
+def test_an_unused_previous_device_is_not_woken_up(cudart, monkeypatch):
+    from fast_omniasr.backends.tensorrt import cuda_device
+
+    fake_driver(monkeypatch, active={})  # GPU 0 was never used by this process
+    with cuda_device(1):
+        assert cudart.current == 1
+    assert cudart.calls == [1]  # no cudaSetDevice(0), so no context on GPU 0
+
+
+def test_a_previous_device_in_use_is_restored(cudart, monkeypatch):
+    from fast_omniasr.backends.tensorrt import cuda_device
+
+    fake_driver(monkeypatch, active={0: True})
+    with cuda_device(1):
+        pass
+    assert cudart.calls == [1, 0]
+
+
+def test_selecting_the_current_device_switches_nothing(cudart, monkeypatch):
+    from fast_omniasr.backends.tensorrt import cuda_device
+
+    fake_driver(monkeypatch, active={0: True})
+    with cuda_device(0):
+        pass
+    assert cudart.calls == [0]

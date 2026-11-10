@@ -77,6 +77,21 @@ def _validate_contract(trt, engine, context):
     return min_shape[1], max_shape[1], resolved["maximum"]
 
 
+def _context_active(device: int) -> bool:
+    """Whether GPU `device` already has its primary CUDA context. cudaGetDevice() reports
+    0 in a thread that never chose a device; switching back to it with cudaSetDevice would
+    create a context there (~100 MiB) in every process pinned to another GPU. True when
+    the driver can't be asked, so the previous device is restored as before."""
+    try:
+        from cuda.bindings import driver
+
+        driver.cuInit(0)
+        error, _, active = driver.cuDevicePrimaryCtxGetState(device)
+    except Exception:  # noqa: BLE001 -- best effort; restoring is the safe default
+        return True
+    return int(error) != 0 or bool(active)
+
+
 @contextlib.contextmanager
 def cuda_device(index: int | None):
     """Make GPU `index` this thread's current CUDA device, restoring the previous one
@@ -100,11 +115,14 @@ def cuda_device(index: int | None):
     count = check(cudart.cudaGetDeviceCount(), "cudaGetDeviceCount")
     if index >= count:
         raise ValueError(f"device_index={index} but only {count} CUDA device(s) are visible")
+    restore = previous != index and _context_active(previous)
     check(cudart.cudaSetDevice(index), f"cudaSetDevice({index})")
     try:
         yield
     finally:
-        cudart.cudaSetDevice(previous)
+        if restore:
+            # Best effort: the work already succeeded or is raising its own error.
+            cudart.cudaSetDevice(previous)
 
 
 class TensorRTBackend:
@@ -189,6 +207,7 @@ class TensorRTBackend:
             return
         try:
             previous = self._check(self._cudart.cudaGetDevice())
+            restore = previous != device and _context_active(previous)
             if previous != device:
                 self._check(self._cudart.cudaSetDevice(device))
         except RuntimeError:
@@ -199,7 +218,7 @@ class TensorRTBackend:
         try:
             yield
         finally:
-            if previous != device:
+            if restore:
                 self._cudart.cudaSetDevice(previous)
 
     def _release(self) -> None:

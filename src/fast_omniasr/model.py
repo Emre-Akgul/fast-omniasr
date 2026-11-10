@@ -323,7 +323,7 @@ class OmniASR:
         def engine(**rebuild):
             with cuda_device(device_index):  # build and key the engine for that GPU
                 return get_or_build_engine(
-                model_path,
+                    model_path,
                     precision=precision,
                     min_samples=DEFAULT_MIN_SAMPLES if min_samples is None else min_samples,
                     opt_samples=DEFAULT_OPT_SAMPLES if opt_samples is None else opt_samples,
