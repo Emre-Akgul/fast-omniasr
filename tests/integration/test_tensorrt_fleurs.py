@@ -163,4 +163,3 @@ def _load_unchecked(precision):
         pinned["repo"], revision=pinned["revision"], backend="tensorrt", precision=precision,
         cache_dir=os.environ.get("OMNIASR_CACHE_DIR") or None,
     )
-

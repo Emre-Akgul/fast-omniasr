@@ -86,22 +86,66 @@ def strongly_typed_only(trt) -> bool:
     return not hasattr(trt.BuilderFlag, "FP16")
 
 
-def convert_to_half(onnx_path: str | Path, output_path: Path) -> Path:
-    """Write a float16 copy of the graph, with float32 inputs and outputs, for a strongly
-    typed TensorRT build. Uses ONNX Runtime's float16 converter."""
+HALF_SCRATCH_PREFIX = ".half-"
+
+
+def check_strongly_typed_precision(trt, precision: str) -> None:
+    """Refuse what TensorRT 11 can't build here, before any download or conversion."""
+    if precision == "fp32" or not strongly_typed_only(trt):
+        return
+    if precision == "mixed":
+        # A float16 graph with the front end kept in float32 decoded differently from FP32
+        # on the FLEURS fixtures, so it doesn't meet what "mixed" promises (#101).
+        raise ValueError(
+            "precision='mixed' isn't available with TensorRT 11 or newer yet; use 'fp16' "
+            "or 'fp32', or TensorRT 10 for 'mixed'"
+        )
+    _require_half_converter()
+
+
+def _require_half_converter() -> None:
     try:
-        import onnx
-        from onnxruntime.transformers import float16
+        import onnx  # noqa: F401
+        from onnxruntime.transformers import float16  # noqa: F401
     except ImportError as exc:
         raise ImportError(
             "TensorRT 11 builds fp16 engines from a float16 copy of the graph, which needs "
             'the onnx package and ONNX Runtime: pip install onnx "fast-omniasr[onnx]" '
             "(or [cuda])"
         ) from exc
-    model = float16.convert_float_to_float16(onnx.load(str(onnx_path)), keep_io_types=True)
+
+
+def convert_to_half(onnx_path: str | Path, output_path: Path) -> Path:
+    """Write a float16 copy of the graph, with float32 inputs and outputs, for a strongly
+    typed TensorRT build. Uses ONNX Runtime's float16 converter. Shape inference runs on
+    files (`infer_shapes_path`), which works past protobuf's 2 GB limit that in-memory
+    inference hits on the 1B+ graphs. The fp32 graph and its fp16 copy are both held in
+    memory while converting (about twice the fp32 graph's size)."""
+    import onnx
+    from onnx.external_data_helper import load_external_data_for_model
+    from onnxruntime.transformers import float16
+
+    onnx_path, output_path = Path(onnx_path), Path(output_path)
+    inferred = output_path.with_name("inferred.onnx")
+    # Writes only the graph; its external-data references still point at the source files.
+    onnx.shape_inference.infer_shapes_path(str(onnx_path), str(inferred))
+    model = onnx.load(str(inferred), load_external_data=False)
+    inferred.unlink()
+    load_external_data_for_model(model, str(onnx_path.parent))
+    model = float16.convert_float_to_float16(model, keep_io_types=True,
+                                             disable_shape_infer=True)
     onnx.save(model, str(output_path), save_as_external_data=True,
               location=output_path.name + ".data")
     return output_path
+
+
+def remove_stale_scratch(directory: Path) -> None:
+    """Delete float16 scratch copies a killed build left in `directory`. Call it only while
+    holding the lock that keeps other builds out of that directory."""
+    import shutil
+
+    for stale in Path(directory).glob(HALF_SCRATCH_PREFIX + "*"):
+        shutil.rmtree(stale, ignore_errors=True)
 
 
 def _integer(name: str, value, low: int, high: int) -> int:
@@ -233,7 +277,8 @@ def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: s
                   options: TensorRTBuildOptions | None = None) -> Path:
     """`precision`: "fp32"; "fp16" (fastest, small transcript differences from FP32); or
     "mixed" (FP16 with the precision-sensitive convolutional front end kept in FP32:
-    closest to FP32, about twice the FP16 latency). `options`: see TensorRTBuildOptions."""
+    closest to FP32, about twice the FP16 latency; TensorRT 10 only). `options`: see
+    TensorRTBuildOptions."""
     options = check_build_options(options)
     if precision not in PRECISIONS:
         raise ValueError("precision must be 'fp32', 'fp16' or 'mixed'")
@@ -246,19 +291,13 @@ def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: s
         raise ImportError(
             "Install fast-omniasr[tensorrt] and a compatible TensorRT installation"
         ) from exc
+    check_strongly_typed_precision(trt, precision)
     strongly_typed = precision != "fp32" and strongly_typed_only(trt)
-    if strongly_typed and precision == "mixed":
-        # A float16 graph with the front end kept in float32 decoded differently from FP32
-        # on the FLEURS fixtures, so it doesn't meet what "mixed" promises (#101).
-        raise ValueError(
-            "precision='mixed' isn't available with TensorRT 11 or newer yet; use 'fp16' "
-            "or 'fp32', or TensorRT 10 for 'mixed'"
-        )
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if strongly_typed:
         # A float16 copy (~half the graph's size) beside the engine, removed after the build.
-        with tempfile.TemporaryDirectory(dir=output_path.parent, prefix=".half-") as scratch:
+        with tempfile.TemporaryDirectory(dir=output_path.parent, prefix=HALF_SCRATCH_PREFIX) as scratch:
             half = convert_to_half(onnx_path, Path(scratch) / "model.onnx")
             return _build(trt, half, output_path, precision, (min_samples, opt_samples,
                                                               max_samples), options,

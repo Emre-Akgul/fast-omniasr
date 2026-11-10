@@ -18,7 +18,8 @@ def main():
     parser.add_argument("model", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--precision", choices=["fp32", "fp16", "mixed"], default="fp32",
-                        help="mixed: FP16 with the precision-sensitive front end in FP32")
+                        help="mixed: FP16 with the precision-sensitive front end in FP32 "
+                             "(TensorRT 10 only)")
     parser.add_argument("--min-samples", type=int, default=DEFAULT_MIN_SAMPLES)
     parser.add_argument("--opt-samples", type=int, default=DEFAULT_OPT_SAMPLES)
     parser.add_argument("--max-samples", type=int, default=DEFAULT_MAX_SAMPLES)

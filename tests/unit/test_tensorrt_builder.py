@@ -407,6 +407,7 @@ def fake_trt11(fake_trt, monkeypatch):
         return output_path
 
     monkeypatch.setattr(tensorrt_builder, "convert_to_half", convert)
+    monkeypatch.setattr(tensorrt_builder, "_require_half_converter", lambda: None)
     fake_trt.update(parsed=parsed, networks=networks, converted=converted)
     return fake_trt
 
@@ -460,3 +461,71 @@ def test_convert_to_half_keeps_float32_io(tmp_path):
     want = ort.InferenceSession(str(tmp_path / "m.onnx")).run(None, {"audio": audio})[0]
     got = ort.InferenceSession(str(out)).run(None, {"audio": audio})[0]
     np.testing.assert_allclose(got, want, rtol=2e-2, atol=2e-2)
+
+
+def test_convert_to_half_infers_shapes_on_files(tmp_path, monkeypatch):
+    """In-memory shape inference fails past protobuf's 2 GB limit (the 1B+ graphs), so it
+    runs on files and the converter is told not to repeat it."""
+    pytest.importorskip("onnxruntime.transformers.float16")
+    onnx = pytest.importorskip("onnx")
+    from onnxruntime.transformers import float16
+
+    test_convert_to_half_keeps_float32_io(tmp_path)  # writes m.onnx
+    calls = {}
+    infer_path = onnx.shape_inference.infer_shapes_path
+    monkeypatch.setattr(onnx.shape_inference, "infer_shapes", lambda *a, **k: pytest.fail(
+        "in-memory shape inference"))
+    monkeypatch.setattr(onnx.shape_inference, "infer_shapes_path",
+                        lambda *a, **k: calls.setdefault("path", a) and infer_path(*a, **k))
+    convert = float16.convert_float_to_float16
+    monkeypatch.setattr(float16, "convert_float_to_float16",
+                        lambda model, **k: calls.setdefault("kwargs", k) and convert(model, **k))
+    (tmp_path / "half").mkdir()  # build_engine's scratch directory
+    out = tensorrt_builder.convert_to_half(tmp_path / "m.onnx", tmp_path / "half" / "h.onnx")
+    assert calls["path"][0] == str(tmp_path / "m.onnx")
+    assert calls["kwargs"]["disable_shape_infer"] is True
+    assert not (out.parent / "inferred.onnx").exists()
+
+
+def test_stale_scratch_copies_are_removed(tmp_path):
+    (tmp_path / ".half-abc").mkdir()
+    (tmp_path / ".half-abc" / "model.onnx.data").write_bytes(b"x" * 10)
+    (tmp_path / "model.engine").write_bytes(b"engine")
+    tensorrt_builder.remove_stale_scratch(tmp_path)
+    assert [p.name for p in tmp_path.iterdir()] == ["model.engine"]
+
+
+def test_missing_converter_is_reported_before_any_work(fake_trt11, tmp_path, monkeypatch):
+    def missing():
+        raise ImportError("needs the onnx package")
+
+    monkeypatch.setattr(tensorrt_builder, "_require_half_converter", missing)
+    with pytest.raises(ImportError, match="onnx package"):
+        _build(tmp_path, "fp16")
+    assert fake_trt11["converted"] == []
+    _build(tmp_path, "fp32")  # fp32 needs no conversion
+
+
+@pytest.fixture
+def tensorrt_11_installed(monkeypatch):
+    trt = types.SimpleNamespace(BuilderFlag=types.SimpleNamespace(TF32="TF32"))
+    monkeypatch.setitem(sys.modules, "tensorrt", trt)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", None)  # a download would fail loudly
+    return trt
+
+
+def test_from_pretrained_refuses_mixed_on_tensorrt_11_before_downloading(tensorrt_11_installed):
+    from fast_omniasr import OmniASR
+
+    with pytest.raises(ValueError, match="'mixed' isn't available with TensorRT 11"):
+        OmniASR.from_pretrained("o/r", backend="tensorrt", precision="mixed")
+
+
+def test_from_pretrained_reports_a_missing_converter_before_downloading(
+        tensorrt_11_installed, monkeypatch):
+    from fast_omniasr import OmniASR
+
+    monkeypatch.setitem(sys.modules, "onnx", None)
+    with pytest.raises(ImportError, match="onnx package"):
+        OmniASR.from_pretrained("o/r", backend="tensorrt", precision="fp16")
+
