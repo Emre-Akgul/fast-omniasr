@@ -32,7 +32,11 @@ python -m pip install "fast-omniasr[tensorrt]"  # cuda-python; also requires a s
 
 The requested provider/backend must initialize, and ONNX Runtime run-level fallback
 is disabled. ORT may still assign supported graph plumbing, such as shape operations,
-to its CPU EP. For a source checkout instead (e.g. to work on the library itself),
+to its CPU EP. On CUDA, cuDNN uses its fixed convolution algorithm, because newer cuDNN
+(9.27+) fails to allocate for inputs under ~2.6 s when algorithms are searched (#97). ONNX
+Runtime logs `OP Conv(...) running in Fallback mode. May be extremely slow.` for each new
+input length as a result. It is expected and costs ~5% on long clips; hide it with
+`onnxruntime.set_default_logger_severity(3)`. For a source checkout instead (e.g. to work on the library itself),
 use `pip install -e ".[onnx,hub]"` from the repo root.
 
 ## Usage
