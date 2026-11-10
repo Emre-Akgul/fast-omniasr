@@ -12,7 +12,7 @@ from .audio import (
     silence_before,
 )
 from .decoder import FRAME_STRIDE, FRAME_WINDOW, greedy_token_ids, greedy_tokens
-from .options import check_device, check_flag, resolve_threads
+from .options import check_device, check_device_index, check_flag, resolve_threads
 from .tensorrt_builder import (
     DEFAULT_MAX_SAMPLES,
     DEFAULT_MIN_SAMPLES,
@@ -71,17 +71,17 @@ def _to_recording(result: Transcription, spans) -> Transcription:
 def _check_backend_options(backend: str, device: str | None, threads: int | None):
     """Resolve `device`/`threads` for a backend; reject options it would ignore.
 
-    ONNX: device "cpu" (default) or "cuda", threads >= 1 (default 4). TensorRT runs on the
-    current CUDA device (select it with CUDA_VISIBLE_DEVICES or cudaSetDevice) and has no
-    thread setting, so device must be omitted or "cuda" and threads must be omitted."""
+    ONNX: device "cpu" (default) or "cuda", threads >= 1 (default 4). TensorRT runs on a
+    CUDA device (`device_index`, or the current one) and has no thread setting, so device
+    must be omitted or "cuda" and threads must be omitted."""
     if backend == "onnx":
         return (check_device("cpu" if device is None else device),
                 resolve_threads(threads))
     if backend == "tensorrt":
         if device not in (None, "cuda"):
             raise ValueError(
-                f"backend='tensorrt' runs on the current CUDA device; got device={device!r}. "
-                "Omit device (or pass 'cuda') and select the GPU with CUDA_VISIBLE_DEVICES"
+                f"backend='tensorrt' runs on a CUDA device; got device={device!r}. "
+                "Omit device (or pass 'cuda') and select the GPU with device_index"
             )
         if threads is not None:
             raise ValueError("threads only applies to backend='onnx'; TensorRT has no "
@@ -97,13 +97,16 @@ class OmniASR:
 
     def __init__(self, model_path: str | Path, tokenizer_path: str | Path,
                  *, backend: str = "onnx", device: str | None = None,
-                 threads: int | None = None, precision: str = "fp32"):
+                 threads: int | None = None, precision: str = "fp32",
+                 device_index: int | None = None):
         """`device` ("cpu" by default, or "cuda") and `threads` (default 4) apply to the
-        ONNX backend; TensorRT runs on the current CUDA device and rejects them.
+        ONNX backend; TensorRT runs on a CUDA device and rejects them. `device_index` picks
+        the GPU (default: GPU 0 for ONNX Runtime, the current CUDA device for TensorRT).
         `precision` describes an ONNX graph at `model_path` (an fp16/bf16 variant from
         tools/convert_precision.py); TensorRT engines carry their precision themselves, so
         only the default is accepted there."""
         device, threads = _check_backend_options(backend, device, threads)
+        device_index = check_device_index(device_index, device)
         if backend != "onnx" and precision != "fp32":
             raise ValueError("precision describes ONNX graphs; a TensorRT engine carries "
                              "its own precision (choose it when building the engine)")
@@ -115,11 +118,13 @@ class OmniASR:
         if backend == "onnx":
             from .backends.onnx import ONNXBackend
             self.backend = ONNXBackend(
-                model_path, device=device, threads=threads, precision=precision
+                model_path, device=device, threads=threads, precision=precision,
+                device_index=device_index,
             )
         else:
-            from .backends.tensorrt import TensorRTBackend
-            self.backend = TensorRTBackend(model_path)
+            from .backends.tensorrt import TensorRTBackend, cuda_device
+            with cuda_device(device_index):  # the engine stays on the device it loaded on
+                self.backend = TensorRTBackend(model_path)
         try:
             check_compatible(
                 self.tokenizer, vocabulary_size=getattr(self.backend, "vocabulary_size", None)
@@ -227,7 +232,7 @@ class OmniASR:
                          max_samples: int | None = None,
                          build_options: TensorRTBuildOptions | None = None,
                          device: str | None = None, threads: int | None = None,
-                         local_files_only: bool = False):
+                         local_files_only: bool = False, device_index: int | None = None):
         """Download and verify model/tokenizer assets from a Hugging Face Hub repo.
 
         `local_files_only=True` loads the cached copy without contacting the Hub (raising
@@ -255,11 +260,15 @@ class OmniASR:
         variants keep MatMul weights in half precision. Only the chosen graph, the
         external-data files it references and the tokenizer are downloaded. bf16 needs
         device="cuda" and an Ampere+ GPU.
+
+        `device_index` picks the GPU: ONNX Runtime's `device_id` (default 0), or for TensorRT
+        the device the engine is built, cached and loaded on (default: the current one).
         """
         if backend not in ("onnx", "tensorrt"):
             raise ValueError("backend must be 'onnx' or 'tensorrt'")
         # Reject inapplicable device/threads before any download or engine build.
         resolved_device, _ = _check_backend_options(backend, device, threads)
+        check_device_index(device_index, resolved_device)
         from .precision import check_precision
         if backend == "onnx":
             precision = check_precision(precision or "fp32", resolved_device)
@@ -297,7 +306,8 @@ class OmniASR:
             check_compatible(Tokenizer(tokenizer_path), graph_path=model_path)
         if backend == "onnx":
             return _attach(snapshot, cls(model_path, tokenizer_path, backend="onnx",
-                                         device=device, threads=threads, precision=precision))
+                                         device=device, threads=threads, precision=precision,
+                                         device_index=device_index))
 
         if precision == "fp16":
             import warnings
@@ -307,25 +317,27 @@ class OmniASR:
                 "accuracy documentation.",
                 stacklevel=2,
             )
-        from .backends.tensorrt import EngineDeserializationError
+        from .backends.tensorrt import EngineDeserializationError, cuda_device
         from .tensorrt_cache import get_or_build_engine, recorded_engine_sha256
 
         def engine(**rebuild):
-            return get_or_build_engine(
-                model_path,
-                precision=precision,
-                min_samples=DEFAULT_MIN_SAMPLES if min_samples is None else min_samples,
-                opt_samples=DEFAULT_OPT_SAMPLES if opt_samples is None else opt_samples,
-                max_samples=DEFAULT_MAX_SAMPLES if max_samples is None else max_samples,
-                options=build_options,
-                cache_dir=engine_cache_dir,
-                **rebuild,
-            )
+            with cuda_device(device_index):  # build and key the engine for that GPU
+                return get_or_build_engine(
+                    model_path,
+                    precision=precision,
+                    min_samples=DEFAULT_MIN_SAMPLES if min_samples is None else min_samples,
+                    opt_samples=DEFAULT_OPT_SAMPLES if opt_samples is None else opt_samples,
+                    max_samples=DEFAULT_MAX_SAMPLES if max_samples is None else max_samples,
+                    options=build_options,
+                    cache_dir=engine_cache_dir,
+                    **rebuild,
+                )
 
         engine_path = engine()
         try:
             return _attach(snapshot, cls(engine_path, tokenizer_path, backend="tensorrt",
-                                         device=device, threads=threads))
+                                         device=device, threads=threads,
+                                         device_index=device_index))
         except EngineDeserializationError as exc:
             reason = str(exc)  # rebuild outside the handler so the failed backend is freed
         import warnings
@@ -335,7 +347,7 @@ class OmniASR:
         failed = recorded_engine_sha256(engine_path)
         rebuilt = engine(discard_sha256=failed) if failed else engine(rebuild=True)
         return _attach(snapshot, cls(rebuilt, tokenizer_path, backend="tensorrt", device=device,
-                                     threads=threads))
+                                     threads=threads, device_index=device_index))
 
 
 def _attach(snapshot, model):

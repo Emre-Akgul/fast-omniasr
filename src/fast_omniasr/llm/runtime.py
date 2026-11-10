@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from ..audio import DEFAULT_CHUNK_LENGTH, load_audio, prepare_audio, prepare_chunks
-from ..options import check_device, check_flag, resolve_threads
+from ..options import check_device, check_device_index, check_flag, resolve_threads
 from ..precision import check_precision
 from ..tokenizer import Tokenizer
 
@@ -124,8 +124,10 @@ class OmniASRLLM:
         threads: int | None = None,
         low_memory: bool = False,
         precision: str = "fp32",
+        device_index: int | None = None,
     ):
-        """`threads` (default 4) and `low_memory` apply to backend="onnx"; the TorchScript
+        """`device_index` picks the GPU for device="cuda" (default: ONNX Runtime's GPU 0).
+        `threads` (default 4) and `low_memory` apply to backend="onnx"; the TorchScript
         baseline uses PyTorch's process-wide thread setting and loads one copy, so it
         rejects both rather than silently ignoring them. `cached` selects the TorchScript
         baseline's decoder; the ONNX backend always decodes with an explicit KV cache."""
@@ -135,6 +137,7 @@ class OmniASRLLM:
         if backend not in {"torch", "onnx"}:
             raise ValueError("backend must be torch or onnx")
         check_device(device)
+        device_index = check_device_index(device_index, device)
         check_flag("low_memory", low_memory)
         check_flag("cached", cached)
         if backend == "onnx":
@@ -175,7 +178,8 @@ class OmniASRLLM:
             validate_languages(self.config, directory, hidden)
             from .onnx_backend import ONNXLLMBackend
 
-            self.onnx = ONNXLLMBackend(directory, device, threads, low_memory, precision)
+            self.onnx = ONNXLLMBackend(directory, device, threads, low_memory, precision,
+                                       device_index)
             self.device = device
             self.cached = True
             return
@@ -204,6 +208,7 @@ class OmniASRLLM:
         revision: str | None = None,
         cache_dir: str | Path | None = None,
         local_files_only: bool = False,
+        device_index: int | None = None,
     ) -> "OmniASRLLM":
         """Download, verify and load published ONNX assets (no PyTorch needed).
 
@@ -218,13 +223,15 @@ class OmniASRLLM:
 
         precision="fp16" or "bf16" downloads only that variant (MatMul weights in half
         precision, about half the size) plus the shared tokenizer and language tables.
-        bf16 needs device="cuda" and an Ampere or newer GPU.
+        bf16 needs device="cuda" and an Ampere or newer GPU. `device_index` picks the GPU
+        (default: ONNX Runtime's GPU 0).
 
         `local_files_only=True` loads the cached copy without contacting the Hub (raising
         fast_omniasr.hub.LocalBundleNotFoundError if there is none). The returned model's
         `snapshot` records the repo, revision, resolved commit and local directory.
         """
         check_device(device)
+        check_device_index(device_index, device)
         threads = resolve_threads(threads)
         check_flag("low_memory", low_memory)
         check_flag("local_files_only", local_files_only)
@@ -244,7 +251,7 @@ class OmniASRLLM:
                 raise RuntimeError("Downloaded assets are not co-located in one snapshot")
             model = cls(
                 directory, backend="onnx", device=device, threads=threads,
-                low_memory=low_memory, precision=precision,
+                low_memory=low_memory, precision=precision, device_index=device_index,
             )
             model.snapshot = snapshot
             return model
@@ -269,7 +276,8 @@ class OmniASRLLM:
         if any(verified[name].parent != directory for name in required | graphs):
             raise RuntimeError("Downloaded assets are not co-located in one snapshot")
         model = cls(
-            directory, backend="onnx", device=device, threads=threads, low_memory=low_memory
+            directory, backend="onnx", device=device, threads=threads, low_memory=low_memory,
+            device_index=device_index,
         )
         model.snapshot = snapshot
         return model

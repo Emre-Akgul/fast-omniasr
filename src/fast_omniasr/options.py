@@ -21,6 +21,39 @@ def check_device(device) -> str:
     return device
 
 
+def check_device_index(device_index, device: str) -> int | None:
+    """`None` (ONNX Runtime's GPU 0, or TensorRT's current CUDA device), or a GPU ordinal:
+    a non-negative integer of any integer type, bools rejected, and only with "cuda"."""
+    if device_index is None:
+        return None
+    try:
+        value = None if isinstance(device_index, bool) else operator.index(device_index)
+    except TypeError:
+        value = None
+    if value is None or value < 0:
+        raise ValueError(f"device_index must be a non-negative integer, got {device_index!r}")
+    if device != "cuda":
+        raise ValueError(f"device_index only applies to device='cuda', got device={device!r}")
+    return value
+
+
+def cuda_provider_options(device_index: int | None = None) -> dict:
+    """CUDA_PROVIDER_OPTIONS for one GPU; `None` leaves ONNX Runtime's default (GPU 0)."""
+    options = dict(CUDA_PROVIDER_OPTIONS)
+    if device_index is not None:
+        options["device_id"] = str(device_index)
+    return options
+
+
+def provider_failure(provider: str, device_index: int | None) -> str:
+    """Why a requested ONNX Runtime provider is missing from the session."""
+    message = f"Requested provider {provider} did not initialize"
+    if device_index is not None:
+        message += (f" on device_index={device_index}; check that the GPU exists and is "
+                    "visible (CUDA_VISIBLE_DEVICES). ONNX Runtime logged the reason above")
+    return message
+
+
 def check_threads(threads) -> int:
     """A positive integer of any integer type (int, numpy integers); bools rejected."""
     try:

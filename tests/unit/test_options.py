@@ -53,7 +53,7 @@ def test_ctc_onnx_rejects_unknown_device_before_loading():
 
 
 @pytest.mark.parametrize("kwargs, message", [
-    ({"device": "cpu"}, "runs on the current CUDA device"),
+    ({"device": "cpu"}, "runs on a CUDA device"),
     ({"threads": 4}, "threads only applies to backend='onnx'"),
     ({"precision": "fp16"}, "carries its own precision"),
 ])
@@ -64,7 +64,7 @@ def test_tensorrt_rejects_options_it_would_ignore(kwargs, message):
 
 def test_tensorrt_from_pretrained_rejects_before_any_download(monkeypatch):
     monkeypatch.setitem(sys.modules, "huggingface_hub", None)  # a download would fail loudly
-    with pytest.raises(ValueError, match="runs on the current CUDA device"):
+    with pytest.raises(ValueError, match="runs on a CUDA device"):
         OmniASR.from_pretrained("o/r", backend="tensorrt", precision="fp16", device="cpu")
     with pytest.raises(ValueError, match="threads only applies"):
         OmniASR.from_pretrained("o/r", backend="tensorrt", precision="fp16", threads=2)

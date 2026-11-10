@@ -187,7 +187,7 @@ def fake_backend(monkeypatch, tmp_path):
         graph.get_inputs = lambda: inputs
         return graph
 
-    def session(path, device="cpu", opts=None, arena=None):
+    def session(path, device="cpu", opts=None, arena=None, device_index=None):
         path = Path(path)
         loads.append(path.name if path.parent == tmp_path else f"{path.parent.name}/{path.name}")
         if path.name == "decoder.onnx":  # half-precision decoders load directly
@@ -199,7 +199,7 @@ def fake_backend(monkeypatch, tmp_path):
         prefill = Graph(["context", "bos"], step_outputs)
         return prefill, Graph(onnx_backend.STEP_INPUTS, step_outputs), []
 
-    def decoder_session(directory, graph, device="cpu", threads=4, arena=None):
+    def decoder_session(directory, graph, device="cpu", threads=4, arena=None, device_index=None):
         loads.append(graph)
         return unified_graph(), []
 

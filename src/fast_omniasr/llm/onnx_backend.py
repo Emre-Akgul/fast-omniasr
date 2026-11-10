@@ -23,11 +23,11 @@ def options(threads=None):
     return result
 
 
-def providers(device, arena="kSameAsRequested"):
+def providers(device, arena="kSameAsRequested", device_index=None):
     """`arena` is the CUDA arena extend strategy. kSameAsRequested suits phased, shrinking
     sessions; resident sessions use kNextPowerOfTwo so freed cache chunks coalesce and are
     reused as the cache grows instead of stranding one exact-size chunk per length."""
-    from ..options import CUDA_PROVIDER_OPTIONS, check_device
+    from ..options import check_device, cuda_provider_options
 
     check_device(device)
     name = "CUDAExecutionProvider" if device == "cuda" else "CPUExecutionProvider"
@@ -40,7 +40,7 @@ def providers(device, arena="kSameAsRequested"):
             (
                 name,
                 {
-                    **CUDA_PROVIDER_OPTIONS,
+                    **cuda_provider_options(device_index),
                     "cudnn_conv_use_max_workspace": "0",
                     "arena_extend_strategy": arena,
                 },
@@ -51,24 +51,27 @@ def providers(device, arena="kSameAsRequested"):
     )
 
 
-def run_options(device):
+def run_options(device, device_index=None):
     if device != "cuda":
         return None
     result = ort.RunOptions()
-    result.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
+    result.add_run_config_entry("memory.enable_memory_arena_shrinkage", f"gpu:{device_index or 0}")
     return result
 
 
-def session(path, device="cpu", opts=None, arena="kSameAsRequested"):
+def session(path, device="cpu", opts=None, arena="kSameAsRequested", device_index=None):
     result = ort.InferenceSession(
-        str(path), sess_options=opts or options(), providers=providers(device, arena)
+        str(path), sess_options=opts or options(),
+        providers=providers(device, arena, device_index),
     )
     # This controls session.run() error recovery. It does not prevent ORT from
     # assigning graph-shape plumbing to the CPU EP when CUDA is requested.
     result.disable_fallback()
     expected = "CUDAExecutionProvider" if device == "cuda" else "CPUExecutionProvider"
     if result.get_providers()[0] != expected:
-        raise RuntimeError(f"Required provider {expected} did not initialize")
+        from ..options import provider_failure
+
+        raise RuntimeError(provider_failure(expected, device_index))
     return result
 
 
@@ -106,13 +109,14 @@ STEP_INPUTS = ["token"] + [f"past_{kind}_{i}" for i in range(12) for kind in ("k
 UNIFIED_INPUTS = ["context", "tokens", *STEP_INPUTS[1:]]
 
 
-def decoder_session(directory, graph, device="cpu", threads=4, arena="kSameAsRequested"):
+def decoder_session(directory, graph, device="cpu", threads=4, arena="kSameAsRequested",
+                    device_index=None):
     """One decoder graph. On CPU its weights are memory-mapped shared initializers."""
     directory = Path(directory)
     if device == "cpu":
         opts, keepalive = _decoder_options(directory, threads)
         return session(directory / graph, "cpu", opts), keepalive
-    return session(directory / graph, device, options(threads), arena), []
+    return session(directory / graph, device, options(threads), arena, device_index), []
 
 
 class ONNXLLMBackend:
@@ -131,11 +135,13 @@ class ONNXLLMBackend:
     half precision (see fast_omniasr.precision); inputs, outputs and caches stay float32.
     """
 
-    def __init__(self, directory, device="cpu", threads=4, low_memory=False, precision="fp32"):
-        from ..options import check_device, check_flag, resolve_threads
+    def __init__(self, directory, device="cpu", threads=4, low_memory=False, precision="fp32",
+                 device_index=None):
+        from ..options import check_device, check_device_index, check_flag, resolve_threads
         from ..precision import check_precision
 
         check_device(device)
+        self.device_index = check_device_index(device_index, device)
         threads = resolve_threads(threads)
         check_flag("low_memory", low_memory)
 
@@ -153,7 +159,7 @@ class ONNXLLMBackend:
         self.decoder = None
         self.keepalive = []
         # Shrinking returns arena memory after every run; only phased sessions need it.
-        self.run_options = run_options(device) if low_memory else None
+        self.run_options = run_options(device, self.device_index) if low_memory else None
         if precision == "fp32":
             graphs = ["decoder.onnx"] if self.unified else ["decoder_prefill.onnx", "decoder_step.onnx"]
             names = ["encoder.onnx", *graphs, "decoder.weights", "decoder_weights.json"]
@@ -195,7 +201,8 @@ class ONNXLLMBackend:
             self._unload()
         if self.encoder_session is None:
             self.encoder_session = session(
-                self.graphs / "encoder.onnx", self.device, options(self.threads), self.arena
+                self.graphs / "encoder.onnx", self.device, options(self.threads), self.arena,
+                self.device_index,
             )
         context = self.encoder_session.run(
             ["context"], {"audio": np.ascontiguousarray(audio)}, self.run_options
@@ -209,11 +216,13 @@ class ONNXLLMBackend:
         if self.decoder is None:
             if self.precision == "fp32":
                 self.decoder, self.keepalive = decoder_session(
-                    self.directory, "decoder.onnx", self.device, self.threads, self.arena
+                    self.directory, "decoder.onnx", self.device, self.threads, self.arena,
+                    self.device_index,
                 )
             else:
                 self.decoder = session(
-                    self.graphs / "decoder.onnx", self.device, options(self.threads), self.arena
+                    self.graphs / "decoder.onnx", self.device, options(self.threads), self.arena,
+                    self.device_index,
                 )
             inputs = self.decoder.get_inputs()
             if [value.name for value in inputs] != UNIFIED_INPUTS:
@@ -238,6 +247,7 @@ class ONNXLLMBackend:
                     self.device,
                     options(self.threads),
                     self.arena,
+                    self.device_index,
                 )
                 if not self.low_memory:
                     self.step_session = self._step()
@@ -250,7 +260,8 @@ class ONNXLLMBackend:
 
     def _step(self):
         result = session(
-            self.directory / "decoder_step.onnx", self.device, options(self.threads), self.arena
+            self.directory / "decoder_step.onnx", self.device, options(self.threads), self.arena,
+            self.device_index,
         )
         if [value.name for value in result.get_inputs()] != STEP_INPUTS:
             raise ValueError("Invalid ONNX step input contract")
@@ -266,7 +277,7 @@ class ONNXLLMBackend:
         names = [value.name for value in graph.get_outputs()]
         binding.bind_output(names[0], "cpu")
         for name in names[1:]:
-            binding.bind_output(name, "cuda")
+            binding.bind_output(name, "cuda", self.device_index or 0)
         graph.run_with_iobinding(binding)
         outputs = binding.get_outputs()
         return outputs[0].numpy(), outputs[1:]

@@ -96,10 +96,10 @@ def test_several_files_are_labelled(ctc, capsys):
 def test_load_options_reach_the_model(ctc):
     run("transcribe", "a.wav", "--model", "m", "--revision", "abc", "--cache-dir", "c",
         "--local-files-only", "--device", "cuda", "--precision", "fp16", "--threads", "2",
-        "--backend", "tensorrt")
+        "--backend", "tensorrt", "--device-index", "1")
     assert ctc.loads == [("m", {"revision": "abc", "cache_dir": "c", "local_files_only": True,
                                 "device": "cuda", "precision": "fp16", "threads": 2,
-                                "backend": "tensorrt"})]
+                                "backend": "tensorrt", "device_index": 1})]
 
 
 def test_unset_options_keep_the_library_defaults(ctc):
