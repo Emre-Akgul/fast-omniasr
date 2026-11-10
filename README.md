@@ -133,6 +133,16 @@ A timing cache roughly halves rebuild time or better. It is only an optimization
 
 `OmniASR` and `OmniASRLLM` release their ONNX Runtime sessions or TensorRT engine on `close()` or when leaving a `with` block (`with OmniASR.from_pretrained(...) as model:`); `close()` is idempotent, and transcribing afterwards raises `RuntimeError`. An `OmniASR` instance may be shared across threads. With the TensorRT backend, each instance owns one execution context and its buffers, so concurrent calls are serialized (never mixed); create one instance per worker for parallel GPU throughput. `OmniASRLLM` instances may also be shared: each `transcribe()` runs its encode and full decode loop alone (calls are serialized), so concurrent requests never mix; use one instance per worker for parallel throughput.
 
+In a long-running server, load the model once and keep it. After a warm-up, GPU memory stays flat across requests on the ONNX Runtime CUDA path (CTC, and the LLM both resident and with `low_memory=True`). The CUDA arena keeps the most memory any request needed, so the peak is set by your longest input. Cap it with `transcribe_long` (fixed-length chunks), or use the TensorRT backend, whose buffers are allocated once for the profile maximum. ONNX Runtime's per-run `memory.enable_memory_arena_shrinkage` hands that memory back after each request instead. On integrated GPUs that share memory with the host, freeing and re-allocating on every request has been reported to leave driver memory behind (#96). Check your own device and settings with:
+
+```bash
+python tools/gpu_memory_soak.py --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --device cuda               # same request 60 times
+python tools/gpu_memory_soak.py --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --device cuda --arena-shrinkage
+python tools/gpu_memory_soak.py --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --device cuda --mixed --seconds 30
+```
+
+It samples NVML process and device memory, `NvMapMemUsed` from `/proc/meminfo` (where integrated GPUs' allocations show up), the container's cgroup `kernel` memory and RSS after every request. It exits 1 if any of them keeps growing after warm-up.
+
 Or supply local assets directly (no download, no `hub` extra needed):
 
 ```python
