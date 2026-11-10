@@ -220,8 +220,9 @@ python tools/benchmark_llm_context.py --model EmreAkgul/omniASR-LLM-300M-v2-ONNX
 | 15 s | 11.7 MiB | 133.7 / 132.5 ms | 135.8 / 134.5 ms | 1,266 ms | 2.5 ms (0.20%) |
 | 30 s | 23.5 MiB | 274.6 / 271.4 ms | 303.7 / 301.3 ms | 1,903 ms | 5.6 ms (0.29%) |
 
-The logits are identical either way. The copies cost under 0.3% of a transcription, and a
-device-resident context would also need the language row written on the GPU, which takes
-a graph change or a raw CUDA copy (ONNX Runtime's Python API only updates whole tensors). So the runtime keeps the host round
-trip.
-
+The logits are identical either way. Encode and prefill are medians of 15 runs and the
+transcription a median of 5. The figure leaves out the host copy the runtime makes to write
+the language row (about 0.1, 1.3 and 1.6 ms at these lengths), so the full saving at 30 s is
+about 7 ms (0.37%). A device-resident context would need that row written on the GPU, which
+takes a graph change or a raw CUDA copy (ONNX Runtime's Python API updates whole tensors
+only). For under 0.4% of a transcription, the runtime keeps the host round trip.
