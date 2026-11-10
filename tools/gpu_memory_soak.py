@@ -178,11 +178,11 @@ class _ShrinkingSession:
 def shrink_arena(model) -> None:
     """Make every ONNX Runtime CTC run release its CUDA arena afterwards, as
     `memory.enable_memory_arena_shrinkage` does in servers that turn it on."""
-    import onnxruntime as ort
-
     session = getattr(model.backend, "session", None)
     if session is None:
         raise ValueError("--arena-shrinkage needs the ONNX Runtime CTC backend")
+    import onnxruntime as ort
+
     options = ort.RunOptions()
     options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
     model.backend.session = _ShrinkingSession(session, options)
