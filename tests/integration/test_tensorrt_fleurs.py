@@ -38,8 +38,17 @@ _spec.loader.exec_module(clips)
 EDGE_CASES = clips.manifest()["clips"]
 
 
+def _mixed_unavailable() -> bool:
+    """TensorRT 11 refuses precision='mixed' (#101)."""
+    from fast_omniasr.tensorrt_builder import strongly_typed_only
+
+    return strongly_typed_only(pytest.importorskip("tensorrt"))
+
+
 def _load(precision):
     pytest.importorskip("tensorrt")
+    if precision == "mixed" and _mixed_unavailable():
+        pytest.skip("precision='mixed' isn't available with TensorRT 11")
     from fast_omniasr import OmniASR
 
     pinned = MANIFEST["models"]["ctc"]
@@ -124,6 +133,8 @@ def test_mixed_tracks_fp32_much_closer_than_fp16():
     could not tell them apart."""
     from fast_omniasr.audio import prepare_audio
 
+    if _mixed_unavailable():
+        pytest.skip("precision='mixed' isn't available with TensorRT 11")
     logits, tokens = {}, {}
     for precision in ("fp32", "fp16", "mixed"):
         with _load(precision) as model:
@@ -135,3 +146,21 @@ def test_mixed_tracks_fp32_much_closer_than_fp16():
     error = {p: sum(_decision_logit_error(a, b) for a, b in zip(logits[p], logits["fp32"]))
              for p in ("fp16", "mixed")}
     assert error["mixed"] < 0.5 * error["fp16"], error
+
+
+def test_tensorrt_11_refuses_mixed_with_a_clear_message():
+    if not _mixed_unavailable():
+        pytest.skip("TensorRT 10 builds precision='mixed'")
+    with pytest.raises(ValueError, match="'mixed' isn't available with TensorRT 11"):
+        _load_unchecked("mixed")
+
+
+def _load_unchecked(precision):
+    from fast_omniasr import OmniASR
+
+    pinned = MANIFEST["models"]["ctc"]
+    return OmniASR.from_pretrained(
+        pinned["repo"], revision=pinned["revision"], backend="tensorrt", precision=precision,
+        cache_dir=os.environ.get("OMNIASR_CACHE_DIR") or None,
+    )
+

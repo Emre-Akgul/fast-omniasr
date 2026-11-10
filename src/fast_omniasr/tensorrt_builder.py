@@ -1,6 +1,7 @@
 """Shared TensorRT engine build logic, used by build_tensorrt.py and OmniASR.from_pretrained()."""
 import operator
 import os
+import tempfile
 import uuid
 import warnings
 from dataclasses import dataclass
@@ -51,8 +52,8 @@ def pin_sensitive_layers(trt, network) -> int:
     a renamed layer can't silently weaken the recipe.
 
     Uses TensorRT's weak-typing precision API (`layer.precision`, `set_output_type`,
-    BuilderFlag.FP16/OBEY_PRECISION_CONSTRAINTS), deprecated since TensorRT 10.12 in favour
-    of strong typing but still supported; the plain fp16 recipe already relies on it."""
+    BuilderFlag.FP16/OBEY_PRECISION_CONSTRAINTS), which TensorRT 10 still has. TensorRT 11
+    removed it, and "mixed" isn't available there yet (see build_engine)."""
     skip = {trt.LayerType.CONSTANT, trt.LayerType.SHAPE}
     floating = (trt.float32, trt.float16)
     pinned, matched = 0, set()
@@ -77,6 +78,30 @@ def pin_sensitive_layers(trt, network) -> int:
             "in this graph; use precision='fp16' or 'fp32'"
         )
     return pinned
+
+
+def strongly_typed_only(trt) -> bool:
+    """TensorRT 11 removed weak typing: precision comes from the graph's tensor types, not
+    from builder flags."""
+    return not hasattr(trt.BuilderFlag, "FP16")
+
+
+def convert_to_half(onnx_path: str | Path, output_path: Path) -> Path:
+    """Write a float16 copy of the graph, with float32 inputs and outputs, for a strongly
+    typed TensorRT build. Uses ONNX Runtime's float16 converter."""
+    try:
+        import onnx
+        from onnxruntime.transformers import float16
+    except ImportError as exc:
+        raise ImportError(
+            "TensorRT 11 builds fp16 engines from a float16 copy of the graph, which needs "
+            'the onnx package and ONNX Runtime: pip install onnx "fast-omniasr[onnx]" '
+            "(or [cuda])"
+        ) from exc
+    model = float16.convert_float_to_float16(onnx.load(str(onnx_path)), keep_io_types=True)
+    onnx.save(model, str(output_path), save_as_external_data=True,
+              location=output_path.name + ".data")
+    return output_path
 
 
 def _integer(name: str, value, low: int, high: int) -> int:
@@ -221,9 +246,34 @@ def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: s
         raise ImportError(
             "Install fast-omniasr[tensorrt] and a compatible TensorRT installation"
         ) from exc
+    strongly_typed = precision != "fp32" and strongly_typed_only(trt)
+    if strongly_typed and precision == "mixed":
+        # A float16 graph with the front end kept in float32 decoded differently from FP32
+        # on the FLEURS fixtures, so it doesn't meet what "mixed" promises (#101).
+        raise ValueError(
+            "precision='mixed' isn't available with TensorRT 11 or newer yet; use 'fp16' "
+            "or 'fp32', or TensorRT 10 for 'mixed'"
+        )
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if strongly_typed:
+        # A float16 copy (~half the graph's size) beside the engine, removed after the build.
+        with tempfile.TemporaryDirectory(dir=output_path.parent, prefix=".half-") as scratch:
+            half = convert_to_half(onnx_path, Path(scratch) / "model.onnx")
+            return _build(trt, half, output_path, precision, (min_samples, opt_samples,
+                                                              max_samples), options,
+                          strongly_typed=True)
+    return _build(trt, onnx_path, output_path, precision,
+                  (min_samples, opt_samples, max_samples), options, strongly_typed=False)
+
+
+def _build(trt, onnx_path, output_path: Path, precision: str, samples, options,
+           *, strongly_typed: bool) -> Path:
+    min_samples, opt_samples, max_samples = samples
     logger = trt.Logger(trt.Logger.INFO)
     builder = trt.Builder(logger)
-    network = builder.create_network(0)
+    flags = 1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED) if strongly_typed else 0
+    network = builder.create_network(flags)
     parser = trt.OnnxParser(network, logger)
     if not parser.parse_from_file(str(onnx_path)):
         raise RuntimeError("\n".join(str(parser.get_error(i)) for i in range(parser.num_errors)))
@@ -234,9 +284,9 @@ def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: s
         config.builder_optimization_level = options.optimization_level
     if options.timing_cache is not None:
         _load_timing_cache(config, options.timing_cache)
-    if precision in ("fp16", "mixed"):
+    if precision in ("fp16", "mixed") and not strongly_typed:
         config.set_flag(trt.BuilderFlag.FP16)
-    if precision == "mixed":
+    if precision == "mixed" and not strongly_typed:
         pin_sensitive_layers(trt, network)
         config.set_flag(trt.BuilderFlag.OBEY_PRECISION_CONSTRAINTS)
     profile = builder.create_optimization_profile()
@@ -248,8 +298,6 @@ def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: s
     serialized = builder.build_serialized_network(network, config)
     if serialized is None:
         raise RuntimeError("TensorRT build failed; inspect the builder log")
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = output_path.with_name(output_path.name + ".tmp")
     tmp_path.write_bytes(bytes(serialized))
     os.replace(tmp_path, output_path)
