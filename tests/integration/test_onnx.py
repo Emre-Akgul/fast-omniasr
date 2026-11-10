@@ -53,3 +53,22 @@ def test_wav_and_numpy_agree(assets):
     model = OmniASR(assets[0], assets[1])
     waveform, rate = sf.read(assets[2], dtype="float32")
     assert model.transcribe(assets[2]) == model.transcribe_numpy(waveform, rate)
+
+
+def test_short_inputs_on_cuda(assets, expect):
+    """cuDNN 9.27+ asked for a ~17.6 GB convolution workspace for every input under ~2.6 s
+    under ORT's default algorithm search, so these lengths failed on CUDA (#97)."""
+    ort = pytest.importorskip("onnxruntime")
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        pytest.skip("needs onnxruntime-gpu with a CUDA device")
+    from fast_omniasr import OmniASR
+    model = OmniASR(assets[0], assets[1], device="cuda")
+    cpu = OmniASR(assets[0], assets[1])
+    vocabulary = expect.vocabulary(assets[1])
+    for n in [400, 16000, 33226, 39404, 40886, 41619]:
+        result = model.transcribe_numpy(np.zeros(n, dtype=np.float32))
+        assert result.logits_shape == (1, expect.frames(n), vocabulary)
+    waveform, rate = sf.read(assets[2], dtype="float32")
+    for seconds in (1, 2):
+        clip = waveform[: seconds * rate]
+        assert model.transcribe_numpy(clip, rate).text == cpu.transcribe_numpy(clip, rate).text

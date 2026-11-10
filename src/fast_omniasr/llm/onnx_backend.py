@@ -27,7 +27,7 @@ def providers(device, arena="kSameAsRequested"):
     """`arena` is the CUDA arena extend strategy. kSameAsRequested suits phased, shrinking
     sessions; resident sessions use kNextPowerOfTwo so freed cache chunks coalesce and are
     reused as the cache grows instead of stranding one exact-size chunk per length."""
-    from ..options import check_device
+    from ..options import CUDA_PROVIDER_OPTIONS, check_device
 
     check_device(device)
     name = "CUDAExecutionProvider" if device == "cuda" else "CPUExecutionProvider"
@@ -40,8 +40,7 @@ def providers(device, arena="kSameAsRequested"):
             (
                 name,
                 {
-                    "use_tf32": "0",
-                    "cudnn_conv_algo_search": "HEURISTIC",
+                    **CUDA_PROVIDER_OPTIONS,
                     "cudnn_conv_use_max_workspace": "0",
                     "arena_extend_strategy": arena,
                 },

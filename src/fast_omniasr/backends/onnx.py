@@ -9,7 +9,7 @@ class ONNXBackend:
     def __init__(self, path: str | Path, device: str = "cpu", threads: int = 4,
                  precision: str = "fp32"):
         self.closed = False
-        from ..options import check_device, check_threads
+        from ..options import CUDA_PROVIDER_OPTIONS, check_device, check_threads
         from ..precision import check_precision
         check_device(device)
         check_precision(precision, device)
@@ -28,7 +28,7 @@ class ONNXBackend:
         # With half-precision graphs the memory pattern planner grows the CUDA arena by
         # ~1 GiB once an input length repeats; without it fp16 300M stays at ~1.5 GiB.
         options.enable_mem_pattern = precision == "fp32"
-        providers = [(provider, {"use_tf32": "0"})] if device == "cuda" else [provider]
+        providers = [(provider, CUDA_PROVIDER_OPTIONS)] if device == "cuda" else [provider]
         self.session = ort.InferenceSession(str(path), sess_options=options, providers=providers)
         self.session.disable_fallback()
         if self.session.get_providers()[0] != provider:
