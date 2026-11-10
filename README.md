@@ -142,7 +142,7 @@ python tools/gpu_memory_soak.py --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --dev
 python tools/gpu_memory_soak.py --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --device cuda --mixed --seconds 30
 ```
 
-After every request it samples NVML process and device memory, `NvMapMemUsed` from `/proc/meminfo` (where integrated GPUs' allocations show up), this process's cgroup `kernel` memory and RSS. Exit status: 1 if any counter, RSS included, keeps growing after warm-up, 2 if no GPU counter is available (RSS can't see GPU memory), 3 if the model fails to load or run. `--gpu-mem-limit` caps the ONNX Runtime arena to test a bounded configuration.
+After every request it samples NVML process and device memory, `NvMapMemUsed` from `/proc/meminfo` (where integrated GPUs' allocations show up), this process's cgroup `kernel` memory and RSS. Exit status: 1 if any counter, RSS included, keeps growing after warm-up, 2 for invalid options, 3 if the model fails to load or run, 4 if no GPU counter is available (RSS can't see GPU memory). `--gpu-mem-limit` caps the ONNX Runtime arena to test a bounded configuration.
 
 Or supply local assets directly (no download, no `hub` extra needed):
 

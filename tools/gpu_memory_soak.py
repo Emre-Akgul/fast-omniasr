@@ -28,8 +28,8 @@ every time (lower than without shrinkage). `kSameAsRequested` alone keeps an exa
 for each new length, so with `--mixed` it grows until the lengths repeat.
 
 Exit status: 0 when every counter is flat, 1 when one grows by more than `--tolerance-mb` from
-the end of warm-up to the last request, 2 when no GPU counter is available (RSS alone can't
-see GPU memory), 3 when the model fails to load or run.
+the end of warm-up to the last request, 2 for invalid options, 3 when the model fails to load
+or run, 4 when no GPU counter is available (RSS alone can't see GPU memory).
 
     python tools/gpu_memory_soak.py --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --device cuda
     python tools/gpu_memory_soak.py --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --device cuda \\
@@ -289,7 +289,7 @@ def main(argv=None) -> int:
     if not any(name in grown for name in GPU_COUNTERS):
         print("no GPU memory counter is available on this platform; RSS can't see GPU memory",
               file=sys.stderr)
-        return 2
+        return 4
     return 1 if summary["leaking"] else 0
 
 

@@ -102,7 +102,7 @@ def test_exit_status_reports_growth(monkeypatch, capsys, tmp_path, leak, code):
 def test_no_counters_is_its_own_exit_status(monkeypatch):
     monkeypatch.setattr(soak, "load", lambda args: Model(0.0))
     monkeypatch.setattr(soak, "sample", lambda nvml: {"rss_mb": None})
-    assert soak.main(["--model", "m", "--requests", "7", "--seconds", "1"]) == 2
+    assert soak.main(["--model", "m", "--requests", "7", "--seconds", "1"]) == 4
 
 
 def test_mixed_lengths_default_to_a_long_warmup(monkeypatch, capsys):
@@ -125,7 +125,7 @@ def test_cgroup_path_is_the_process_own_cgroup(tmp_path):
 def test_rss_alone_is_not_a_gpu_measurement(monkeypatch, capsys):
     monkeypatch.setattr(soak, "load", lambda args: Model(0.0))
     monkeypatch.setattr(soak, "sample", lambda nvml: {"gpu_process_mb": None, "rss_mb": 900.0})
-    assert soak.main(["--model", "m", "--requests", "7", "--seconds", "1"]) == 2
+    assert soak.main(["--model", "m", "--requests", "7", "--seconds", "1"]) == 4
     assert "RSS can't see GPU memory" in capsys.readouterr().err
 
 
