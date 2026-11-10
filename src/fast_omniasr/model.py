@@ -247,8 +247,8 @@ class OmniASR:
         `backend="tensorrt"` requires an explicit `precision`: "fp32", "fp16" (fastest; a
         few transcripts differ slightly from FP32) or "mixed" (FP16 with the
         precision-sensitive convolutional front end kept in FP32: closest to FP32 at about
-        twice the FP16 latency; TensorRT 10 only, refused before download on TensorRT 11). There is no "auto", so a precision trade-off is never
-        silently opted into and builds a
+        twice the FP16 latency; TensorRT 10 only, refused before download on TensorRT 11).
+        There is no "auto", so a precision trade-off is never silently opted into and builds a
         local engine on first use using the requested min/opt/max sample profile, cached under
         `engine_cache_dir` (default
         `~/.cache/fast-omniasr/tensorrt`) keyed by the ONNX content, precision, profile and

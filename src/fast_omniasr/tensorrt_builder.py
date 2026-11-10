@@ -297,7 +297,8 @@ def build_engine(onnx_path: str | Path, output_path: str | Path, *, precision: s
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if strongly_typed:
         # A float16 copy (~half the graph's size) beside the engine, removed after the build.
-        with tempfile.TemporaryDirectory(dir=output_path.parent, prefix=HALF_SCRATCH_PREFIX) as scratch:
+        with tempfile.TemporaryDirectory(dir=output_path.parent,
+                                         prefix=HALF_SCRATCH_PREFIX) as scratch:
             half = convert_to_half(onnx_path, Path(scratch) / "model.onnx")
             return _build(trt, half, output_path, precision, (min_samples, opt_samples,
                                                               max_samples), options,

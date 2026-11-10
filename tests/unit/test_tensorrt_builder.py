@@ -528,4 +528,3 @@ def test_from_pretrained_reports_a_missing_converter_before_downloading(
     monkeypatch.setitem(sys.modules, "onnx", None)
     with pytest.raises(ImportError, match="onnx package"):
         OmniASR.from_pretrained("o/r", backend="tensorrt", precision="fp16")
-
