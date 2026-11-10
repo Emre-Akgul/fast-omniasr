@@ -247,8 +247,8 @@ class OmniASR:
         `backend="tensorrt"` requires an explicit `precision`: "fp32", "fp16" (fastest; a
         few transcripts differ slightly from FP32) or "mixed" (FP16 with the
         precision-sensitive convolutional front end kept in FP32: closest to FP32 at about
-        twice the FP16 latency). There is no "auto", so a precision trade-off is never
-        silently opted into and builds a
+        twice the FP16 latency; TensorRT 10 only, refused before download on TensorRT 11).
+        There is no "auto", so a precision trade-off is never silently opted into and builds a
         local engine on first use using the requested min/opt/max sample profile, cached under
         `engine_cache_dir` (default
         `~/.cache/fast-omniasr/tensorrt`) keyed by the ONNX content, precision, profile and
@@ -286,6 +286,7 @@ class OmniASR:
             raise ValueError(
                 "backend='tensorrt' requires precision='fp32', 'fp16' or 'mixed'"
             )
+        strongly_typed = backend == "tensorrt" and _tensorrt_strongly_typed(precision)
         from .hub import download_verified
 
         check_flag("local_files_only", local_files_only)
@@ -311,10 +312,11 @@ class OmniASR:
 
         if precision == "fp16":
             import warnings
+            hint = ("" if strongly_typed else
+                    "precision='mixed' keeps the sensitive layers in FP32. ")
             warnings.warn(
                 "TensorRT FP16 can change a few transcripts slightly compared with FP32; "
-                "precision='mixed' keeps the sensitive layers in FP32. See the project's "
-                "accuracy documentation.",
+                f"{hint}See the project's accuracy documentation.",
                 stacklevel=2,
             )
         from .backends.tensorrt import EngineDeserializationError, cuda_device
@@ -348,6 +350,20 @@ class OmniASR:
         rebuilt = engine(discard_sha256=failed) if failed else engine(rebuild=True)
         return _attach(snapshot, cls(rebuilt, tokenizer_path, backend="tensorrt", device=device,
                                      threads=threads, device_index=device_index))
+
+
+def _tensorrt_strongly_typed(precision: str) -> bool:
+    """Refuse a precision TensorRT 11 can't build before anything is downloaded, and say
+    whether this TensorRT is strongly typed only. False when TensorRT doesn't import here;
+    loading the engine reports that."""
+    try:
+        import tensorrt as trt
+    except ImportError:
+        return False
+    from .tensorrt_builder import check_strongly_typed_precision, strongly_typed_only
+
+    check_strongly_typed_precision(trt, precision)
+    return strongly_typed_only(trt)
 
 
 def _attach(snapshot, model):

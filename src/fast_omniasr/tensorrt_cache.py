@@ -26,6 +26,7 @@ from .tensorrt_builder import (
     TensorRTBuildOptions,
     build_engine,
     check_build_options,
+    remove_stale_scratch,
     validate_profile,
 )
 
@@ -317,6 +318,7 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
                                   stacklevel=2)
         # A crash mid-build must not leave a record that vouches for a partial engine.
         metadata_path.unlink(missing_ok=True)
+        remove_stale_scratch(entry_dir)  # a killed TensorRT 11 build's float16 copy
         build_engine(onnx_path, engine_path, precision=precision, min_samples=min_samples,
                      opt_samples=opt_samples, max_samples=max_samples, options=options)
         _write_metadata(metadata_path, {**metadata, "engine": _engine_record(engine_path)})

@@ -6,6 +6,7 @@ import sys
 import types
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from fast_omniasr import tensorrt_builder
@@ -382,3 +383,148 @@ def np_int(value):
     import numpy as np
 
     return np.int64(value)
+
+
+@pytest.fixture
+def fake_trt11(fake_trt, monkeypatch):
+    """TensorRT 11: no weak-typing flags; precision comes from the graph's types."""
+    trt = sys.modules["tensorrt"]
+    trt.BuilderFlag = types.SimpleNamespace(TF32="TF32")
+    trt.NetworkDefinitionCreationFlag = types.SimpleNamespace(STRONGLY_TYPED=0)
+    parsed, networks = [], []
+    trt.OnnxParser = type("Parser", (), {
+        "__init__": lambda self, network, logger: None,
+        "parse_from_file": lambda self, path: parsed.append(path) or True,
+    })
+    create_network = trt.Builder.create_network
+    trt.Builder.create_network = lambda self, flags: networks.append(flags) or create_network(
+        self, flags)
+    converted = []
+
+    def convert(onnx_path, output_path):
+        converted.append((onnx_path, output_path.parent.exists()))
+        output_path.write_bytes(b"half")
+        return output_path
+
+    monkeypatch.setattr(tensorrt_builder, "convert_to_half", convert)
+    monkeypatch.setattr(tensorrt_builder, "_require_half_converter", lambda: None)
+    fake_trt.update(parsed=parsed, networks=networks, converted=converted)
+    return fake_trt
+
+
+def test_tensorrt_11_builds_fp16_from_a_strongly_typed_half_graph(fake_trt11, tmp_path):
+    assert _build(tmp_path, "fp16").read_bytes() == b"engine"
+    assert fake_trt11["converted"] == [(tmp_path / "m.onnx", True)]
+    assert fake_trt11["networks"] == [1]  # STRONGLY_TYPED
+    assert fake_trt11["config"].flags == set()  # no weak-typing flags exist to set
+    half = Path(fake_trt11["parsed"][0])
+    assert half.parent.parent == tmp_path and not half.parent.exists()  # scratch removed
+
+
+def test_tensorrt_11_fp32_parses_the_original_graph(fake_trt11, tmp_path):
+    _build(tmp_path, "fp32")
+    assert fake_trt11["converted"] == [] and fake_trt11["networks"] == [0]
+    assert fake_trt11["parsed"] == [str(tmp_path / "m.onnx")]
+
+
+def test_tensorrt_11_refuses_mixed_before_any_work(fake_trt11, tmp_path):
+    with pytest.raises(ValueError, match="'mixed' isn't available with TensorRT 11"):
+        _build(tmp_path, "mixed")
+    assert fake_trt11["converted"] == [] and fake_trt11["parsed"] == []
+    assert not (tmp_path / "out.engine").exists()
+
+
+def test_convert_to_half_keeps_float32_io(tmp_path):
+    pytest.importorskip("onnxruntime.transformers.float16")
+    onnx = pytest.importorskip("onnx")
+    import onnxruntime as ort
+    from onnx import TensorProto, helper, numpy_helper
+
+    rng = np.random.default_rng(0)
+    weights = [numpy_helper.from_array(rng.standard_normal((4, 4)).astype(np.float32), f"w{i}")
+               for i in range(2)]
+    graph = helper.make_graph(
+        [helper.make_node("MatMul", ["audio", "w0"], ["a"]),
+         helper.make_node("MatMul", ["a", "w1"], ["logits"])],
+        "tiny", [helper.make_tensor_value_info("audio", TensorProto.FLOAT, [1, 4])],
+        [helper.make_tensor_value_info("logits", TensorProto.FLOAT, [1, 4])], weights)
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
+    model.ir_version = 9
+    onnx.save(model, str(tmp_path / "m.onnx"))
+    out = tensorrt_builder.convert_to_half(tmp_path / "m.onnx", tmp_path / "h.onnx")
+    half = onnx.load(str(out))
+    io = {value.name: value.type.tensor_type.elem_type
+          for value in [*half.graph.input, *half.graph.output]}
+    assert io == {"audio": TensorProto.FLOAT, "logits": TensorProto.FLOAT}
+    assert {weight.data_type for weight in half.graph.initializer} == {TensorProto.FLOAT16}
+    audio = rng.standard_normal((1, 4)).astype(np.float32)
+    want = ort.InferenceSession(str(tmp_path / "m.onnx")).run(None, {"audio": audio})[0]
+    got = ort.InferenceSession(str(out)).run(None, {"audio": audio})[0]
+    np.testing.assert_allclose(got, want, rtol=2e-2, atol=2e-2)
+
+
+def test_convert_to_half_infers_shapes_on_files(tmp_path, monkeypatch):
+    """In-memory shape inference fails past protobuf's 2 GB limit (the 1B+ graphs), so it
+    runs on files and the converter is told not to repeat it."""
+    pytest.importorskip("onnxruntime.transformers.float16")
+    onnx = pytest.importorskip("onnx")
+    from onnxruntime.transformers import float16
+
+    test_convert_to_half_keeps_float32_io(tmp_path)  # writes m.onnx
+    calls = {}
+    infer_path = onnx.shape_inference.infer_shapes_path
+    monkeypatch.setattr(onnx.shape_inference, "infer_shapes", lambda *a, **k: pytest.fail(
+        "in-memory shape inference"))
+    monkeypatch.setattr(onnx.shape_inference, "infer_shapes_path",
+                        lambda *a, **k: calls.setdefault("path", a) and infer_path(*a, **k))
+    convert = float16.convert_float_to_float16
+    monkeypatch.setattr(float16, "convert_float_to_float16",
+                        lambda model, **k: calls.setdefault("kwargs", k) and convert(model, **k))
+    (tmp_path / "half").mkdir()  # build_engine's scratch directory
+    out = tensorrt_builder.convert_to_half(tmp_path / "m.onnx", tmp_path / "half" / "h.onnx")
+    assert calls["path"][0] == str(tmp_path / "m.onnx")
+    assert calls["kwargs"]["disable_shape_infer"] is True
+    assert not (out.parent / "inferred.onnx").exists()
+
+
+def test_stale_scratch_copies_are_removed(tmp_path):
+    (tmp_path / ".half-abc").mkdir()
+    (tmp_path / ".half-abc" / "model.onnx.data").write_bytes(b"x" * 10)
+    (tmp_path / "model.engine").write_bytes(b"engine")
+    tensorrt_builder.remove_stale_scratch(tmp_path)
+    assert [p.name for p in tmp_path.iterdir()] == ["model.engine"]
+
+
+def test_missing_converter_is_reported_before_any_work(fake_trt11, tmp_path, monkeypatch):
+    def missing():
+        raise ImportError("needs the onnx package")
+
+    monkeypatch.setattr(tensorrt_builder, "_require_half_converter", missing)
+    with pytest.raises(ImportError, match="onnx package"):
+        _build(tmp_path, "fp16")
+    assert fake_trt11["converted"] == []
+    _build(tmp_path, "fp32")  # fp32 needs no conversion
+
+
+@pytest.fixture
+def tensorrt_11_installed(monkeypatch):
+    trt = types.SimpleNamespace(BuilderFlag=types.SimpleNamespace(TF32="TF32"))
+    monkeypatch.setitem(sys.modules, "tensorrt", trt)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", None)  # a download would fail loudly
+    return trt
+
+
+def test_from_pretrained_refuses_mixed_on_tensorrt_11_before_downloading(tensorrt_11_installed):
+    from fast_omniasr import OmniASR
+
+    with pytest.raises(ValueError, match="'mixed' isn't available with TensorRT 11"):
+        OmniASR.from_pretrained("o/r", backend="tensorrt", precision="mixed")
+
+
+def test_from_pretrained_reports_a_missing_converter_before_downloading(
+        tensorrt_11_installed, monkeypatch):
+    from fast_omniasr import OmniASR
+
+    monkeypatch.setitem(sys.modules, "onnx", None)
+    with pytest.raises(ImportError, match="onnx package"):
+        OmniASR.from_pretrained("o/r", backend="tensorrt", precision="fp16")
