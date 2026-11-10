@@ -150,34 +150,43 @@ def handler_for(service: Service):
             if self.path != "/transcribe":
                 self._reply(404, {"error": "not found"})
                 return
+            body = self._read_body()
+            if body is None:
+                return
             # Count the request before checking readiness: stop() clears readiness and then
             # waits for the count to reach zero, so a request either sees "not ready" or is
-            # waited for, never runs on a closed model.
+            # waited for, never runs on a closed model. The body is read first, so a slow
+            # upload can't hold shutdown up.
             with service.in_flight:
-                self._transcribe()
+                if not service.ready.is_set():
+                    self._reply(503, {"error": "not ready"}, {"Retry-After": "1"})
+                    return
+                self._transcribe(body)
 
-        def _transcribe(self):
-            if not service.ready.is_set():
-                self._reply(503, {"error": "not ready"}, {"Retry-After": "1"})
-                return
+        def _read_body(self) -> bytes | None:
+            """The request body, or None after replying with an error."""
             if "Transfer-Encoding" in self.headers:
                 self._reply(411, {"error": "send the body with a Content-Length"})
-                return
+                return None
             value = self.headers.get("Content-Length")
             if value is None:
                 self._reply(411, {"error": "Content-Length is required"})
-                return
-            if not value.strip().isdigit():
-                self._reply(400, {"error": f"invalid Content-Length {value!r}"})
-                return
+                return None
+            value = value.strip()
+            if not (value.isascii() and value.isdecimal() and len(value) <= 18):
+                self._reply(400, {"error": f"invalid Content-Length {value[:40]!r}"})
+                return None
             length = int(value)
             if length > service.max_bytes:
                 self._reply(413, {"error": f"body is over {service.max_bytes} bytes"})
-                return
+                return None
             body = self.rfile.read(length)
             if len(body) < length:
                 self.close_connection = True  # the client went away mid-body
-                return
+                return None
+            return body
+
+        def _transcribe(self, body: bytes) -> None:
             try:
                 self._reply(200, service.transcribe(body))
             except QueueFull:

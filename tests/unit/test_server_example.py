@@ -202,11 +202,12 @@ def test_an_idle_keep_alive_connection_does_not_hold_up_shutdown(running):
 
 
 @pytest.mark.parametrize(("length", "status"), [("-1", b"400"), ("12abc", b"400"),
-                                                (" ", b"400")])
+                                                (" ", b"400"), ("\u00b2", b"400"),
+                                                ("9" * 5000, b"400")])
 def test_an_invalid_content_length_is_refused_and_closed(running, length, status):
     url, *_ = running
     reply = raw(url, b"POST /transcribe HTTP/1.1\r\nHost: x\r\nContent-Length: "
-                + length.encode() + b"\r\n\r\n" + b"x" * 1000)
+                + length.encode("utf-8") + b"\r\n\r\n" + b"x" * 1000)
     assert reply.startswith(b"HTTP/1.1 " + status) and reply.count(b"HTTP/1.1") == 1
 
 
@@ -237,3 +238,18 @@ def test_long_audio_is_refused_from_its_header_without_decoding(running, monkeyp
     sf.write(buffer, np.zeros((48000 * 60, 2), np.float32), 48000, format="FLAC")
     status, body, _ = call(url, "/transcribe", buffer.getvalue())
     assert status == 413 and "60.0 s" in body["error"]
+
+
+def test_a_slow_upload_does_not_hold_up_shutdown(running):
+    import socket
+
+    url, service, model, http = running
+    host, port = url.removeprefix("http://").split(":")
+    slow = socket.create_connection((host, int(port)), timeout=5)
+    slow.sendall(b"POST /transcribe HTTP/1.1\r\nHost: x\r\nContent-Length: 1000\r\n\r\nabc")
+    time.sleep(0.2)  # the handler is now waiting for the rest of the body
+    stopper = threading.Thread(target=server.stop, args=(http, service))
+    stopper.start()
+    stopper.join(5)
+    assert not stopper.is_alive() and model.closed
+    slow.close()
