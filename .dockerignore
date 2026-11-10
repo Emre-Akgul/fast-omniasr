@@ -1,0 +1,8 @@
+# Only what examples/server/Dockerfile copies.
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!src
+!examples/server
+**/__pycache__

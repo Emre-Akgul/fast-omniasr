@@ -1,0 +1,53 @@
+name: Server example
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * 1"
+  pull_request:
+    paths:
+      - .github/workflows/server-example.yml
+      - .dockerignore
+      - examples/server/**
+      - src/**
+      - pyproject.toml
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -f examples/server/Dockerfile -t fast-omniasr-server .
+      - name: Serve, transcribe and stop
+        run: |
+          docker run -d --name server -p 8000:8000 fast-omniasr-server
+          for i in $(seq 1 120); do
+            curl -sf localhost:8000/ready && break
+            sleep 1
+          done
+          curl -sf localhost:8000/health
+          curl -sf --data-binary @tests/fixtures/fleurs/en_us_10233995782544396174.flac \
+            localhost:8000/transcribe > reply.json
+          cat reply.json
+          python3 - <<'PY'
+          import json
+          text = json.load(open("reply.json"))["text"]
+          clips = json.load(open("tests/fixtures/integration_expectations.json"))["clips"]
+          expected = {
+              transcripts["transcripts"]["onnx-cpu-fp32"]
+              for model, transcripts in clips["fleurs/en_us_10233995782544396174.flac"]["expected"].items()
+              if model.startswith("EmreAkgul/omniASR-CTC-300M-v2-ONNX@")
+          }
+          assert expected and text in expected, (text, expected)
+          PY
+          test "$(curl -s -o /dev/null -w '%{http_code}' --data-binary 'x' localhost:8000/transcribe)" = 400
+          docker stop -t 60 server
+          test "$(docker inspect server -f '{{.State.ExitCode}}')" = 0
+      - name: Logs
+        if: always()
+        run: docker logs server || true
