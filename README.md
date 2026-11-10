@@ -133,6 +133,17 @@ A timing cache roughly halves rebuild time or better. It is only an optimization
 
 `OmniASR` and `OmniASRLLM` release their ONNX Runtime sessions or TensorRT engine on `close()` or when leaving a `with` block (`with OmniASR.from_pretrained(...) as model:`); `close()` is idempotent, and transcribing afterwards raises `RuntimeError`. An `OmniASR` instance may be shared across threads. With the TensorRT backend, each instance owns one execution context and its buffers, so concurrent calls are serialized (never mixed); create one instance per worker for parallel GPU throughput. `OmniASRLLM` instances may also be shared: each `transcribe()` runs its encode and full decode loop alone (calls are serialized), so concurrent requests never mix; use one instance per worker for parallel throughput.
 
+In a long-running server, load the model once and keep it. On the discrete GPUs we measured, GPU memory stayed flat across hundreds of requests on the ONNX Runtime CUDA path (CTC, and the LLM both resident and with `low_memory=True`). ONNX Runtime's default arena reserves one large region on the first request and reuses it. Adding the per-run `memory.enable_memory_arena_shrinkage` run option makes no difference there, because there is nothing above that region to free. It only frees memory when the arena grows in exact-size blocks (`arena_extend_strategy=kSameAsRequested`), and then it frees and re-allocates on every request. On integrated GPUs that share memory with the host, that pattern has been reported to leave driver memory behind on every request (#96). Check your own device and settings with:
+
+```bash
+python tools/gpu_memory_soak.py --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --device cuda               # same request 60 times
+python tools/gpu_memory_soak.py --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --device cuda \
+    --arena-extend-strategy kSameAsRequested --arena-shrinkage                                      # free and re-allocate per request
+python tools/gpu_memory_soak.py --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --device cuda --mixed --seconds 30
+```
+
+After every request it samples NVML process and device memory, `NvMapMemUsed` from `/proc/meminfo` (where integrated GPUs' allocations show up), this process's cgroup `kernel` memory and RSS. Exit status: 1 if any counter, RSS included, keeps growing after warm-up, 2 for invalid options, 3 if the model fails to load or run, 4 if no GPU counter is available (RSS can't see GPU memory). `--gpu-mem-limit` caps the ONNX Runtime arena to test a bounded configuration.
+
 Or supply local assets directly (no download, no `hub` extra needed):
 
 ```python
