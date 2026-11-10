@@ -7,11 +7,18 @@ from .._memory import release_freed_memory
 
 class ONNXBackend:
     def __init__(self, path: str | Path, device: str = "cpu", threads: int = 4,
-                 precision: str = "fp32"):
+                 precision: str = "fp32", device_index: int | None = None):
         self.closed = False
-        from ..options import CUDA_PROVIDER_OPTIONS, check_device, check_threads
+        from ..options import (
+            check_device,
+            check_device_index,
+            check_threads,
+            cuda_provider_options,
+            provider_failure,
+        )
         from ..precision import check_precision
         check_device(device)
+        device_index = check_device_index(device_index, device)
         check_precision(precision, device)
         check_threads(threads)
         try:
@@ -28,11 +35,11 @@ class ONNXBackend:
         # With half-precision graphs the memory pattern planner grows the CUDA arena by
         # ~1 GiB once an input length repeats; without it fp16 300M stays at ~1.5 GiB.
         options.enable_mem_pattern = precision == "fp32"
-        providers = [(provider, CUDA_PROVIDER_OPTIONS)] if device == "cuda" else [provider]
+        providers = [(provider, cuda_provider_options(device_index))] if device == "cuda" else [provider]
         self.session = ort.InferenceSession(str(path), sess_options=options, providers=providers)
         self.session.disable_fallback()
         if self.session.get_providers()[0] != provider:
-            raise RuntimeError(f"Requested provider {provider} did not initialize")
+            raise RuntimeError(provider_failure(provider, device_index))
         inputs = self.session.get_inputs()
         outputs = self.session.get_outputs()
         if len(inputs) != 1 or inputs[0].name != "audio" or inputs[0].type != "tensor(float)":

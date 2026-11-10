@@ -188,7 +188,7 @@ def llm_backend(fake_ort, monkeypatch, tmp_path):
     def step_outputs():
         return [np.zeros((1, 10), np.float32), *[np.zeros((1, 2, 1, 1), np.float32)] * 24]
 
-    def session(path, device="cpu", opts=None, arena=None):
+    def session(path, device="cpu", opts=None, arena=None, device_index=None):
         loads.append("encoder")
         return Graph(["audio"], lambda: [np.zeros((1, 4, 8), np.float32)])
 

@@ -207,8 +207,8 @@ def _local_environment() -> dict:
     """Environment fields that decide whether a cached engine can be reused.
 
     Queried for the *current* CUDA device -- the one TensorRT builds and deserializes
-    engines on in this thread (select it with `cudaSetDevice` or CUDA_VISIBLE_DEVICES;
-    the TensorRT backend does not use the `device=` argument) -- not device 0.
+    engines on in this thread (`OmniASR.from_pretrained(device_index=...)` selects it for
+    the build, cudaSetDevice or CUDA_VISIBLE_DEVICES otherwise) -- not device 0.
 
     In the key:
       - `tensorrt_version`

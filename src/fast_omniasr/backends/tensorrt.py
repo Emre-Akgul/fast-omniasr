@@ -77,6 +77,36 @@ def _validate_contract(trt, engine, context):
     return min_shape[1], max_shape[1], resolved["maximum"]
 
 
+@contextlib.contextmanager
+def cuda_device(index: int | None):
+    """Make GPU `index` this thread's current CUDA device, restoring the previous one
+    afterwards. `None` leaves the current device alone. TensorRT builds, deserializes and
+    runs engines on the current device."""
+    if index is None:
+        yield
+        return
+    try:
+        from cuda.bindings import runtime as cudart
+    except ImportError as exc:
+        raise ImportError("Install fast-omniasr[tensorrt] for the cuda-python dependency") from exc
+
+    def check(result, what):
+        error, *values = result
+        if int(error) != 0:
+            raise RuntimeError(f"{what} failed: {error}")
+        return values[0] if values else None
+
+    previous = check(cudart.cudaGetDevice(), "cudaGetDevice")
+    count = check(cudart.cudaGetDeviceCount(), "cudaGetDeviceCount")
+    if index >= count:
+        raise ValueError(f"device_index={index} but only {count} CUDA device(s) are visible")
+    check(cudart.cudaSetDevice(index), f"cudaSetDevice({index})")
+    try:
+        yield
+    finally:
+        cudart.cudaSetDevice(previous)
+
+
 class TensorRTBackend:
     """Batch-one TensorRT engine runner.
 

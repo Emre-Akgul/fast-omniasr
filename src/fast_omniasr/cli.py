@@ -44,7 +44,7 @@ def _check_kind(parser, args) -> None:
 def _load(args):
     options = {"revision": args.revision, "cache_dir": args.cache_dir,
                "local_files_only": args.local_files_only}
-    for option in ("device", "threads", "precision"):
+    for option in ("device", "device_index", "threads", "precision"):
         if getattr(args, option) is not None:
             options[option] = getattr(args, option)
     if args.kind == "llm":
@@ -194,6 +194,7 @@ def _load_options(parser) -> None:
     parser.add_argument("--kind", choices=("ctc", "llm"), default="ctc", help="default: ctc")
     parser.add_argument("--backend", choices=("onnx", "tensorrt"), help="CTC only; default: onnx")
     parser.add_argument("--device", choices=("cpu", "cuda"))
+    parser.add_argument("--device-index", type=int, help="GPU number for --device cuda")
     parser.add_argument("--precision", help="fp32, fp16, bf16 or, on TensorRT, mixed")
     parser.add_argument("--threads", type=int, help="CPU threads")
     parser.add_argument("--low-memory", action="store_true",
