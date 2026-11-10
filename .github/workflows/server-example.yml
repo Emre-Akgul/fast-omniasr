@@ -9,6 +9,8 @@ on:
       - .github/workflows/server-example.yml
       - .dockerignore
       - examples/server/**
+      - src/**
+      - pyproject.toml
 
 permissions:
   contents: read
@@ -29,11 +31,20 @@ jobs:
             sleep 1
           done
           curl -sf localhost:8000/health
-          text=$(curl -sf --data-binary @tests/fixtures/fleurs/en_us_10233995782544396174.flac \
-            localhost:8000/transcribe | python3 -c "import json, sys; print(json.load(sys.stdin)['text'])")
-          echo "$text"
-          test -n "$text"
-          grep -qF "$text" tests/fixtures/integration_expectations.json
+          curl -sf --data-binary @tests/fixtures/fleurs/en_us_10233995782544396174.flac \
+            localhost:8000/transcribe > reply.json
+          cat reply.json
+          python3 - <<'PY'
+          import json
+          text = json.load(open("reply.json"))["text"]
+          clips = json.load(open("tests/fixtures/integration_expectations.json"))["clips"]
+          expected = {
+              transcripts["transcripts"]["onnx-cpu-fp32"]
+              for model, transcripts in clips["fleurs/en_us_10233995782544396174.flac"]["expected"].items()
+              if model.startswith("EmreAkgul/omniASR-CTC-300M-v2-ONNX@")
+          }
+          assert expected and text in expected, (text, expected)
+          PY
           test "$(curl -s -o /dev/null -w '%{http_code}' --data-binary 'x' localhost:8000/transcribe)" = 400
           docker stop -t 60 server
           test "$(docker inspect server -f '{{.State.ExitCode}}')" = 0

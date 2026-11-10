@@ -171,3 +171,69 @@ def test_invalid_limits_are_usage_errors(argv):
     with pytest.raises(SystemExit) as raised:
         server.main(["--model", "m", *argv])
     assert raised.value.code == 2
+
+
+def raw(url, data: bytes, timeout=5) -> bytes:
+    """Send bytes on one connection and read until the server closes it."""
+    import socket
+
+    host, port = url.removeprefix("http://").split(":")
+    with socket.create_connection((host, int(port)), timeout=timeout) as connection:
+        connection.sendall(data)
+        chunks = []
+        while chunk := connection.recv(65536):
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def test_an_idle_keep_alive_connection_does_not_hold_up_shutdown(running):
+    import socket
+
+    url, service, model, http = running
+    host, port = url.removeprefix("http://").split(":")
+    idle = socket.create_connection((host, int(port)), timeout=5)
+    idle.sendall(b"GET /health HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert b"200 OK" in idle.recv(65536)  # kept open after the reply
+    stopper = threading.Thread(target=server.stop, args=(http, service))
+    stopper.start()
+    stopper.join(5)
+    assert not stopper.is_alive() and model.closed
+    idle.close()
+
+
+@pytest.mark.parametrize(("length", "status"), [("-1", b"400"), ("12abc", b"400"),
+                                                (" ", b"400")])
+def test_an_invalid_content_length_is_refused_and_closed(running, length, status):
+    url, *_ = running
+    reply = raw(url, b"POST /transcribe HTTP/1.1\r\nHost: x\r\nContent-Length: "
+                + length.encode() + b"\r\n\r\n" + b"x" * 1000)
+    assert reply.startswith(b"HTTP/1.1 " + status) and reply.count(b"HTTP/1.1") == 1
+
+
+def test_a_missing_content_length_or_chunked_body_is_411_and_closed(running):
+    url, *_ = running
+    reply = raw(url, b"POST /transcribe HTTP/1.1\r\nHost: x\r\n\r\n")
+    assert reply.startswith(b"HTTP/1.1 411")
+    reply = raw(url, b"POST /transcribe HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n"
+                b"\r\n5\r\nhello\r\n0\r\n\r\n")
+    assert reply.startswith(b"HTTP/1.1 411") and reply.count(b"HTTP/1.1") == 1
+
+
+def test_an_unread_body_is_never_parsed_as_another_request(running):
+    url, service, *_ = running
+    smuggled = b"GET /health HTTP/1.1\r\nHost: x\r\n\r\n"
+    for path in (b"/nope", b"/transcribe"):
+        if path == b"/transcribe":
+            service.ready.clear()  # the "not ready" reply leaves the body unread too
+        reply = raw(url, b"POST " + path + b" HTTP/1.1\r\nHost: x\r\nContent-Length: "
+                    + str(len(smuggled)).encode() + b"\r\n\r\n" + smuggled)
+        assert reply.count(b"HTTP/1.1") == 1 and b"Connection: close" in reply
+
+
+def test_long_audio_is_refused_from_its_header_without_decoding(running, monkeypatch):
+    url, *_ = running
+    monkeypatch.setattr(sf, "read", lambda *args, **kwargs: pytest.fail("decoded the audio"))
+    buffer = io.BytesIO()
+    sf.write(buffer, np.zeros((48000 * 60, 2), np.float32), 48000, format="FLAC")
+    status, body, _ = call(url, "/transcribe", buffer.getvalue())
+    assert status == 413 and "60.0 s" in body["error"]

@@ -13,7 +13,9 @@ curl --data-binary @speech.wav http://localhost:8000/transcribe
 ```
 
 The image downloads the model at build time (`--build-arg MODEL=...`, `PRECISION=...`) and
-starts with `--local-files-only`, so it needs no network at run time. For a GPU, build with
+starts with `--local-files-only` from a world-readable cache in `/models`, so it needs no
+network at run time and works under any user id. The build preloads on the CPU, so use
+`PRECISION=fp32` or `fp16` (bf16 has no CPU kernels). For a GPU, build with
 `--build-arg EXTRAS=cuda,hub,resample` and run with `--gpus all -e DEVICE=cuda`.
 Without Docker: `python examples/server/server.py --model EmreAkgul/omniASR-CTC-300M-v2-ONNX`.
 
@@ -36,8 +38,14 @@ every worker. Extra workers let requests overlap on the same ONNX Runtime sessio
 CPU, set `--workers` and the model's threads so that their product fits your cores. For more
 GPU throughput run more containers.
 
+Every error response closes its connection, so an unread body is never parsed as another
+request. Connections idle for 30 s are dropped. The HTTP layer uses one thread per connection
+with no cap, and each holds at most `--max-bytes` of request body; only `--workers` clips are
+decoded at a time, after their length is checked from the file header.
+
 On SIGTERM (`docker stop`) the server marks itself not ready, stops accepting connections,
-finishes the requests in flight, closes the model and exits 0. Give `docker stop -t` more
+finishes the requests in flight (idle keep-alive connections don't count), closes the model
+and exits 0. Give `docker stop -t` more
 time than your longest request. The image's `HEALTHCHECK` polls `/ready`.
 
 `tests/unit/test_server_example.py` covers the limits, queueing and shutdown, and
