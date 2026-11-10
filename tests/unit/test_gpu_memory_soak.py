@@ -110,3 +110,69 @@ def test_mixed_lengths_default_to_a_long_warmup(monkeypatch, capsys):
     monkeypatch.setattr(soak, "sample", lambda nvml: {"rss_mb": 1.0})
     soak.main(["--model", "m", "--requests", "8", "--seconds", "2", "--mixed"])
     assert json.loads(capsys.readouterr().out)["warmup"] == 4
+
+
+def test_cgroup_path_is_the_process_own_cgroup(tmp_path):
+    cgroup = tmp_path / "cgroup"
+    cgroup.write_text("0::/system.slice/server.service\n")
+    assert soak.cgroup_stat_path(str(cgroup), "/sys/fs/cgroup") == str(
+        Path("/sys/fs/cgroup/system.slice/server.service/memory.stat"))
+    cgroup.write_text("12:memory:/docker/abc\n")  # cgroup v1 only: no unified line
+    assert soak.cgroup_stat_path(str(cgroup), "/sys/fs/cgroup") == str(
+        Path("/sys/fs/cgroup/memory.stat"))
+
+
+def test_rss_alone_is_not_a_gpu_measurement(monkeypatch, capsys):
+    monkeypatch.setattr(soak, "load", lambda args: Model(0.0))
+    monkeypatch.setattr(soak, "sample", lambda nvml: {"gpu_process_mb": None, "rss_mb": 900.0})
+    assert soak.main(["--model", "m", "--requests", "7", "--seconds", "1"]) == 2
+    assert "RSS can't see GPU memory" in capsys.readouterr().err
+
+
+def test_a_load_failure_is_not_reported_as_growth(monkeypatch, capsys):
+    def load(args):
+        raise RuntimeError("no CUDA")
+
+    monkeypatch.setattr(soak, "load", load)
+    assert soak.main(["--model", "m", "--requests", "7"]) == 3
+    assert "RuntimeError: no CUDA" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("argv", [
+    ["--device", "cpu", "--arena-shrinkage"],
+    ["--kind", "llm", "--arena-shrinkage"],
+    ["--backend", "tensorrt", "--arena-extend-strategy", "kSameAsRequested"],
+    ["--backend", "tensorrt", "--device", "cpu"],
+    ["--kind", "llm", "--backend", "tensorrt"],
+    ["--device", "cpu", "--gpu-mem-limit", "1000"],
+    ["--gpu-mem-limit", "0"],
+    ["--kind", "llm", "--seconds", "40"],
+])
+def test_options_that_cannot_apply_are_refused_before_loading(monkeypatch, argv):
+    monkeypatch.setattr(soak, "load", lambda args: pytest.fail("loaded the model"))
+    with pytest.raises(SystemExit) as raised:
+        soak.main(["--model", "m", *argv])
+    assert raised.value.code == 2
+
+
+def test_arena_options_reach_the_shared_provider_options(monkeypatch):
+    from fast_omniasr import options
+
+    monkeypatch.setattr(options, "CUDA_PROVIDER_OPTIONS", dict(options.CUDA_PROVIDER_OPTIONS))
+    before = dict(options.CUDA_PROVIDER_OPTIONS)
+    args = types.SimpleNamespace(arena_extend_strategy="kSameAsRequested", gpu_mem_limit=2**30)
+    soak.configure_arena(args)
+    assert options.CUDA_PROVIDER_OPTIONS == {**before, "arena_extend_strategy": "kSameAsRequested",
+                                             "gpu_mem_limit": str(2**30)}
+
+
+def test_nvml_follows_cuda_visible_devices(monkeypatch):
+    seen = []
+    fake = types.SimpleNamespace(nvmlInit=lambda: None,
+                                 nvmlDeviceGetHandleByIndex=lambda i: seen.append(i) or "h")
+    monkeypatch.setitem(sys.modules, "pynvml", fake)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "2,3")
+    soak.NVML()
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-uuid")
+    soak.NVML()
+    assert seen == [2, 0]
