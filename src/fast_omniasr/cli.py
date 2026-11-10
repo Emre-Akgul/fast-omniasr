@@ -87,7 +87,7 @@ def _transcribe(args) -> int:
         for path in args.audio:
             try:
                 result = (model.transcribe_long if long else model.transcribe)(path, **request)
-            except EXPECTED_ERRORS as exc:
+            except Exception as exc:  # noqa: BLE001 -- one bad file must not stop the rest
                 failed = True
                 if args.json:
                     _write_json({"path": path, "error": str(exc)})
@@ -237,7 +237,18 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _utf8_output() -> None:
+    """Write UTF-8 whatever the locale: a redirected stdout on Windows otherwise uses the
+    ANSI code page, which can't encode most transcripts (JSON Lines is UTF-8 anyway)."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError, OSError):  # replaced or already-used streams
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _utf8_output()
     parser = build_parser()
     args = parser.parse_args(argv)
     if hasattr(args, "kind"):
@@ -246,10 +257,15 @@ def main(argv: list[str] | None = None) -> int:
         code = args.handler(args)
         sys.stdout.flush()
         return code
-    except EXPECTED_ERRORS as exc:
+    except KeyboardInterrupt:
+        return 130
+    except Exception as exc:  # noqa: BLE001 -- ONNX Runtime errors don't derive from RuntimeError
         if isinstance(exc, BrokenPipeError):
             # The reader left, as in `| head`. Stop Python failing again on exit.
             os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
             return 0
-        print(f"error: {exc}", file=sys.stderr)
+        if isinstance(exc, EXPECTED_ERRORS):
+            print(f"error: {exc}", file=sys.stderr)
+        else:
+            print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1

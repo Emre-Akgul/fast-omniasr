@@ -160,6 +160,55 @@ def test_a_failed_file_is_reported_in_json(ctc, capsys):
     assert results[1]["path"] == "b.wav"
 
 
+class RuntimeFailure(Exception):
+    """Like onnxruntime's errors, which don't derive from RuntimeError."""
+
+
+def test_an_inference_error_of_any_type_does_not_stop_the_rest(ctc, capsys, monkeypatch):
+    transcribe = ctc.transcribe
+
+    def failing(path, **options):
+        if path == "a.wav":
+            raise RuntimeFailure("CUDA out of memory")
+        return transcribe(path, **options)
+
+    monkeypatch.setattr(ctc, "transcribe", failing)
+    assert run("transcribe", "a.wav", "b.wav", "--model", "m", "--json") == 1
+    results = lines(capsys)
+    assert results[0] == {"path": "a.wav", "error": "CUDA out of memory"}
+    assert results[1]["path"] == "b.wav"
+
+
+def test_an_unexpected_load_error_is_a_message(monkeypatch, capsys):
+    def load(repo, **options):
+        raise RuntimeFailure("provider failed")
+
+    monkeypatch.setattr(OmniASR, "from_pretrained", load)
+    assert run("transcribe", "a.wav", "--model", "m") == 1
+    assert capsys.readouterr().err == "error: RuntimeFailure: provider failed\n"
+
+
+def test_ctrl_c_exits_130(monkeypatch):
+    def load(repo, **options):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(OmniASR, "from_pretrained", load)
+    assert run("transcribe", "a.wav", "--model", "m") == 130
+
+
+def test_non_ascii_output_survives_a_legacy_code_page():
+    """A redirected stdout on Windows uses the ANSI code page unless the CLI asks for UTF-8."""
+    code = ("from fast_omniasr import cli; "
+            "cli._diagnose = lambda args: print('ı ş ğ') or 0; "
+            ""
+            "import sys; sys.exit(cli.main(['diagnose']))")
+    src = Path(__file__).resolve().parents[2] / "src"
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, check=False,
+                          env={**os.environ, "PYTHONPATH": str(src), "PYTHONIOENCODING": "cp1252"})
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.decode("utf-8").strip() == "ı ş ğ"
+
+
 def test_a_model_that_will_not_load_is_a_message(monkeypatch, capsys):
     def load(repo, **options):
         raise hub.LocalBundleNotFoundError("not cached")
