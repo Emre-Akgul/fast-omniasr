@@ -198,3 +198,30 @@ measurements are in
 [`llm_300m_v2_onnx_cuda.json`](llm_300m_v2_onnx_cuda.json). The curated
 [parity record](llm_300m_v2_onnx_parity.json) points to the generated raw-tensor
 reports in the artifact directory.
+
+## LLM encoder context on the GPU (CUDA)
+
+The ONNX runtime copies the encoder output to the host, writes the language embedding into
+its last row there, and binds it back as a CPU input to prefill. Keeping it on the GPU would
+save both copies (#46). `tools/benchmark_llm_context.py` times each half of that round trip
+against the device-resident path and checks that the prefill logits are identical:
+
+```bash
+python tools/benchmark_llm_context.py --model EmreAkgul/omniASR-LLM-300M-v2-ONNX \
+  --precision fp16 --output benchmarks/llm_300m_v2_context_cuda.json
+```
+
+300M v2, fp16, resident sessions, 64-token decode budget, on a CUDA GPU
+([`llm_300m_v2_context_cuda.json`](llm_300m_v2_context_cuda.json)):
+
+| Clip | Context | Encode → host / on GPU | Prefill from host / from GPU | Transcription | Saved |
+|---|---|---|---|---|---|
+| 5 s | 3.9 MiB | 56.7 / 56.2 ms | 45.2 / 44.7 ms | 637 ms | 1.0 ms (0.16%) |
+| 15 s | 11.7 MiB | 133.7 / 132.5 ms | 135.8 / 134.5 ms | 1,266 ms | 2.5 ms (0.20%) |
+| 30 s | 23.5 MiB | 274.6 / 271.4 ms | 303.7 / 301.3 ms | 1,903 ms | 5.6 ms (0.29%) |
+
+The logits are identical either way. The copies cost under 0.3% of a transcription, and a
+device-resident context would also need the language row written on the GPU, which takes
+a graph change or a raw CUDA copy (ONNX Runtime's Python API only updates whole tensors). So the runtime keeps the host round
+trip.
+
