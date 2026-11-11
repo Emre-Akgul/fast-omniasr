@@ -205,8 +205,8 @@ def test_llm_reports_the_first_cut_off_reason():
     budgets = iter(["max_new_tokens", "context_limit"])
     real = model._transcribe_onnx
 
-    def relabel(*args):
-        result = real(*args)
+    def relabel(*args, **options):
+        result = real(*args, **options)
         if result.stop_reason == "eos":
             return result
         return replace(result, stop_reason=next(budgets))
@@ -222,9 +222,9 @@ def test_llm_passes_the_language_to_every_chunk():
     seen = []
     real = model._transcribe_onnx
 
-    def spy(waveform, budget, language, penalty):
+    def spy(waveform, budget, language, penalty, **options):
         seen.append(language)
-        return real(waveform, budget, language, penalty)
+        return real(waveform, budget, language, penalty, **options)
 
     model._transcribe_onnx = spy
     model.transcribe_long(noise(3 * 16000), chunk_length=1, lang="eng_Latn")

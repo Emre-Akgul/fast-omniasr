@@ -1,4 +1,4 @@
-"""Greedy decoding with full-prefix or explicit-cache OmniASR LLM-ASR graphs."""
+"""Greedy or beam-search decoding with full-prefix or explicit-cache OmniASR LLM-ASR graphs."""
 
 import json
 import math
@@ -57,6 +57,72 @@ def _next_token(logits, generated, penalty) -> int:
     scores = values[ids]
     values[ids] = np.where(scores < 0, scores * penalty, scores / penalty)
     return int(values.argmax())
+
+
+def _check_beam_size(beam_size) -> int:
+    if not isinstance(beam_size, int) or isinstance(beam_size, bool) or beam_size < 1:
+        raise ValueError(f"beam_size must be a positive integer, got {beam_size!r}")
+    return beam_size
+
+
+def _log_probs(logits, generated, penalty) -> np.ndarray:
+    """Log-softmax of one hypothesis's next-token scores, after the repetition penalty."""
+    values = logits.float().cpu().numpy() if hasattr(logits, "cpu") else logits
+    values = np.array(values, dtype=np.float64, copy=True).reshape(-1)
+    if not np.isfinite(values).all():
+        raise RuntimeError("Decoder produced non-finite logits")
+    if generated and penalty != 1:
+        ids = np.unique(generated)
+        scores = values[ids]
+        values[ids] = np.where(scores < 0, scores * penalty, scores / penalty)
+    values -= values.max()
+    return values - np.log(np.exp(values).sum())
+
+
+def _beam_search(logits, state, advance, *, budget, beam_size, eos, penalty, length_norm):
+    """Upstream's beam search (omnilingual_asr Wav2Vec2LlamaBeamSearchSeq2SeqGenerator) on
+    batch-one graphs. Each step, every live hypothesis is extended by its log-probabilities
+    and the best `beam_size` candidates overall survive. A hypothesis that emits EOS keeps
+    its score and stays in the beam, competing with the live ones, until every hypothesis
+    has ended or `budget` steps have run; the best-scoring one is returned. With
+    `length_norm` a hypothesis scores by its mean log-probability per token instead of the
+    sum. Upstream's compression-ratio early stop is not applied.
+
+    `logits` and `state` come from the prefill; `advance(state, tokens)` runs the decoder
+    on a hypothesis's latest token and returns its next logits and state. States are never
+    modified, so hypotheses that share a parent share its state (its K/V cache).
+    Returns (tokens, ended_at_eos)."""
+    # Each hypothesis: [tokens, score, next-token logits, decoder state, ended].
+    beams = [[[], 0.0, logits, state, False]]
+    for step in range(budget):
+        candidates = []
+        for rank, (tokens, score, scores, _, ended) in enumerate(beams):
+            if ended:
+                candidates.append((score, rank, eos))
+                continue
+            totals = _log_probs(scores, tokens, penalty)
+            totals = (score * step + totals) / (step + 1) if length_norm else score + totals
+            best = np.argsort(-totals, kind="stable")[:beam_size]
+            candidates.extend((float(totals[token]), rank, int(token)) for token in best)
+        # Stable sort: ties go to the earlier hypothesis, then the lower token id.
+        candidates.sort(key=lambda candidate: -candidate[0])
+        survivors = []
+        for score, rank, token in candidates[:beam_size]:
+            tokens, _, _, state, ended = beams[rank]
+            if ended:
+                survivors.append(beams[rank])
+            elif token == eos:
+                survivors.append([tokens, score, None, None, True])
+            else:
+                tokens = [*tokens, token]
+                scores = None
+                if step + 1 < budget:
+                    scores, state = advance(state, tokens)
+                survivors.append([tokens, score, scores, state, False])
+        beams = survivors
+        if all(beam[4] for beam in beams):
+            break
+    return beams[0][0], beams[0][4]
 
 
 def list_languages(repo_id: str, *, revision: str | None = None,
@@ -335,6 +401,8 @@ class OmniASRLLM:
         lang: str | None = None,
         convert_audio: bool = False,
         repetition_penalty: float = 1,
+        beam_size: int = 1,
+        length_norm: bool = False,
     ) -> LLMTranscription:
         """Greedy-decode one clip. `lang` conditions on an upstream language code
         (e.g. "eng_Latn"); without it the model's learned no-language row is used.
@@ -343,9 +411,15 @@ class OmniASRLLM:
         discourages tokens already generated, as in faster-whisper; 1 leaves the model's
         output untouched. It can end loops on audio with no speech, but it can also end a
         transcript early, because a penalized token can lose to EOS, which is never
-        penalized."""
-        max_new_tokens, repetition_penalty = self._check_request(max_new_tokens,
-                                                                 repetition_penalty)
+        penalized.
+
+        `beam_size` above 1 runs upstream's beam search instead of greedy decoding
+        (upstream's own pipeline uses 5 beams); `length_norm=True` ranks hypotheses by
+        their mean token log-probability, as upstream's `length_norm` option does. The
+        graphs are batch-one, so each step runs the decoder once per live beam: decoding
+        is up to `beam_size` times slower and holds up to `beam_size` K/V caches."""
+        max_new_tokens, repetition_penalty, beam_size = self._check_request(
+            max_new_tokens, repetition_penalty, beam_size, length_norm)
         waveform = (
             load_audio(audio, convert_audio=convert_audio)
             if isinstance(audio, (str, Path))
@@ -354,19 +428,23 @@ class OmniASRLLM:
         if waveform.shape[1] > 30 * 16000:
             raise ValueError("This runtime supports clips of at most 30 seconds")
         self._warn_without_language(lang)
-        return self._decode(waveform, max_new_tokens, self._language(lang), repetition_penalty)
+        return self._decode(waveform, max_new_tokens, self._language(lang), repetition_penalty,
+                            beam_size, length_norm)
 
-    def _check_request(self, max_new_tokens, repetition_penalty):
+    def _check_request(self, max_new_tokens, repetition_penalty, beam_size=1,
+                       length_norm=False):
         if getattr(self, "closed", False):
             raise RuntimeError("This OmniASRLLM model is closed")
         repetition_penalty = _check_repetition_penalty(repetition_penalty)
+        beam_size = _check_beam_size(beam_size)
+        check_flag("length_norm", length_norm)
         if (
             not isinstance(max_new_tokens, int)
             or isinstance(max_new_tokens, bool)
             or max_new_tokens < 1
         ):
             raise ValueError("max_new_tokens must be a positive integer")
-        return max_new_tokens, repetition_penalty
+        return max_new_tokens, repetition_penalty, beam_size
 
     @staticmethod
     def _warn_without_language(lang):
@@ -382,14 +460,15 @@ class OmniASRLLM:
     def _language(self, lang):
         return None if lang is None else self.language_embedding(lang)
 
-    def _decode(self, waveform, max_new_tokens, language, repetition_penalty):
+    def _decode(self, waveform, max_new_tokens, language, repetition_penalty, beam_size=1,
+                length_norm=False):
         with self._ensure_lock("_lock"):  # one request at a time per instance
             if getattr(self, "closed", False):
                 raise RuntimeError("This OmniASRLLM model is closed")
-            if getattr(self, "backend", "torch") == "onnx":
-                return self._transcribe_onnx(waveform, max_new_tokens, language,
-                                             repetition_penalty)
-            return self._transcribe_torch(waveform, max_new_tokens, language, repetition_penalty)
+            transcribe = (self._transcribe_onnx if getattr(self, "backend", "torch") == "onnx"
+                          else self._transcribe_torch)
+            return transcribe(waveform, max_new_tokens, language, repetition_penalty,
+                              beam_size=beam_size, length_norm=length_norm)
 
     def transcribe_long(
         self,
@@ -401,13 +480,16 @@ class OmniASRLLM:
         lang: str | None = None,
         convert_audio: bool = False,
         repetition_penalty: float = 1,
+        beam_size: int = 1,
+        length_norm: bool = False,
         vad_filter: bool = False,
         vad_options=None,
     ) -> LLMTranscription:
         """Transcribe a recording of any length by cutting it every `chunk_length` seconds
         (at most 30) and joining the text in order. Chunks don't overlap and nothing is
         reconciled across a cut, so a word on a boundary can be damaged. `max_new_tokens`
-        applies per chunk. `.chunks` has each chunk's times, text and stop reason, and
+        and the decoding options (`repetition_penalty`, `beam_size`, `length_norm`, as in
+        `transcribe()`) apply per chunk. `.chunks` has each chunk's times, text and stop reason, and
         `stop_reason` is "eos" only if every chunk reached it, otherwise the first other.
 
         `vad_filter=True` keeps only speech and cuts at silence, using Silero VAD as
@@ -416,8 +498,8 @@ class OmniASRLLM:
         its `start` and `end` can span more, since silence is left out. If the VAD finds no
         speech, the decoder doesn't run and the result has empty text and no chunks.
         Non-speech the VAD mistakes for speech, such as some tones, is still decoded."""
-        max_new_tokens, repetition_penalty = self._check_request(max_new_tokens,
-                                                                 repetition_penalty)
+        max_new_tokens, repetition_penalty, beam_size = self._check_request(
+            max_new_tokens, repetition_penalty, beam_size, length_norm)
         chunks = prepare_chunks(audio, sample_rate, chunk_length=chunk_length,
                                 convert_audio=convert_audio, max_chunk_length=30,
                                 vad_filter=vad_filter, vad_options=vad_options)
@@ -425,7 +507,8 @@ class OmniASRLLM:
         language = self._language(lang)
         results = []
         for start, end, waveform, _ in chunks:
-            result = self._decode(waveform, max_new_tokens, language, repetition_penalty)
+            result = self._decode(waveform, max_new_tokens, language, repetition_penalty,
+                                  beam_size, length_norm)
             results.append(LLMTranscriptionChunk(start, end, result.text, result.token_ids,
                                                  result.stop_reason))
         reasons = [chunk.stop_reason for chunk in results if chunk.stop_reason != "eos"]
@@ -436,7 +519,8 @@ class OmniASRLLM:
             tuple(results),
         )
 
-    def _transcribe_torch(self, waveform, max_new_tokens, language=None, repetition_penalty=1):
+    def _transcribe_torch(self, waveform, max_new_tokens, language=None, repetition_penalty=1,
+                          *, beam_size=1, length_norm=False):
         import torch
 
         with torch.inference_mode():
@@ -452,6 +536,11 @@ class OmniASRLLM:
             if budget < 1:
                 raise ValueError("Audio prefix exceeds decoder context capacity")
             reason = "max_new_tokens" if budget == max_new_tokens else "context_limit"
+            if beam_size > 1:
+                generated, ended = self._beam_search_torch(
+                    context, budget, beam_size, repetition_penalty, length_norm)
+                return LLMTranscription(self.tokenizer.decode(generated), generated,
+                                        "eos" if ended else reason)
             cache = None
             for _ in range(budget):
                 if getattr(self, "cached", False):
@@ -473,7 +562,30 @@ class OmniASRLLM:
                 tokens.append(token)
         return LLMTranscription(self.tokenizer.decode(generated), generated, reason)
 
-    def _transcribe_onnx(self, waveform, max_new_tokens, language=None, repetition_penalty=1):
+    def _beam_search_torch(self, context, budget, beam_size, repetition_penalty, length_norm):
+        import torch
+
+        def ids(tokens):
+            return torch.tensor([tokens], dtype=torch.int64, device=self.device)
+
+        bos = self.config["bos_idx"]
+        if getattr(self, "cached", False):
+            logits, state = self.decoder.prefill(context, ids([bos]))
+
+            def advance(cache, tokens):
+                return self.decoder.decode_step(ids(tokens[-1:]), cache)
+        else:
+            logits, state = self.decoder(context, ids([bos])), None
+
+            def advance(_, tokens):
+                return self.decoder(context, ids([bos, *tokens])), None
+
+        return _beam_search(logits, state, advance, budget=budget, beam_size=beam_size,
+                            eos=self.config["eos_idx"], penalty=repetition_penalty,
+                            length_norm=length_norm)
+
+    def _transcribe_onnx(self, waveform, max_new_tokens, language=None, repetition_penalty=1,
+                         *, beam_size=1, length_norm=False):
         context = self.onnx.encode(waveform)
         if language is not None:
             context = np.array(context, copy=True)
@@ -484,6 +596,15 @@ class OmniASRLLM:
         reason = "max_new_tokens" if budget == max_new_tokens else "context_limit"
         token = np.array([[self.config["bos_idx"]]], dtype=np.int64)
         logits, cache = self.onnx.prefill(context, token)
+        if beam_size > 1:
+            def advance(cache, tokens):
+                return self.onnx.decode_step(np.array([tokens[-1:]], dtype=np.int64), cache)
+
+            generated, ended = _beam_search(
+                logits, cache, advance, budget=budget, beam_size=beam_size,
+                eos=self.config["eos_idx"], penalty=repetition_penalty, length_norm=length_norm)
+            return LLMTranscription(self.tokenizer.decode(generated), generated,
+                                    "eos" if ended else reason)
         generated = []
         for index in range(budget):
             if not np.isfinite(logits).all():
