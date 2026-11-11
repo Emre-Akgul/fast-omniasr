@@ -274,3 +274,54 @@ def test_failed_export_leaves_previous_output_untouched(tmp_path, stage):
 def test_negative_logit_tolerance_is_rejected(tmp_path):
     with pytest.raises(SystemExit):
         export_onnx.parse_args(["--output", str(tmp_path / "m.onnx"), "--logit-atol", "-1"])
+
+
+def test_batch_export_is_opt_in(tmp_path):
+    output = str(tmp_path / "model.onnx")
+    assert export_onnx.parse_args(["--output", output]).batch is False
+    assert export_onnx.parse_args(["--output", output, "--batch"]).batch is True
+
+
+# The wav2vec2 feature extractor's (dimension, kernel, stride) layers.
+WAV2VEC2_LAYERS = [(512, 10, 5)] + [(512, 3, 2)] * 4 + [(512, 2, 2)] * 2
+
+
+def test_batch_frame_lengths_match_the_runtime_frame_count():
+    from fast_omniasr.decoder import FRAME_STRIDE, FRAME_WINDOW
+
+    samples = np.arange(400, 20000, dtype=np.int64)
+    np.testing.assert_array_equal(export_onnx.frame_lengths(samples, WAV2VEC2_LAYERS),
+                                  (samples - FRAME_WINDOW) // FRAME_STRIDE + 1)
+    assert export_onnx.frame_lengths(480000, WAV2VEC2_LAYERS) == 1499
+
+
+def test_batch_validation_compares_each_padded_row_with_its_input_alone():
+    inputs = {"a": np.zeros((1, 400), np.float32), "b": np.zeros((1, 800), np.float32)}
+    references = {"a": _logits(1, seed=1), "b": _logits(2, seed=2)}
+    calls = []
+
+    def run_batch(path, given):
+        calls.append((path, list(given)))
+        return dict(references)
+
+    report = export_onnx.validate_export("model.onnx", references, inputs,
+                                         run=lambda path, given: dict(references),
+                                         run_batch=run_batch)
+    assert calls == [("model.onnx", ["a", "b"])]
+    assert [probe["input"] for probe in report["batch_probes"]] == [
+        "a in a padded batch of 2", "b in a padded batch of 2"]
+
+    def leaky(path, given):
+        return {"a": references["a"], "b": references["b"] + 0.5}
+
+    with pytest.raises(ValueError, match="b in a padded batch of 2: logits differ"):
+        export_onnx.validate_export("model.onnx", references, inputs,
+                                    run=lambda path, given: dict(references), run_batch=leaky)
+
+
+def test_batch_one_validation_has_no_batch_probes():
+    inputs = {"a": np.zeros((1, 400), np.float32)}
+    references = {"a": _logits(1)}
+    report = export_onnx.validate_export("model.onnx", references, inputs,
+                                         run=lambda path, given: dict(references))
+    assert "batch_probes" not in report

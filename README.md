@@ -174,7 +174,14 @@ Pass `vad_filter=True` to cut at silence and skip non-speech, using Silero VAD a
 
 The default is a safe choice rather than a proven best, and it wasn't measured on continuous speech from one speaker. On test recordings that change speaker every few seconds, CTC on chunks past about 20 seconds lost whole spans of speech on some languages, for reasons not yet known. See [docs/long-audio.md](docs/long-audio.md).
 
-For CTC models, pass `word_timestamps=True` to `transcribe`, `transcribe_numpy` or `transcribe_long` to get word and token times, as faster-whisper does. In `transcribe_long` they are times in the original recording, even with `vad_filter=True`:
+To transcribe many clips with a CTC model, pass a list of file paths or waveforms to `transcribe_batch`. It returns one result per clip, in the same order, each the same as transcribing that clip alone. It sorts the clips by length and runs them in zero-padded batches of up to `batch_size` (default 4), so each batch holds clips of similar length; `transcribe_long(..., batch_size=4)` batches a recording's chunks the same way. A batch runs as one call only on the ONNX backend with a batch graph exported by `export_onnx.py --batch` (see below) and loaded from local files. Published Hub graphs and TensorRT engines are batch-one, so they run the clips one at a time. Memory grows with `batch_size` times the longest clip in a batch:
+
+```python
+model = OmniASR("batch/model.onnx", "batch/tokenizer.model")
+results = model.transcribe_batch(["a.wav", "b.wav", waveform], batch_size=4)
+```
+
+For CTC models, pass `word_timestamps=True` to `transcribe`, `transcribe_numpy`, `transcribe_batch` or `transcribe_long` to get word and token times, as faster-whisper does. In `transcribe_long` they are times in the original recording, even with `vad_filter=True`:
 
 ```python
 result = model.transcribe("speech.wav", word_timestamps=True)
@@ -250,6 +257,12 @@ Official exports remain available for reproducibility by omitting `--checkpoint`
 
 ```bash
 python export_onnx.py --model omniASR_CTC_300M_v2 --output artifacts/official/model.onnx
+```
+
+`--batch` exports a batch graph instead, for `transcribe_batch`: it takes zero-padded audio `[batch, samples]` and each row's length as int64 `audio_lengths [batch]`, and returns `logits [batch, frames, vocabulary]` and int64 `logit_lengths [batch]`. Padding never reaches a row's own frames: they are zeroed before the positional convolution and self-attention skips them, so each row matches running that clip alone. Validation also runs every input in one padded batch and compares each row with the source on that input alone (`batch_probes` in `export_parity.json`). The ONNX backend loads either kind of graph. TensorRT engines are not built from batch graphs yet.
+
+```bash
+python export_onnx.py --model omniASR_CTC_300M_v2 --batch --output artifacts/batch/model.onnx
 ```
 
 Supported base models are `omniASR_CTC_{300M,1B,3B,7B}` and `omniASR_CTC_{300M,1B,3B,7B}_v2`. Large ONNX exports may place tensor data in companion files; keep the entire output directory together when loading, publishing, or building an engine.
