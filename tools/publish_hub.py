@@ -72,7 +72,11 @@ def prepare_bundle(model_card: str, model_path: Path, tokenizer_path: Path) -> l
     }
     config_path = model_path.parent / "config.json"
     config_path.write_text(json.dumps(config, indent=2) + "\n")
-    return [config_path, *assets]
+    # The export's provenance record is published alongside, for reference only: the runtime
+    # neither downloads nor verifies it, so it is not listed in config.json.
+    provenance_path = model_path.parent / "provenance.json"
+    extras = [provenance_path] if provenance_path.is_file() else []
+    return [config_path, *assets, *extras]
 
 
 def main():

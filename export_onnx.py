@@ -11,6 +11,10 @@ from urllib.request import urlretrieve
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+# The repository's tools, also when this file is loaded by path (as the tests do).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from tools import provenance
 
 CTC_MODEL_CARDS = (
     "omniASR_CTC_300M",
@@ -209,12 +213,57 @@ def promote(staging: Path, output: Path):
     (staging / output.name).replace(output)
 
 
-def staged_export(output: Path, build, validate):
+def graph_files(model_path: Path) -> list[Path]:
+    """The graph and its ONNX external-data files."""
+    from tools.publish_hub import external_data_files
+
+    return [model_path, *external_data_files(model_path)]
+
+
+def build_provenance(args, *, weights_sha256, model_path, files, validation) -> dict:
+    """The provenance.json record for an export staged at `model_path`."""
+    checkpoint = None
+    if args.checkpoint is not None:
+        checkpoint = {
+            "name": args.checkpoint.name,
+            "sha256": provenance.path_sha256(args.checkpoint),
+        }
+    family = tokenizer_family(args.model)
+    root = model_path.parent
+    tokenizer_path = root / "tokenizer.model"
+    return {
+        "exporter": provenance.exporter("export_onnx.py"),
+        "environment": provenance.environment(),
+        "source": {
+            "model_card": args.model,
+            "checkpoint": checkpoint,
+            "weights_sha256": weights_sha256,
+        },
+        "tokenizer": {
+            "file": tokenizer_path.name,
+            "family": family,
+            "url": TOKENIZER_URLS[family],
+            "sha256": provenance.file_sha256(tokenizer_path),
+        },
+        "files": {
+            path.relative_to(root).as_posix(): {
+                "sha256": provenance.file_sha256(path),
+                "size": path.stat().st_size,
+            }
+            for path in files
+        },
+        "validation": validation,
+    }
+
+
+def staged_export(output: Path, build, validate, describe=None):
     """Build into a staging directory beside `output` and promote it only once validated.
 
     `build(model_path, tokenizer_path)` writes the graph (and any external data next to
-    it) and the tokenizer; `validate(model_path)` returns a report or raises. On failure
-    nothing at `output` changes and the staging directory is removed.
+    it) and the tokenizer; `validate(model_path)` returns a report or raises;
+    `describe(model_path, report)`, if given, returns the provenance record written as
+    provenance.json. On failure nothing at `output` changes and the staging directory is
+    removed.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}.staging-", dir=output.parent))
@@ -222,6 +271,8 @@ def staged_export(output: Path, build, validate):
         build(staging / output.name, staging / "tokenizer.model")
         report = validate(staging / output.name)
         (staging / PARITY_REPORT).write_text(json.dumps(report, indent=2) + "\n")
+        if describe is not None:
+            provenance.write(staging, describe(staging / output.name, report))
         promote(staging, output)
         return report
     finally:
@@ -248,6 +299,9 @@ def main():
     torch.set_num_threads(4)
     model = load_source_model(args, torch, load_model, get_wav2vec2_asr_model_hub)
     wrapper = Forward(model).eval()
+    weights_sha256 = provenance.weights_sha256(
+        (name, tensor.detach().cpu().numpy()) for name, tensor in model.state_dict().items()
+    )
     inputs = validation_inputs(args.validation_audio or VALIDATION_AUDIO)
     # Source logits are computed up front so the PyTorch model can be freed before ONNX
     # Runtime loads the export; large models do not fit in memory twice.
@@ -280,11 +334,16 @@ def main():
         return validate_export(model_path, references, inputs,
                                rtol=args.logit_rtol, atol=args.logit_atol)
 
-    report = staged_export(args.output, build, validate)
+    def describe(model_path, report):
+        return build_provenance(args, weights_sha256=weights_sha256, model_path=model_path,
+                                files=graph_files(model_path), validation=report)
+
+    report = staged_export(args.output, build, validate, describe)
     for probe in report["probes"]:
         print(json.dumps(probe))
     print(args.output)
     print(args.output.parent / "tokenizer.model")
+    print(args.output.parent / provenance.PROVENANCE_FILE)
 
 
 if __name__ == "__main__":
