@@ -11,7 +11,9 @@ weights, so testing is tiered:
   graphs on CPU). It doesn't run real weights or a GPU.
 - **real-cpu** runs one pinned model per family end to end on hosted CPUs, on a schedule,
   for releases and for runtime changes.
-- **gpu** is the manual CUDA/TensorRT pass, since there is no hosted GPU runner.
+- **gpu** is the CUDA/TensorRT pass. GitHub has no hosted GPU runner, so it runs on a
+  self-hosted one (`.github/workflows/gpu.yml`) for each published release and on demand,
+  and by hand before merging GPU changes.
 - **release** runs once per model when it is exported or republished, and its report is
   published with the model.
 
@@ -24,8 +26,9 @@ them, the model cards, backends and precisions consistent.
 Known gaps, by design of the tiers:
 - CPU half-precision graphs are covered only by unit tests (the release reports measure
   precision agreement on CUDA).
-- ONNX CUDA has no pass/fail gate for either family or any precision: its agreement, WER
-  and CER are reported, not checked against thresholds. Only TensorRT (CTC) is gated on GPU.
+- ONNX CUDA is held to the CPU CER ceilings on the FLEURS fixtures for the pinned CTC
+  model only; the LLM on CUDA and the per-language gate on ONNX CUDA have no pass/fail
+  threshold (agreement, WER and CER are reported). Only TensorRT (CTC) runs the FLEURS gate.
 - CTC exports have no release-time comparison against the source model yet (#53).
 - TensorRT is tested only for the pinned CTC model, and CTC on CUDA is never exercised by a
   unit test.
@@ -37,7 +40,7 @@ Known gaps, by design of the tiers:
 |---|---|---|---|
 | `unit` | every push and PR (Lint and CPU unit tests; Package) | pytest tests/unit: argument validation, variant selection, downloads and backend wiring for every configuration, against fakes; the llm-unit job also runs tiny generated LLM ONNX graphs on CPU (fp32, fp16); no real weights | `python -m pytest tests/unit` |
 | `real-cpu` | weekly, on each published release, on demand, and on PRs touching the runtime (Real-model CPU validation) | the pinned published model end to end on CPU (FLEURS fixtures and edge-case clips: CER ceilings, determinism, LLM stop reasons) plus the per-language FLEURS regression gate | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_cpu.py tests/integration/test_real_models_edge_cases.py && python tools/fleurs_eval.py run --model {family} --gate` |
-| `gpu` | manually on a CUDA machine, before merging changes to GPU, precision, TensorRT or export code (no hosted GPU runner) | TensorRT engines of the pinned CTC model on the FLEURS fixtures, edge-case clips and gate; ONNX CUDA precision agreement, WER and CER on a dataset you supply (reported, not gated) | `python tools/evaluate_precisions.py --{family} <export> --device cuda --precision fp32 fp16 bf16 --dataset <eval.jsonl>; OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_tensorrt_fleurs.py; python tools/fleurs_eval.py run --model ctc --backend tensorrt --precision mixed --gate` |
+| `gpu` | on each published release and on demand, on a self-hosted GPU runner (CUDA and TensorRT release validation); manually on a CUDA machine before merging changes to GPU, precision, TensorRT or export code | the pinned CTC model on every CUDA backend and precision: loading, dynamic lengths, CER ceilings and declared transcripts, repeated calls and cleanup; TensorRT engines of it on the FLEURS fixtures, edge-case clips and gate; ONNX CUDA precision agreement, WER and CER on a dataset you supply (reported, not gated) | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_gpu.py tests/integration/test_tensorrt_fleurs.py; python tools/evaluate_precisions.py --{family} <export> --device cuda --precision fp32 fp16 bf16 --dataset <eval.jsonl>; python tools/fleurs_eval.py run --model ctc --backend tensorrt --precision mixed --gate` |
 | `release` | once per model, when it is exported or republished | the precision-agreement report published in the model card (measured with CUDA; tools/publish_precisions.py); for LLMs, step-by-step fp32 logit parity with fairseq2 on CPU and CUDA (tools/validate_llm_fairseq2.py) | `python tools/evaluate_precisions.py --{family} <export> --device cuda --precision fp32 fp16 bf16 --audio <clips> --report <report>; python tools/publish_precisions.py {repo} <export> --report <report> [--upload]; for LLMs also python tools/validate_llm_fairseq2.py compare <reference> --directory <export> --device cpu|cuda` |
 
 ### CTC models

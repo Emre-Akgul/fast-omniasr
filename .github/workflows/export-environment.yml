@@ -1,8 +1,8 @@
 name: Export environment
 # Installs the pinned export environment (constraints/export.txt) from scratch, exports
-# omniASR_CTC_300M_v2 with export_onnx.py, and checks the provenance it records: the
-# fairseq2 vs ONNX Runtime parity on a FLEURS clip, the pinned versions, and the hashes of
-# the files written. Downloads the ~1.3 GB upstream checkpoint, so it runs weekly, on
+# omniASR_CTC_300M_v2 with export_onnx.py (which fails unless the graph matches the
+# fairseq2 model on the FLEURS fixtures and noise probes), and checks the provenance it
+# records: the pinned versions, the hashes of the files written, and the parity results. Downloads the ~1.3 GB upstream checkpoint, so it runs weekly, on
 # demand, and on PRs that change the export path or its pins.
 on:
   workflow_dispatch:
@@ -66,8 +66,11 @@ jobs:
           PY
       - name: Export omniASR_CTC_300M_v2
         run: |
+          # The default --logit-atol (1e-3) rejects this unmodified upstream model: its
+          # English FLEURS clip differs by up to 0.0021 with these pins, with every greedy
+          # token equal. 0.005 is set from that measurement until the default is revisited.
           python export_onnx.py --model omniASR_CTC_300M_v2 --output export/model.onnx \
-            --validation-audio tests/fixtures/fleurs/en_us_10233995782544396174.flac
+            --logit-atol 0.005
       - name: Check the recorded provenance
         run: |
           python - <<'PY'
@@ -87,11 +90,12 @@ jobs:
               (out / "tokenizer.model").read_bytes()).hexdigest()
           for name, entry in record["files"].items():
               assert hashlib.sha256((out / name).read_bytes()).hexdigest() == entry["sha256"]
+          # export_onnx.py only promotes an export that passed its parity check; the
+          # record must carry those results, identical to export_parity.json.
           validation = record["validation"]
-          assert validation["input"]["source"] == "file"
-          assert validation["argmax_agreement"] == 1.0, validation
-          # 0.0021 measured locally with the same pins; allow for a different CPU.
-          assert validation["max_abs_error"] < 1e-2, validation
+          assert validation == json.loads((out / "export_parity.json").read_text())
+          assert len(validation["probes"]) == 5, validation
+          assert all(probe["tokens_equal"] for probe in validation["probes"]), validation
           PY
       - name: The export loads and transcribes with the runtime
         run: |
@@ -105,4 +109,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: export-provenance
-          path: export/provenance.json
+          path: |
+            export/provenance.json
+            export/export_parity.json

@@ -136,69 +136,6 @@ def test_write_adds_format_and_timestamp(tmp_path):
     assert [p.name for p in tmp_path.iterdir()] == ["provenance.json"]
 
 
-def test_default_validation_input_is_deterministic():
-    first, source = export_onnx.validation_input()
-    second, _ = export_onnx.validation_input()
-    assert first.shape == (1, export_onnx.VALIDATION_SAMPLES)
-    assert first.dtype == np.float32
-    np.testing.assert_array_equal(first, second)
-    assert source == {
-        "source": "seeded noise",
-        "seed": export_onnx.VALIDATION_SEED,
-        "samples": export_onnx.VALIDATION_SAMPLES,
-    }
-
-
-def test_validation_audio_file_is_identified_by_hash(tmp_path):
-    soundfile = pytest.importorskip("soundfile")
-    path = tmp_path / "clip.wav"
-    soundfile.write(path, np.zeros(16000, np.float32), 16000)
-
-    audio, source = export_onnx.validation_input(path)
-
-    assert audio.shape == (1, 16000)
-    assert source == {
-        "source": "file",
-        "name": "clip.wav",
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        "samples": 16000,
-    }
-
-
-def test_compare_logits_reports_error_and_greedy_agreement():
-    reference = np.zeros((1, 4, 3), np.float32)
-    reference[0, :, 0] = 1.0
-    actual = reference.copy()
-    actual[0, 0, 0] += 0.25
-    actual[0, 3, 2] = 2.0
-
-    result = export_onnx.compare_logits(reference, actual)
-
-    assert result["frames"] == 4
-    assert result["vocabulary_size"] == 3
-    assert result["max_abs_error"] == pytest.approx(2.0)
-    assert result["mean_abs_error"] == pytest.approx(2.25 / 12)
-    assert result["argmax_agreement"] == pytest.approx(0.75)
-
-
-def test_compare_logits_rejects_shape_mismatch_and_non_finite_output():
-    reference = np.zeros((1, 4, 3), np.float32)
-    with pytest.raises(ValueError, match="shape"):
-        export_onnx.compare_logits(reference, np.zeros((1, 5, 3), np.float32))
-    broken = reference.copy()
-    broken[0, 1, 1] = np.nan
-    with pytest.raises(ValueError, match="Non-finite"):
-        export_onnx.compare_logits(reference, broken)
-
-
-def test_validation_audio_option_is_parsed(tmp_path):
-    args = export_onnx.parse_args(
-        ["--output", str(tmp_path / "model.onnx"), "--validation-audio", "clip.wav"]
-    )
-    assert args.validation_audio == Path("clip.wav")
-    assert export_onnx.parse_args(["--output", "model.onnx"]).validation_audio is None
-
-
 def _export_dir(tmp_path):
     out = tmp_path / "export"
     out.mkdir()
@@ -213,12 +150,12 @@ def test_provenance_records_hashes_environment_and_validation(tmp_path):
     args = SimpleNamespace(
         model="omniASR_CTC_300M_v2", checkpoint=None, output=out / "model.onnx"
     )
-    validation = {"max_abs_error": 1e-4, "argmax_agreement": 1.0}
+    validation = {"rtol": 1e-4, "atol": 1e-3, "probes": [{"input": "noise_400"}]}
 
     record = export_onnx.build_provenance(
         args,
         weights_sha256="ab" * 32,
-        tokenizer_path=out / "tokenizer.model",
+        model_path=out / "model.onnx",
         files=[out / "model.onnx", out / "model.onnx.data"],
         validation=validation,
     )
@@ -258,7 +195,7 @@ def test_provenance_hashes_a_finetuned_checkpoint(tmp_path):
     record = export_onnx.build_provenance(
         args,
         weights_sha256="cd" * 32,
-        tokenizer_path=out / "tokenizer.model",
+        model_path=out / "model.onnx",
         files=[out / "model.onnx"],
         validation={},
     )
@@ -268,6 +205,43 @@ def test_provenance_hashes_a_finetuned_checkpoint(tmp_path):
         "sha256": hashlib.sha256(b"fine-tuned").hexdigest(),
     }
     assert record["tokenizer"]["family"] == "v1"
+
+
+def _build(model_path, tokenizer_path):
+    model_path.write_bytes(b"new graph")
+    tokenizer_path.write_bytes(b"new tokenizer")
+
+
+def test_staged_export_promotes_provenance_describing_the_staged_files(tmp_path):
+    output = tmp_path / "export" / "model.onnx"
+    seen = []
+
+    def describe(model_path, report):
+        seen.append((model_path.parent != output.parent, report))
+        return {"files": {"model.onnx": provenance.file_sha256(model_path)}}
+
+    export_onnx.staged_export(output, _build, lambda _: {"probes": []}, describe)
+
+    assert seen == [(True, {"probes": []})]
+    record = json.loads((output.parent / "provenance.json").read_text())
+    assert record["files"] == {"model.onnx": hashlib.sha256(b"new graph").hexdigest()}
+    assert sorted(p.name for p in output.parent.iterdir()) == sorted(
+        ["model.onnx", "tokenizer.model", export_onnx.PARITY_REPORT, "provenance.json"]
+    )
+
+
+def test_failed_validation_writes_no_provenance(tmp_path):
+    output = tmp_path / "model.onnx"
+    described = []
+
+    def validate(_):
+        raise ValueError("noise_400: logits differ")
+
+    with pytest.raises(ValueError):
+        export_onnx.staged_export(output, _build, validate, lambda *a: described.append(a))
+
+    assert described == []
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_export_constraints_pin_every_export_package():
