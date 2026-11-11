@@ -205,6 +205,16 @@ model = OmniASR("omniasr_fp16.engine", "omniASR_tokenizer_written_v2.model", bac
 <details>
 <summary>Requires a separate environment with PyTorch, fairseq2 and omnilingual-asr (not CTC runtime dependencies)</summary>
 
+The export environment is pinned in [`constraints/export.txt`](constraints/export.txt) (PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, ONNX Runtime 1.23.2 and every transitive dependency). The [export-environment workflow](.github/workflows/export-environment.yml) installs exactly that set on Linux x86_64 with Python 3.11 and CPU PyTorch, exports `omniASR_CTC_300M_v2`, and checks the result. kenlm builds from source, so a C++ compiler is needed:
+
+```bash
+python -m venv .venv-export && . .venv-export/bin/activate
+python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+  -c constraints/export.txt -e ".[onnx]" torch torchaudio fairseq2 omnilingual-asr onnx
+```
+
+Each export writes `provenance.json` beside the graph: the exporter's git commit (and whether the checkout had uncommitted changes), the Python version, platform and export package versions (with the VCS commit of any package installed from a git checkout, such as an unreleased omnilingual-asr), the model card, the checkpoint's sha256 (for a directory, over its files and names), a format-independent sha256 of the loaded weights (which identifies official checkpoints too), the tokenizer's URL and sha256, the sha256 and size of the graph and its external-data files, and a parity check: the final graph run on ONNX Runtime CPU against the fairseq2 model, with the maximum and mean absolute logit error and the fraction of frames whose greedy token agrees. The check uses five seconds of seeded noise, or a clip given with `--validation-audio`. The exporter records the result rather than enforcing a tolerance; review it before publishing. A pinned-environment export of `omniASR_CTC_300M_v2` checked on the FLEURS English fixture had a maximum absolute logit error of 0.0021 (mean 2.2e-5) and agreed on every frame's greedy token. `tools/publish_hub.py` uploads `provenance.json` with the bundle when it is present; it is not listed in `config.json`, and the runtime neither downloads nor checks it.
+
 ```bash
 # Export fine-tuned weights using their matching base architecture.
 python export_onnx.py \
@@ -260,7 +270,7 @@ python tools/publish_hub.py \
 
 Without `--upload`, this prepares and validates the bundle as a dry run. The publisher discovers ONNX external-data files, includes their sizes and SHA-256 digests in `config.json`, and uploads every required asset. `OmniASR.from_pretrained()` downloads and verifies all files declared by this manifest, so the same API works for large models once their repositories are published.
 
-Tested with PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, and TensorRT 10.16.1.11 (CUDA 12). The current default TensorRT profile is batch one, 400/80,000/480,000 MIN/OPT/MAX samples with TF32 disabled; the performance figures above were measured with the earlier 16,000/80,000/480,000 profile. Engines are built for the local hardware/software stack and portability is not validated. `build_tensorrt.py` and `OmniASR.from_pretrained(..., backend="tensorrt")` call the same underlying `fast_omniasr.tensorrt_builder.build_engine`, so there's one build recipe, not two.
+Tested with PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0 (the pinned export environment above), and TensorRT 10.16.1.11 (CUDA 12). The current default TensorRT profile is batch one, 400/80,000/480,000 MIN/OPT/MAX samples with TF32 disabled; the performance figures above were measured with the earlier 16,000/80,000/480,000 profile. Engines are built for the local hardware/software stack and portability is not validated. `build_tensorrt.py` and `OmniASR.from_pretrained(..., backend="tensorrt")` call the same underlying `fast_omniasr.tensorrt_builder.build_engine`, so there's one build recipe, not two.
 
 ONNX FP32 is the reference runtime; TensorRT FP32, FP16 and mixed are explicit, separate engines (not fallback-interchangeable), each gated per language against the FP32 baselines with `tools/fleurs_eval.py --backend tensorrt`.
 </details>
