@@ -40,6 +40,9 @@ import time
 import unicodedata
 from pathlib import Path
 
+import numpy as np
+
+from fast_omniasr.decoder import greedy_token_ids
 from fast_omniasr.llm.runtime import STOP_REASONS as LLM_STOP_REASONS
 
 _PUNCT = re.compile(r"[^\w\s]|_")
@@ -88,6 +91,20 @@ def error_rates(references, hypotheses):
         "empty_reference_nonempty_hypotheses": sum(bool(h) for h in silent),
         "empty_reference_inserted_words": sum(len(h.split()) for h in silent),
     }
+
+
+def tokens_outside_near_ties(logits, reference, min_margin, blank_id=0):
+    """Greedy CTC token ids of `logits` ([1, frames, vocabulary]), with every frame where
+    `reference` is a near-tie (its top two logits less than `min_margin` apart) decided as
+    `reference` decides it. Near-ties can flip under any precision or kernel change without
+    anything being wrong; comparing this with the reference's own token ids checks every
+    decisive frame and nothing else."""
+    logits, reference = np.asarray(logits), np.asarray(reference)
+    if logits.shape != reference.shape:
+        raise ValueError(f"logits shaped {logits.shape} but reference {reference.shape}")
+    top_two = np.sort(reference, axis=-1)[..., -2:]
+    near_tie = top_two[..., 1] - top_two[..., 0] < min_margin
+    return greedy_token_ids(np.where(near_tie[..., None], reference, logits), blank_id)
 
 
 def stop_reason_summary(ids, reasons):
