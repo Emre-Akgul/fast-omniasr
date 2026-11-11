@@ -1,4 +1,4 @@
-"""Batch-one 16 kHz preprocessing matching the reference waveform normalization."""
+"""16 kHz preprocessing matching the reference waveform normalization."""
 import math
 import numbers
 import operator
@@ -99,6 +99,18 @@ def prepare_audio(waveform: np.ndarray, sample_rate: int = SAMPLE_RATE, *,
 def load_audio(path: str | Path, *, convert_audio: bool = False) -> np.ndarray:
     audio, sample_rate = sf.read(path, dtype="float32")
     return prepare_audio(audio, sample_rate, convert_audio=convert_audio)
+
+
+def pad_batch(waveforms) -> tuple[np.ndarray, np.ndarray]:
+    """Stack normalized float32 [1, samples] clips (as `prepare_audio` returns them) into one
+    zero-padded float32 [batch, samples] array, with each clip's length as int64 [batch]."""
+    if not waveforms:
+        raise ValueError("Expected at least one waveform")
+    lengths = np.array([waveform.shape[-1] for waveform in waveforms], dtype=np.int64)
+    batch = np.zeros((len(waveforms), int(lengths.max())), dtype=np.float32)
+    for row, waveform in enumerate(waveforms):
+        batch[row, :lengths[row]] = np.asarray(waveform, dtype=np.float32).reshape(-1)
+    return batch, lengths
 
 
 class AudioChunk(NamedTuple):
