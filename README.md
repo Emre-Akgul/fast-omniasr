@@ -205,12 +205,12 @@ model = OmniASR("omniasr_fp16.engine", "omniASR_tokenizer_written_v2.model", bac
 <details>
 <summary>Requires a separate environment with PyTorch, fairseq2 and omnilingual-asr (not CTC runtime dependencies)</summary>
 
-The export environment is pinned in [`constraints/export.txt`](constraints/export.txt) (PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, ONNX Runtime 1.23.2 and every transitive dependency). The [export-environment workflow](.github/workflows/export-environment.yml) installs exactly that set on Linux x86_64 with Python 3.11 and CPU PyTorch, exports `omniASR_CTC_300M_v2`, and checks the result. kenlm builds from source, so a C++ compiler is needed:
+The export environment is pinned in [`constraints/export.txt`](constraints/export.txt) (PyTorch 2.8.0, fairseq2 0.6, omnilingual-asr 0.2.0, ONNX 1.17.0, ONNX Runtime 1.23.2 and every transitive dependency). The [export-environment workflow](.github/workflows/export-environment.yml) installs exactly that set on Linux x86_64 with Python 3.11, exports `omniASR_CTC_300M_v2`, and checks the result. The PyPI fairseq2n wheel requires PyPI's default CUDA 12.8 build of PyTorch 2.8.0 and refuses a CPU-only build, although the export runs on the CPU. kenlm builds from source, so a C++ compiler is needed:
 
 ```bash
 python -m venv .venv-export && . .venv-export/bin/activate
-python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu \
-  -c constraints/export.txt -e ".[onnx]" torch torchaudio fairseq2 omnilingual-asr onnx
+python -m pip install -c constraints/export.txt -e ".[onnx]" \
+  torch torchaudio fairseq2 omnilingual-asr onnx
 ```
 
 Each export writes `provenance.json` beside the graph: the exporter's git commit (and whether the checkout had uncommitted changes), the Python version, platform and export package versions (with the VCS commit of any package installed from a git checkout, such as an unreleased omnilingual-asr), the model card, the checkpoint's sha256 (for a directory, over its files and names), a format-independent sha256 of the loaded weights (which identifies official checkpoints too), the tokenizer's URL and sha256, the sha256 and size of the graph and its external-data files, and the parity results that are also written to `export_parity.json` (see below). It is written only for an export that passed validation, and is moved into place with it. `tools/publish_hub.py` uploads `provenance.json` with the bundle when it is present; it is not listed in `config.json`, and the runtime neither downloads nor checks it.

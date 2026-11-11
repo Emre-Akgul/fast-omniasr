@@ -1,14 +1,15 @@
 # Pinned export environment for export_onnx.py (and the LLM export scripts), separate from
 # the runtime. The export-environment workflow installs exactly this set on Linux x86_64,
-# Python 3.11, with CPU PyTorch wheels, and exports and validates omniASR_CTC_300M_v2 with
-# it. Install with:
+# Python 3.11, and exports and validates omniASR_CTC_300M_v2 with it. Install with:
 #
-#   python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu \
-#     -c constraints/export.txt -e ".[onnx]" torch torchaudio fairseq2 omnilingual-asr onnx
+#   python -m pip install -c constraints/export.txt -e ".[onnx]" \
+#     torch torchaudio fairseq2 omnilingual-asr onnx
 #
-# torch==2.8.0 also matches the +cpu and +cu128 wheels. fairseq2n 0.6 requires exactly
-# torch 2.8.0, and kenlm (an omnilingual-asr dependency) builds from source, so a C++
-# compiler is needed. Exported graphs record the versions actually used in provenance.json.
+# The PyPI fairseq2n 0.6 wheel requires the CUDA 12.8 build of torch 2.8.0 (PyPI's default
+# on Linux; torch pins its nvidia-* and triton dependencies exactly) and refuses a CPU-only
+# build, although the export itself runs on the CPU. kenlm (an omnilingual-asr dependency)
+# builds from source, so a C++ compiler is needed. Exported graphs record the versions
+# actually used in provenance.json.
 
 # Export stack
 omnilingual-asr==0.2.0

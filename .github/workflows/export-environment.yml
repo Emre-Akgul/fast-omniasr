@@ -43,8 +43,7 @@ jobs:
       - name: Install the pinned export environment
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu \
-            -c constraints/export.txt -e ".[onnx]" \
+          python -m pip install --no-cache-dir -c constraints/export.txt -e ".[onnx]" \
             torch torchaudio fairseq2 omnilingual-asr onnx
           python -m pip freeze
       - name: Every pinned export package is installed at its pinned version
