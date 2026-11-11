@@ -65,6 +65,17 @@ def check_threads(threads) -> int:
     return value
 
 
+def check_batch_size(batch_size) -> int:
+    """A positive integer of any integer type (int, numpy integers); bools rejected."""
+    try:
+        value = None if isinstance(batch_size, bool) else operator.index(batch_size)
+    except TypeError:
+        value = None
+    if value is None or value < 1:
+        raise ValueError(f"batch_size must be a positive integer, got {batch_size!r}")
+    return value
+
+
 def resolve_threads(threads) -> int:
     """`None` means the default thread count; anything else must pass check_threads."""
     return DEFAULT_THREADS if threads is None else check_threads(threads)

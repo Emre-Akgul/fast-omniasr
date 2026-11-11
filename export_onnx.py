@@ -73,6 +73,14 @@ def parse_args(argv=None):
             "FLEURS fixtures). Noise probes of 400 and 480,000 samples always run too."
         ),
     )
+    parser.add_argument(
+        "--batch",
+        action="store_true",
+        help=(
+            "Export a batch graph: padded audio [batch, samples] plus audio_lengths [batch], "
+            "returning logits [batch, frames, vocabulary] and logit_lengths [batch]"
+        ),
+    )
     parser.add_argument("--logit-atol", type=float, default=LOGIT_ATOL)
     parser.add_argument("--logit-rtol", type=float, default=LOGIT_RTOL)
     args = parser.parse_args(argv)
@@ -187,22 +195,129 @@ def compare_logits(expected, actual, *, rtol=LOGIT_RTOL, atol=LOGIT_ATOL,
     }
 
 
-def run_onnx(path, inputs, threads=4):
+def _session(path, threads):
     import onnxruntime as ort
 
     options = ort.SessionOptions()
     options.intra_op_num_threads = threads
-    session = ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"])
-    return {name: session.run(None, {"audio": audio})[0] for name, audio in inputs.items()}
+    return ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"])
+
+
+def _feeds(session, audio, lengths):
+    """Batch graphs also take each row's length; batch-one graphs take the audio alone."""
+    names = [value.name for value in session.get_inputs()]
+    if "audio_lengths" in names:
+        return {"audio": audio, "audio_lengths": np.asarray(lengths, dtype=np.int64)}
+    return {"audio": audio}
+
+
+def run_onnx(path, inputs, threads=4):
+    session = _session(path, threads)
+    return {name: session.run(["logits"], _feeds(session, audio, [audio.shape[1]]))[0]
+            for name, audio in inputs.items()}
+
+
+def run_onnx_batch(path, inputs, threads=4):
+    """Run every input in one zero-padded batch; each row's logits cut to its frame count."""
+    from fast_omniasr.audio import pad_batch
+
+    session = _session(path, threads)
+    audio, lengths = pad_batch(list(inputs.values()))
+    logits, frames = session.run(["logits", "logit_lengths"], _feeds(session, audio, lengths))
+    return {name: logits[row:row + 1, :frames[row]] for row, name in enumerate(inputs)}
 
 
 def validate_export(path, references, inputs, *, rtol=LOGIT_RTOL, atol=LOGIT_ATOL,
-                    run=run_onnx):
-    """Run the exported graph on every input and compare with the source logits."""
+                    run=run_onnx, run_batch=None):
+    """Run the exported graph on every input and compare with the source logits. With
+    `run_batch` (batch graphs), every input is also run in one padded batch, and each
+    row must match the source's logits for that input alone."""
     outputs = run(path, inputs)
     probes = [compare_logits(references[name], outputs[name], rtol=rtol, atol=atol, label=name)
               for name in inputs]
-    return {"rtol": rtol, "atol": atol, "tie_margin": TIE_MARGIN, "probes": probes}
+    report = {"rtol": rtol, "atol": atol, "tie_margin": TIE_MARGIN, "probes": probes}
+    if run_batch is not None:
+        batched = run_batch(path, inputs)
+        label = f"in a padded batch of {len(inputs)}"
+        report["batch_probes"] = [
+            compare_logits(references[name], batched[name], rtol=rtol, atol=atol,
+                           label=f"{name} {label}")
+            for name in inputs
+        ]
+    return report
+
+
+def frame_lengths(lengths, layer_descs):
+    """Frames the convolutional feature extractor makes from `lengths` samples: one per
+    layer stride, after each layer's kernel. Works on ints, numpy arrays and torch
+    tensors (traced into the graph); lengths below the receptive field give <= 0."""
+    for desc in layer_descs:
+        kernel, stride = desc[1], desc[2]
+        lengths = (lengths - kernel) // stride + 1
+    return lengths
+
+
+def batch_forward(model, torch):
+    """Wrap a wav2vec2 CTC model to run a zero-padded batch.
+
+    Takes audio [batch, samples] and each row's valid length, and returns logits
+    [batch, frames, vocabulary] and each row's frame count. A row's valid frames match
+    running that row alone: the feature extractor's convolutions and per-frame
+    normalization never look past a frame's own samples, the padded frames are zeroed
+    before the positional convolution (as the batch-one graph's own zero padding does),
+    and self-attention ignores padded keys. Frames past a row's count hold padding.
+
+    Mutates `model`: each encoder layer's attention is replaced by a masked one and the
+    positional encoder gets a hook, so run the batch-one reference before calling this.
+    """
+    from fairseq2.models.transformer.attention_bias import IdentityBias
+    from fairseq2.models.transformer.sdpa.torch import TorchSDPA
+    from fairseq2.nn import BatchLayout
+    from torch.nn.functional import scaled_dot_product_attention
+
+    frontend = model.encoder_frontend
+    extractor = frontend.feature_extractor
+    if any(isinstance(module, torch.nn.GroupNorm) for module in extractor.modules()):
+        # Group normalization spans the time axis, so padding would change every frame.
+        raise ValueError("Batch export needs a feature extractor with per-frame "
+                         "normalization; this model uses group normalization")
+    if frontend.pos_encoder is None:
+        raise ValueError("Batch export expects a convolutional positional encoder")
+    state = {}
+
+    class KeyPaddingSDPA(torch.nn.Module):
+        """Full self-attention over each row's valid frames only."""
+
+        def forward(self, q, q_layout, k, k_layout, v, bias_cache, *, needs_weights=False):
+            q, k, v = (tensor.transpose(-2, -3) for tensor in (q, k, v))
+            attns = scaled_dot_product_attention(q, k, v, attn_mask=state["keys"])
+            return attns.transpose(-2, -3), None
+
+    for layer in model.encoder.layers:
+        sdpa = layer.self_attn.sdpa
+        if not isinstance(sdpa, TorchSDPA) or not isinstance(sdpa.bias, IdentityBias):
+            raise TypeError(f"Batch export expects unbiased PyTorch attention, got {sdpa}")
+        layer.self_attn.sdpa = KeyPaddingSDPA()
+
+    def zero_padding(module, args):
+        seqs = args[0]
+        valid = torch.arange(seqs.shape[1], device=seqs.device)[None, :] < state["frames"][:, None]
+        state["keys"] = valid[:, None, None, :]  # (N, 1, 1, S_kv), broadcast over heads
+        return (seqs * valid.unsqueeze(-1).to(seqs.dtype), *args[1:])
+
+    frontend.pos_encoder.register_forward_pre_hook(zero_padding)
+
+    class BatchForward(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = model
+
+        def forward(self, audio, audio_lengths):
+            state["frames"] = frame_lengths(audio_lengths, extractor.layer_descs)
+            layout = BatchLayout(audio.shape, seq_lens=None, device=audio.device)
+            return self.model(audio, layout)[0], state["frames"]
+
+    return BatchForward().eval()
 
 
 def promote(staging: Path, output: Path):
@@ -312,10 +427,24 @@ def main():
     def build(model_path, tokenizer_path):
         prepare_tokenizer(args.model, tokenizer_path, model.final_proj.output_dim)
         with torch.no_grad():
-            torch.onnx.export(wrapper, (torch.zeros(1, 80000),), str(model_path),
-                              input_names=["audio"], output_names=["logits"], opset_version=18,
-                              dynamo=False,
-                              dynamic_axes={"audio": {1: "samples"}, "logits": {1: "frames"}})
+            if args.batch:
+                # Two rows of different lengths, so nothing specializes on one length.
+                torch.onnx.export(
+                    batch_forward(model, torch),
+                    (torch.zeros(2, 80000), torch.tensor([80000, 48000])), str(model_path),
+                    input_names=["audio", "audio_lengths"],
+                    output_names=["logits", "logit_lengths"], opset_version=18, dynamo=False,
+                    dynamic_axes={"audio": {0: "batch", 1: "samples"},
+                                  "audio_lengths": {0: "batch"},
+                                  "logits": {0: "batch", 1: "frames"},
+                                  "logit_lengths": {0: "batch"}},
+                )
+            else:
+                torch.onnx.export(wrapper, (torch.zeros(1, 80000),), str(model_path),
+                                  input_names=["audio"], output_names=["logits"],
+                                  opset_version=18, dynamo=False,
+                                  dynamic_axes={"audio": {1: "samples"},
+                                                "logits": {1: "frames"}})
         # Compute the positional convolution's weight norm once in float64 instead of on
         # every call in float32 (see tools/onnx_fold.py).
         from tools.onnx_fold import fold_file
@@ -332,14 +461,15 @@ def main():
         del model, wrapper
         gc.collect()
         return validate_export(model_path, references, inputs,
-                               rtol=args.logit_rtol, atol=args.logit_atol)
+                               rtol=args.logit_rtol, atol=args.logit_atol,
+                               run_batch=run_onnx_batch if args.batch else None)
 
     def describe(model_path, report):
         return build_provenance(args, weights_sha256=weights_sha256, model_path=model_path,
                                 files=graph_files(model_path), validation=report)
 
     report = staged_export(args.output, build, validate, describe)
-    for probe in report["probes"]:
+    for probe in report["probes"] + report.get("batch_probes", []):
         print(json.dumps(probe))
     print(args.output)
     print(args.output.parent / "tokenizer.model")

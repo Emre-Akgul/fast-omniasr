@@ -12,7 +12,13 @@ from .audio import (
     silence_before,
 )
 from .decoder import FRAME_STRIDE, FRAME_WINDOW, greedy_token_ids, greedy_tokens
-from .options import check_device, check_device_index, check_flag, resolve_threads
+from .options import (
+    check_batch_size,
+    check_device,
+    check_device_index,
+    check_flag,
+    resolve_threads,
+)
 from .tensorrt_builder import (
     DEFAULT_MAX_SAMPLES,
     DEFAULT_MIN_SAMPLES,
@@ -21,6 +27,8 @@ from .tensorrt_builder import (
     check_build_options,
 )
 from .tokenizer import Tokenizer, check_compatible
+
+DEFAULT_BATCH_SIZE = 4
 
 
 @dataclass(frozen=True)
@@ -140,7 +148,32 @@ class OmniASR:
     def _transcribe(self, audio: np.ndarray, word_timestamps: bool = False) -> Transcription:
         if self.closed:
             raise RuntimeError("This OmniASR model is closed")
-        logits = self.backend.infer(audio)
+        return self._decode(audio, self.backend.infer(audio), word_timestamps)
+
+    def _transcribe_many(self, audios: list[np.ndarray], word_timestamps: bool,
+                         batch_size: int) -> list[Transcription]:
+        """Transcribe normalized clips in batches of up to `batch_size`, returned in order.
+        For batches, clips are sorted by length first, so each batch holds clips of similar length and
+        little padding. Backends without infer_batch() run the clips one by one."""
+        if self.closed:
+            raise RuntimeError("This OmniASR model is closed")
+        infer_batch = getattr(self.backend, "infer_batch", None)
+        order = list(range(len(audios)))
+        if batch_size > 1:
+            order.sort(key=lambda index: audios[index].shape[-1], reverse=True)
+        results = [None] * len(audios)
+        for start in range(0, len(order), batch_size):
+            group = order[start:start + batch_size]
+            if infer_batch is None or len(group) == 1:
+                logits = [self.backend.infer(audios[index]) for index in group]
+            else:
+                logits = infer_batch([audios[index] for index in group])
+            for index, row in zip(group, logits, strict=True):
+                results[index] = self._decode(audios[index], row, word_timestamps)
+        return results
+
+    def _decode(self, audio: np.ndarray, logits: np.ndarray,
+                word_timestamps: bool) -> Transcription:
         if not word_timestamps:
             ids = greedy_token_ids(logits)
             return Transcription(self.tokenizer.decode(ids), tuple(ids), tuple(logits.shape))
@@ -175,10 +208,33 @@ class OmniASR:
         return self._transcribe(prepare_audio(waveform, sample_rate,
                                               convert_audio=convert_audio), word_timestamps)
 
+    def transcribe_batch(self, audios, sample_rate: int = 16000, *,
+                         batch_size: int = DEFAULT_BATCH_SIZE, convert_audio: bool = False,
+                         word_timestamps: bool = False) -> list[Transcription]:
+        """Transcribe a list of clips (file paths or waveforms at `sample_rate`), returning
+        one Transcription per clip in the same order. Clips are sorted by length and run in
+        zero-padded batches of up to `batch_size`; each result matches transcribing that
+        clip alone. True batching needs a batch graph (`export_onnx.py --batch`) on the ONNX
+        backend; other models run the clips one at a time. Memory grows with `batch_size`
+        times the longest clip in a batch. Options are as for transcribe()."""
+        if self.closed:
+            raise RuntimeError("This OmniASR model is closed")
+        if isinstance(audios, (str, Path, np.ndarray)):
+            raise TypeError("transcribe_batch takes a list of file paths or waveforms; use "
+                            "transcribe() or transcribe_numpy() for a single clip")
+        batch_size = check_batch_size(batch_size)
+        check_flag("word_timestamps", word_timestamps)
+        clips = [load_audio(audio, convert_audio=convert_audio)
+                 if isinstance(audio, (str, Path))
+                 else prepare_audio(audio, sample_rate, convert_audio=convert_audio)
+                 for audio in audios]
+        return self._transcribe_many(clips, word_timestamps, batch_size)
+
     def transcribe_long(self, audio: str | Path | np.ndarray, sample_rate: int = 16000, *,
                         chunk_length: float = DEFAULT_CHUNK_LENGTH,
                         convert_audio: bool = False, vad_filter: bool = False,
-                        vad_options=None, word_timestamps: bool = False) -> Transcription:
+                        vad_options=None, word_timestamps: bool = False,
+                        batch_size: int = 1) -> Transcription:
         """Transcribe a recording of any length by cutting it every `chunk_length` seconds
         and joining the text in order. Chunks don't overlap and nothing is reconciled across
         a cut, so a word on a boundary can be damaged; `.chunks` has each chunk's times and
@@ -191,15 +247,21 @@ class OmniASR:
         speech, the result has empty text and no chunks.
 
         `word_timestamps=True` also sets `.words` and `.token_times`, as times in the original
-        recording, on the result and on each chunk; see docs/timestamps.md."""
+        recording, on the result and on each chunk; see docs/timestamps.md.
+
+        `batch_size` > 1 runs up to that many chunks at once, as transcribe_batch() does;
+        the result is the same."""
         if self.closed:
             raise RuntimeError("This OmniASR model is closed")
         check_flag("word_timestamps", word_timestamps)
-        chunks = [(chunk.start, chunk.end,
-                   _to_recording(self._transcribe(chunk.audio, word_timestamps), chunk.spans))
-                  for chunk in prepare_chunks(audio, sample_rate, chunk_length=chunk_length,
-                                              convert_audio=convert_audio,
-                                              vad_filter=vad_filter, vad_options=vad_options)]
+        batch_size = check_batch_size(batch_size)
+        pieces = prepare_chunks(audio, sample_rate, chunk_length=chunk_length,
+                                convert_audio=convert_audio, vad_filter=vad_filter,
+                                vad_options=vad_options)
+        results = self._transcribe_many([chunk.audio for chunk in pieces], word_timestamps,
+                                        batch_size)
+        chunks = [(chunk.start, chunk.end, _to_recording(result, chunk.spans))
+                  for chunk, result in zip(pieces, results, strict=True)]
         return Transcription(
             " ".join(result.text for *_, result in chunks if result.text),
             tuple(token for *_, result in chunks for token in result.token_ids),
