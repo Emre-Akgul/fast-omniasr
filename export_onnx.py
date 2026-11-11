@@ -1,7 +1,16 @@
 """One-time direct fairseq2 export; these dependencies are not runtime requirements."""
 import argparse
+import gc
+import json
+import shutil
+import sys
+import tempfile
 from pathlib import Path
 from urllib.request import urlretrieve
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 CTC_MODEL_CARDS = (
     "omniASR_CTC_300M",
@@ -13,6 +22,16 @@ CTC_MODEL_CARDS = (
     "omniASR_CTC_3B_v2",
     "omniASR_CTC_7B_v2",
 )
+
+# Speech clips give the token check something to compare; the noise probes cover the
+# shortest input the feature extractor accepts and the default TensorRT profile maximum.
+VALIDATION_AUDIO = tuple(sorted((Path(__file__).parent / "tests/fixtures/fleurs").glob("*.flac")))
+VALIDATION_NOISE_SAMPLES = (400, 480000)
+LOGIT_RTOL = 1e-4
+LOGIT_ATOL = 1e-3
+# Frames whose top two source logits are this close may flip under float32 reordering.
+TIE_MARGIN = 1e-3
+PARITY_REPORT = "export_parity.json"
 
 TOKENIZER_URLS = {
     "v1": "https://dl.fbaipublicfiles.com/mms/omniASR_tokenizer.model",
@@ -41,7 +60,20 @@ def parse_args(argv=None):
         ),
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--validation-audio",
+        type=Path,
+        action="append",
+        help=(
+            "16 kHz mono clip for the parity check (repeatable; default: the committed "
+            "FLEURS fixtures). Noise probes of 400 and 480,000 samples always run too."
+        ),
+    )
+    parser.add_argument("--logit-atol", type=float, default=LOGIT_ATOL)
+    parser.add_argument("--logit-rtol", type=float, default=LOGIT_RTOL)
     args = parser.parse_args(argv)
+    if args.logit_atol < 0 or args.logit_rtol < 0:
+        parser.error("--logit-atol and --logit-rtol must not be negative")
     if args.checkpoint is not None and args.model is None:
         parser.error("--model is required when --checkpoint is used")
     if args.model is None:
@@ -100,6 +132,102 @@ def prepare_tokenizer(
     return destination
 
 
+def validation_inputs(audio_paths=VALIDATION_AUDIO, noise_samples=VALIDATION_NOISE_SAMPLES):
+    """Named [1, samples] float32 inputs, normalized as the runtime normalizes audio."""
+    from fast_omniasr.audio import load_audio, prepare_audio
+
+    inputs = {Path(path).name: load_audio(path) for path in audio_paths}
+    rng = np.random.default_rng(0)
+    for samples in noise_samples:
+        inputs[f"noise_{samples}"] = prepare_audio(rng.standard_normal(samples, np.float32))
+    if not inputs:
+        raise ValueError("No validation inputs")
+    return inputs
+
+
+def compare_logits(expected, actual, *, rtol=LOGIT_RTOL, atol=LOGIT_ATOL,
+                   tie_margin=TIE_MARGIN, label="logits"):
+    """Check exported logits against the source model's; raise ValueError on a mismatch.
+
+    Logits must match elementwise within rtol/atol. Greedy CTC tokens must match too: a
+    frame's argmax may only differ where the source's top two logits are within
+    `tie_margin`, since float32 reordering can legitimately flip those.
+    """
+    from fast_omniasr.decoder import greedy_token_ids
+
+    expected = np.asarray(expected, dtype=np.float32)
+    actual = np.asarray(actual, dtype=np.float32)
+    if actual.shape != expected.shape:
+        raise ValueError(f"{label}: exported shape {actual.shape} != source {expected.shape}")
+    if not np.isfinite(actual).all():
+        raise ValueError(f"{label}: exported logits contain NaN or infinity")
+    difference = np.abs(actual.astype(np.float64) - expected)
+    if not np.allclose(actual, expected, rtol=rtol, atol=atol):
+        raise ValueError(f"{label}: logits differ by up to {difference.max():.6g} "
+                         f"(rtol={rtol}, atol={atol})")
+    expected_ids = expected.argmax(-1)
+    flipped = expected_ids != actual.argmax(-1)
+    top_two = np.sort(expected, axis=-1)[..., -2:]
+    near_tie = (top_two[..., 1] - top_two[..., 0]) <= tie_margin
+    if (flipped & ~near_tie).any():
+        frame = int(np.flatnonzero((flipped & ~near_tie).reshape(-1))[0])
+        raise ValueError(f"{label}: greedy token differs at frame {frame}")
+    tokens = greedy_token_ids(expected)
+    return {
+        "input": label,
+        "frames": int(expected.shape[1]),
+        "tokens": len(tokens),
+        "tokens_equal": tokens == greedy_token_ids(actual),
+        "near_tie_flips": int(flipped.sum()),
+        "max_abs_error": float(difference.max()),
+    }
+
+
+def run_onnx(path, inputs, threads=4):
+    import onnxruntime as ort
+
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = threads
+    session = ort.InferenceSession(str(path), options, providers=["CPUExecutionProvider"])
+    return {name: session.run(None, {"audio": audio})[0] for name, audio in inputs.items()}
+
+
+def validate_export(path, references, inputs, *, rtol=LOGIT_RTOL, atol=LOGIT_ATOL,
+                    run=run_onnx):
+    """Run the exported graph on every input and compare with the source logits."""
+    outputs = run(path, inputs)
+    probes = [compare_logits(references[name], outputs[name], rtol=rtol, atol=atol, label=name)
+              for name in inputs]
+    return {"rtol": rtol, "atol": atol, "tie_margin": TIE_MARGIN, "probes": probes}
+
+
+def promote(staging: Path, output: Path):
+    """Move a validated export into place, the graph last so it never appears half-written."""
+    for path in sorted(staging.iterdir()):
+        if path.name != output.name:
+            path.replace(output.parent / path.name)
+    (staging / output.name).replace(output)
+
+
+def staged_export(output: Path, build, validate):
+    """Build into a staging directory beside `output` and promote it only once validated.
+
+    `build(model_path, tokenizer_path)` writes the graph (and any external data next to
+    it) and the tokenizer; `validate(model_path)` returns a report or raises. On failure
+    nothing at `output` changes and the staging directory is removed.
+    """
+    output.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{output.name}.staging-", dir=output.parent))
+    try:
+        build(staging / output.name, staging / "tokenizer.model")
+        report = validate(staging / output.name)
+        (staging / PARITY_REPORT).write_text(json.dumps(report, indent=2) + "\n")
+        promote(staging, output)
+        return report
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
 def main():
     args = parse_args()
     import omnilingual_asr  # noqa: F401 -- Registers model cards via the fairseq2 extension.
@@ -120,28 +248,43 @@ def main():
     torch.set_num_threads(4)
     model = load_source_model(args, torch, load_model, get_wav2vec2_asr_model_hub)
     wrapper = Forward(model).eval()
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    tokenizer_path = prepare_tokenizer(
-        args.model,
-        args.output.parent / "tokenizer.model",
-        model.final_proj.output_dim,
-    )
+    inputs = validation_inputs(args.validation_audio or VALIDATION_AUDIO)
+    # Source logits are computed up front so the PyTorch model can be freed before ONNX
+    # Runtime loads the export; large models do not fit in memory twice.
     with torch.no_grad():
-        torch.onnx.export(wrapper, (torch.zeros(1, 80000),), str(args.output),
-                          input_names=["audio"], output_names=["logits"], opset_version=18,
-                          dynamo=False, dynamic_axes={"audio": {1: "samples"}, "logits": {1: "frames"}})
-    # Compute the positional convolution's weight norm once in float64 instead of on every
-    # call in float32 (see tools/onnx_fold.py).
-    from tools.onnx_fold import fold_file
+        references = {name: wrapper(torch.from_numpy(audio)).numpy()
+                      for name, audio in inputs.items()}
 
-    if fold_file(args.output) != 1:
-        raise ValueError("Expected exactly one weight-normalized positional convolution")
-    # Tie the graph to its tokenizer; OmniASR rejects a different one on load.
-    from tools.stamp_tokenizer import stamp
+    def build(model_path, tokenizer_path):
+        prepare_tokenizer(args.model, tokenizer_path, model.final_proj.output_dim)
+        with torch.no_grad():
+            torch.onnx.export(wrapper, (torch.zeros(1, 80000),), str(model_path),
+                              input_names=["audio"], output_names=["logits"], opset_version=18,
+                              dynamo=False,
+                              dynamic_axes={"audio": {1: "samples"}, "logits": {1: "frames"}})
+        # Compute the positional convolution's weight norm once in float64 instead of on
+        # every call in float32 (see tools/onnx_fold.py).
+        from tools.onnx_fold import fold_file
 
-    stamp(args.output, tokenizer_path)
+        if fold_file(model_path) != 1:
+            raise ValueError("Expected exactly one weight-normalized positional convolution")
+        # Tie the graph to its tokenizer; OmniASR rejects a different one on load.
+        from tools.stamp_tokenizer import stamp
+
+        stamp(model_path, tokenizer_path)
+
+    def validate(model_path):
+        nonlocal model, wrapper
+        del model, wrapper
+        gc.collect()
+        return validate_export(model_path, references, inputs,
+                               rtol=args.logit_rtol, atol=args.logit_atol)
+
+    report = staged_export(args.output, build, validate)
+    for probe in report["probes"]:
+        print(json.dumps(probe))
     print(args.output)
-    print(tokenizer_path)
+    print(args.output.parent / "tokenizer.model")
 
 
 if __name__ == "__main__":
