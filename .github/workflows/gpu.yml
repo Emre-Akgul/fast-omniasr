@@ -1,0 +1,58 @@
+name: CUDA and TensorRT release validation
+# Runs the pinned published CTC model on a GPU through ONNX Runtime CUDA (fp32, fp16, bf16)
+# and TensorRT (fp32, fp16, mixed): loading, dynamic lengths, precision behavior against the
+# FLEURS fixtures, repeated calls and cleanup (tests/integration/test_real_models_gpu.py),
+# then the TensorRT FLEURS, edge-case and precision checks (test_tensorrt_fleurs.py).
+#
+# GitHub has no hosted GPU runner, so this needs a self-hosted runner registered with the
+# `gpu` label: Linux x64, an Ampere or newer NVIDIA GPU (bf16) with at least 6 GB of
+# memory, a CUDA 12 capable driver, Python >= 3.10 on PATH as python3, and ~10 GB of disk
+# for the runtimes, the model and the engines (kept in ~/.cache/fast-omniasr between runs).
+# It runs when a release is published and on demand, never on pushes or PRs, so a missing
+# runner can't hold up other work; a release run without one stays queued until it times out.
+on:
+  workflow_dispatch:
+    inputs:
+      tensorrt:
+        description: TensorRT pip requirement (TensorRT 11 refuses precision='mixed')
+        default: tensorrt-cu12>=10,<11
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gpu-release-validation
+  cancel-in-progress: false
+
+jobs:
+  gpu:
+    runs-on: [self-hosted, linux, x64, gpu]
+    timeout-minutes: 120
+    env:
+      OMNIASR_REAL_MODELS: "1"
+      # Fail, rather than skip, when a runtime or GPU counter is missing on the runner.
+      OMNIASR_REQUIRE_GPU: "1"
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      TENSORRT_REQUIREMENT: ${{ inputs.tensorrt || 'tensorrt-cu12>=10,<11' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: GPU
+        run: nvidia-smi
+      - name: Install with ONNX Runtime CUDA and TensorRT in a fresh environment
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install -e ".[dev,cuda,tensorrt,hub,resample]" \
+            "$TENSORRT_REQUIREMENT" pynvml
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: Runtime versions
+        run: >-
+          python -c "import onnxruntime as ort, tensorrt;
+          print('onnxruntime', ort.__version__, ort.get_available_providers());
+          print('tensorrt', tensorrt.__version__)"
+      - name: Loading, dynamic lengths, precision, repeated calls and cleanup
+        run: python -m pytest tests/integration/test_real_models_gpu.py -v -rs
+      - name: TensorRT engines on the FLEURS fixtures and edge cases
+        if: success() || failure()
+        run: python -m pytest tests/integration/test_tensorrt_fleurs.py -v -rs

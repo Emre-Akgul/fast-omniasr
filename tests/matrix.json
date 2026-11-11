@@ -12,9 +12,9 @@
       "command": "OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_cpu.py tests/integration/test_real_models_edge_cases.py && python tools/fleurs_eval.py run --model {family} --gate"
     },
     "gpu": {
-      "when": "manually on a CUDA machine, before merging changes to GPU, precision, TensorRT or export code (no hosted GPU runner)",
-      "runs": "TensorRT engines of the pinned CTC model on the FLEURS fixtures, edge-case clips and gate; ONNX CUDA precision agreement, WER and CER on a dataset you supply (reported, not gated)",
-      "command": "python tools/evaluate_precisions.py --{family} <export> --device cuda --precision fp32 fp16 bf16 --dataset <eval.jsonl>; OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_tensorrt_fleurs.py; python tools/fleurs_eval.py run --model ctc --backend tensorrt --precision mixed --gate"
+      "when": "on each published release and on demand, on a self-hosted GPU runner (CUDA and TensorRT release validation); manually on a CUDA machine before merging changes to GPU, precision, TensorRT or export code",
+      "runs": "the pinned CTC model on every CUDA backend and precision: loading, dynamic lengths, CER ceilings and declared transcripts, repeated calls and cleanup; TensorRT engines of it on the FLEURS fixtures, edge-case clips and gate; ONNX CUDA precision agreement, WER and CER on a dataset you supply (reported, not gated)",
+      "command": "OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_gpu.py tests/integration/test_tensorrt_fleurs.py; python tools/evaluate_precisions.py --{family} <export> --device cuda --precision fp32 fp16 bf16 --dataset <eval.jsonl>; python tools/fleurs_eval.py run --model ctc --backend tensorrt --precision mixed --gate"
     },
     "release": {
       "when": "once per model, when it is exported or republished",
