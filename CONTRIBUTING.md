@@ -48,7 +48,7 @@ Exporting models additionally needs `fairseq2`/`omnilingual-asr` and `onnx`; see
 | LLM unit | `python -m pytest tests/unit/test_llm.py tests/unit/test_llm_cache.py tests/unit/test_llm_onnx.py` | `dev,llm,onnx` extras and the `onnx` package | every push and PR |
 | Real models, CPU | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_cpu.py tests/integration/test_real_models_edge_cases.py` | `dev,onnx,hub,resample`; downloads ~8 GB | `Real-model CPU validation`: weekly, after each published release, on demand, and on PRs that change the paths listed in `real-models.yml` (the ONNX/LLM runtime, hub, audio and evaluation code; not the TensorRT backend) |
 | FLEURS gates | `python tools/fleurs_eval.py run --model ctc --gate` (and `--model llm`) | `dev,onnx,hub` | same workflow (`fleurs-ctc`, `fleurs-llm`) |
-| GPU / TensorRT | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_tensorrt_fleurs.py`, plus `test_tensorrt*.py`/`test_onnx.py` with the `OMNIASR_*` variables below | a CUDA GPU, `cuda`/`tensorrt` | not in CI: run locally for GPU changes |
+| GPU / TensorRT | `OMNIASR_REAL_MODELS=1 python -m pytest tests/integration/test_real_models_gpu.py tests/integration/test_tensorrt_fleurs.py`, plus `test_tensorrt*.py`/`test_onnx.py` with the `OMNIASR_*` variables below | a CUDA GPU, `cuda`/`tensorrt`, `pynvml` | `CUDA and TensorRT release validation` on a self-hosted runner labelled `gpu`: each published release and on demand (see `gpu.yml` for the runner's requirements); run locally for GPU changes |
 
 Which tier covers which model, backend, device and precision is laid out in the
 [test matrix](docs/test-matrix.md) (source: `tests/matrix.json`; regenerate the page with
@@ -73,6 +73,8 @@ unless their inputs are provided:
 - `OMNIASR_REAL_MODELS=1`: download the pinned published models (`OMNIASR_CACHE_DIR` to
   choose the cache; `OMNIASR_CTC_REPO`/`OMNIASR_CTC_REVISION` and
   `OMNIASR_LLM_REPO`/`OMNIASR_LLM_REVISION` to test another repo or revision)
+- `OMNIASR_REQUIRE_GPU=1`: in `test_real_models_gpu.py`, fail instead of skipping when
+  onnxruntime-gpu, TensorRT or NVML is missing (the GPU workflow sets it)
 - `FAST_OMNIASR_LLM_DIR`, `FAST_OMNIASR_LLM_TEST_WAV`: a local LLM export
 
 Changes to runtime code (`src/fast_omniasr/**`) need the unit tier green and, for
