@@ -23,7 +23,10 @@ from .tensorrt_builder import (
     DEFAULT_OPT_SAMPLES,
     MIXED_RECIPE,
     PRECISIONS,
+    TensorRTBuildOptions,
     build_engine,
+    check_build_options,
+    remove_stale_scratch,
     validate_profile,
 )
 
@@ -205,8 +208,8 @@ def _local_environment() -> dict:
     """Environment fields that decide whether a cached engine can be reused.
 
     Queried for the *current* CUDA device -- the one TensorRT builds and deserializes
-    engines on in this thread (select it with `cudaSetDevice` or CUDA_VISIBLE_DEVICES;
-    the TensorRT backend does not use the `device=` argument) -- not device 0.
+    engines on in this thread (`OmniASR.from_pretrained(device_index=...)` selects it for
+    the build, cudaSetDevice or CUDA_VISIBLE_DEVICES otherwise) -- not device 0.
 
     In the key:
       - `tensorrt_version`
@@ -254,6 +257,7 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
                          min_samples: int = DEFAULT_MIN_SAMPLES,
                          opt_samples: int = DEFAULT_OPT_SAMPLES,
                          max_samples: int = DEFAULT_MAX_SAMPLES,
+                         options: TensorRTBuildOptions | None = None,
                          cache_dir: str | Path | None = None,
                          rebuild: bool = False,
                          discard_sha256: str | None = None) -> Path:
@@ -271,6 +275,7 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
     min_samples, opt_samples, max_samples = validate_profile(
         min_samples, opt_samples, max_samples
     )
+    options = check_build_options(options)
     onnx_path = Path(onnx_path)
     root = Path(cache_dir) if cache_dir is not None else _DEFAULT_CACHE_ROOT
     metadata = {
@@ -279,6 +284,7 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
         "precision": precision,
         **({"mixed_recipe": MIXED_RECIPE} if precision == "mixed" else {}),
         "profile": {"min": min_samples, "opt": opt_samples, "max": max_samples},
+        **({"build_options": options.identity()} if options.identity() else {}),
         "tf32": False,
         "builder_config_version": BUILDER_CONFIG_VERSION,
         **_local_environment(),
@@ -291,7 +297,7 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
     with file_lock(root / f"{key}.lock"):
         if not rebuild and engine_path.exists() and metadata_path.exists():
             try:
-                cached = json.loads(metadata_path.read_text())
+                cached = json.loads(metadata_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 cached = None
             if isinstance(cached, dict):
@@ -312,8 +318,9 @@ def get_or_build_engine(onnx_path: str | Path, *, precision: str,
                                   stacklevel=2)
         # A crash mid-build must not leave a record that vouches for a partial engine.
         metadata_path.unlink(missing_ok=True)
+        remove_stale_scratch(entry_dir)  # a killed TensorRT 11 build's float16 copy
         build_engine(onnx_path, engine_path, precision=precision, min_samples=min_samples,
-                     opt_samples=opt_samples, max_samples=max_samples)
+                     opt_samples=opt_samples, max_samples=max_samples, options=options)
         _write_metadata(metadata_path, {**metadata, "engine": _engine_record(engine_path)})
     return engine_path
 
@@ -331,7 +338,7 @@ def _engine_matches(engine_path: Path, recorded) -> bool:
 def recorded_engine_sha256(engine_path: str | Path) -> str | None:
     """The sha256 the cache recorded for this engine, if any."""
     try:
-        record = json.loads((Path(engine_path).parent / "metadata.json").read_text())
+        record = json.loads((Path(engine_path).parent / "metadata.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     engine = record.get("engine") if isinstance(record, dict) else None

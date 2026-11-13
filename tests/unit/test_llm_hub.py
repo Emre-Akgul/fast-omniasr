@@ -71,6 +71,7 @@ def test_from_pretrained_verifies_every_listed_file(monkeypatch, tmp_path):
         "device": "cuda",
         "threads": 8,
         "low_memory": False,
+        "device_index": None,
     }
     # ONNX Runtime 1.31+ rejects external data whose resolved path leaves the model directory.
     assert not any((local / name).is_symlink() for name in FILES)

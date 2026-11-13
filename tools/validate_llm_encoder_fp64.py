@@ -46,7 +46,7 @@ def main():
 
     threads = int(os.environ.get("FAST_OMNIASR_THREADS", "4"))
     torch.set_num_threads(threads)
-    card = json.loads((args.source / "config.json").read_text())["model"]
+    card = json.loads((args.source / "config.json").read_text(encoding="utf-8"))["model"]
     if args.checkpoint:
         hub = get_wav2vec2_llama_model_hub()
         model = hub.load_custom_model(

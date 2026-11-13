@@ -1,6 +1,7 @@
 name: Real-model CPU validation
 # Downloads the pinned published CTC and LLM 300M v2 models (~8 GB) and runs them end to
-# end on CPU against the committed FLEURS fixtures (tests/fixtures/fleurs), then scores them
+# end on CPU against the committed FLEURS fixtures (tests/fixtures/fleurs) and the edge-case
+# clips derived from them (tests/fixtures/edge_cases), then scores them
 # per language on the pinned FLEURS sample and fails on regressions past
 # benchmarks/fleurs/thresholds.json (tools/fleurs_eval.py). Too heavy for
 # every push: runs weekly, after each release is published (a report, not a gate), on
@@ -15,6 +16,8 @@ on:
     paths:
       - .github/workflows/real-models.yml
       - tests/integration/test_real_models_cpu.py
+      - tests/integration/test_real_models_edge_cases.py
+      - tests/fixtures/edge_cases/**
       - tests/fixtures/fleurs/**
       - benchmarks/fleurs/**
       - tools/fleurs_eval.py
@@ -24,6 +27,8 @@ on:
       - src/fast_omniasr/model.py
       - src/fast_omniasr/backends/onnx.py
       - src/fast_omniasr/audio.py
+      - src/fast_omniasr/vad.py
+      - src/fast_omniasr/assets/**
       - src/fast_omniasr/tokenizer.py
       - src/fast_omniasr/decoder.py
       - src/fast_omniasr/precision.py
@@ -56,9 +61,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python -m pip install -e ".[dev,onnx,hub]"
-      - name: Run the published models on the FLEURS fixtures
-        run: python -m pytest tests/integration/test_real_models_cpu.py tests/unit/test_fleurs_fixtures.py -v -rs
+      - run: python -m pip install -e ".[dev,onnx,hub,resample]"
+      - name: Run the published models on the FLEURS and edge-case fixtures
+        run: python -m pytest tests/integration/test_real_models_cpu.py tests/integration/test_real_models_edge_cases.py tests/unit/test_fleurs_fixtures.py -v -rs
 
   fleurs-gate:
     name: fleurs-${{ matrix.model }}

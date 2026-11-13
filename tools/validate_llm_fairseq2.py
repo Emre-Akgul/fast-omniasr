@@ -142,7 +142,7 @@ def compare(args):
     from fast_omniasr.audio import load_audio
     from fast_omniasr.llm import OmniASRLLM
 
-    suite = json.loads((args.reference / "reference.json").read_text())
+    suite = json.loads((args.reference / "reference.json").read_text(encoding="utf-8"))
     if args.repo:
         model = OmniASRLLM.from_pretrained(args.repo, device=args.device, threads=THREADS)
     else:
@@ -211,7 +211,8 @@ def compare(args):
         "clips": reports,
     }
     if args.report:
-        args.report.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
+        args.report.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
+                               encoding="utf-8")
     print(json.dumps({k: v for k, v in summary.items() if k != "clips"}), flush=True)
     if not summary["passed"]:
         raise SystemExit("ONNX output does not match fairseq2")

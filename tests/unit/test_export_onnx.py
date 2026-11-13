@@ -1,7 +1,9 @@
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 SCRIPT = Path(__file__).parents[2] / "export_onnx.py"
@@ -147,3 +149,179 @@ def test_tokenizer_vocabulary_must_match_ctc_output(tmp_path):
             download=download,
             get_vocab_size=lambda _: 12,
         )
+
+
+def _logits(frames=6, vocabulary=5, seed=0):
+    rng = np.random.default_rng(seed)
+    return rng.normal(size=(1, frames, vocabulary)).astype(np.float32) * 4
+
+
+def test_matching_logits_pass_parity():
+    expected = _logits()
+    report = export_onnx.compare_logits(expected, expected + 1e-5, label="clip")
+    assert report["input"] == "clip"
+    assert report["frames"] == 6
+    assert report["tokens_equal"] is True
+    assert report["near_tie_flips"] == 0
+
+
+@pytest.mark.parametrize(
+    ("actual", "message"),
+    [
+        (lambda e: e[:, :-1], "shape"),
+        (lambda e: np.where(np.arange(e.size).reshape(e.shape) == 3, np.nan, e), "NaN"),
+        (lambda e: e + 0.01, "logits differ by up to"),
+    ],
+)
+def test_diverging_logits_fail_parity(actual, message):
+    expected = _logits()
+    with pytest.raises(ValueError, match=message):
+        export_onnx.compare_logits(expected, actual(expected))
+
+
+def test_flipped_token_fails_even_within_loose_logit_tolerance():
+    expected = np.zeros((1, 3, 4), np.float32)
+    expected[0, :, 2] = 1.0
+    actual = expected.copy()
+    actual[0, 1, 3] = 1.5
+    with pytest.raises(ValueError, match="greedy token differs at frame 1"):
+        export_onnx.compare_logits(expected, actual, atol=2.0)
+
+
+def test_near_tie_flip_is_tolerated():
+    expected = np.zeros((1, 3, 4), np.float32)
+    expected[0, :, 2] = 1.0
+    expected[0, 1, 3] = 1.0 - 1e-4
+    actual = expected.copy()
+    actual[0, 1, 3] = 1.0 + 1e-4
+    report = export_onnx.compare_logits(expected, actual)
+    assert report["near_tie_flips"] == 1
+
+
+def test_validation_runs_every_input_against_its_reference():
+    inputs = {"a": np.zeros((1, 400), np.float32), "b": np.zeros((1, 800), np.float32)}
+    references = {"a": _logits(1, seed=1), "b": _logits(2, seed=2)}
+    calls = []
+
+    def run(path, given):
+        calls.append((path, list(given)))
+        return dict(references)
+
+    report = export_onnx.validate_export("model.onnx", references, inputs, run=run)
+    assert calls == [("model.onnx", ["a", "b"])]
+    assert [probe["input"] for probe in report["probes"]] == ["a", "b"]
+    assert report["atol"] == export_onnx.LOGIT_ATOL
+
+
+def test_default_validation_inputs_cover_speech_and_profile_extremes():
+    inputs = export_onnx.validation_inputs()
+    assert len(export_onnx.VALIDATION_AUDIO) == 3
+    lengths = sorted(audio.shape[1] for audio in inputs.values())
+    assert lengths[0] == 400 and lengths[-1] == 480000
+    assert len(inputs) == 5
+    assert all(audio.dtype == np.float32 and audio.shape[0] == 1 for audio in inputs.values())
+
+
+def _build(model_path, tokenizer_path):
+    model_path.write_bytes(b"new graph")
+    (model_path.parent / "weights.data").write_bytes(b"new weights")
+    tokenizer_path.write_bytes(b"new tokenizer")
+
+
+def test_validated_export_is_promoted_with_its_report(tmp_path):
+    output = tmp_path / "export" / "model.onnx"
+    validated = []
+
+    def validate(path):
+        validated.append(path.read_bytes())
+        assert not output.exists()
+        return {"probes": []}
+
+    export_onnx.staged_export(output, _build, validate)
+
+    assert validated == [b"new graph"]
+    assert output.read_bytes() == b"new graph"
+    assert (output.parent / "weights.data").read_bytes() == b"new weights"
+    assert (output.parent / "tokenizer.model").read_bytes() == b"new tokenizer"
+    assert json.loads((output.parent / export_onnx.PARITY_REPORT).read_text()) == {"probes": []}
+    assert sorted(p.name for p in output.parent.iterdir()) == sorted(
+        ["model.onnx", "weights.data", "tokenizer.model", export_onnx.PARITY_REPORT]
+    )
+
+
+@pytest.mark.parametrize("stage", ["build", "validate"])
+def test_failed_export_leaves_previous_output_untouched(tmp_path, stage):
+    output = tmp_path / "model.onnx"
+    output.write_bytes(b"old graph")
+    (tmp_path / "tokenizer.model").write_bytes(b"old tokenizer")
+
+    def build(model_path, tokenizer_path):
+        _build(model_path, tokenizer_path)
+        if stage == "build":
+            raise RuntimeError("export failed")
+
+    def validate(path):
+        raise ValueError("noise_400: logits differ")
+
+    with pytest.raises((RuntimeError, ValueError)):
+        export_onnx.staged_export(output, build, validate)
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["model.onnx", "tokenizer.model"]
+    assert output.read_bytes() == b"old graph"
+    assert (tmp_path / "tokenizer.model").read_bytes() == b"old tokenizer"
+
+
+def test_negative_logit_tolerance_is_rejected(tmp_path):
+    with pytest.raises(SystemExit):
+        export_onnx.parse_args(["--output", str(tmp_path / "m.onnx"), "--logit-atol", "-1"])
+
+
+def test_batch_export_is_opt_in(tmp_path):
+    output = str(tmp_path / "model.onnx")
+    assert export_onnx.parse_args(["--output", output]).batch is False
+    assert export_onnx.parse_args(["--output", output, "--batch"]).batch is True
+
+
+# The wav2vec2 feature extractor's (dimension, kernel, stride) layers.
+WAV2VEC2_LAYERS = [(512, 10, 5)] + [(512, 3, 2)] * 4 + [(512, 2, 2)] * 2
+
+
+def test_batch_frame_lengths_match_the_runtime_frame_count():
+    from fast_omniasr.decoder import FRAME_STRIDE, FRAME_WINDOW
+
+    samples = np.arange(400, 20000, dtype=np.int64)
+    np.testing.assert_array_equal(export_onnx.frame_lengths(samples, WAV2VEC2_LAYERS),
+                                  (samples - FRAME_WINDOW) // FRAME_STRIDE + 1)
+    assert export_onnx.frame_lengths(480000, WAV2VEC2_LAYERS) == 1499
+
+
+def test_batch_validation_compares_each_padded_row_with_its_input_alone():
+    inputs = {"a": np.zeros((1, 400), np.float32), "b": np.zeros((1, 800), np.float32)}
+    references = {"a": _logits(1, seed=1), "b": _logits(2, seed=2)}
+    calls = []
+
+    def run_batch(path, given):
+        calls.append((path, list(given)))
+        return dict(references)
+
+    report = export_onnx.validate_export("model.onnx", references, inputs,
+                                         run=lambda path, given: dict(references),
+                                         run_batch=run_batch)
+    assert calls == [("model.onnx", ["a", "b"])]
+    assert [probe["input"] for probe in report["batch_probes"]] == [
+        "a in a padded batch of 2", "b in a padded batch of 2"]
+
+    def leaky(path, given):
+        return {"a": references["a"], "b": references["b"] + 0.5}
+
+    with pytest.raises(ValueError, match="b in a padded batch of 2: logits differ"):
+        export_onnx.validate_export("model.onnx", references, inputs,
+                                    run=lambda path, given: dict(references), run_batch=leaky)
+
+
+def test_batch_one_validation_has_no_batch_probes():
+    inputs = {"a": np.zeros((1, 400), np.float32)}
+    references = {"a": _logits(1)}
+    report = export_onnx.validate_export("model.onnx", references, inputs,
+                                         run=lambda path, given: dict(references))
+    assert "batch_probes" not in report

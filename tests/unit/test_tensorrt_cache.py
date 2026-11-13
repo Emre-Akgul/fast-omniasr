@@ -7,6 +7,7 @@ import types
 import pytest
 
 from fast_omniasr import tensorrt_cache
+from fast_omniasr.tensorrt_builder import TensorRTBuildOptions
 from fast_omniasr.tensorrt_cache import get_or_build_engine
 
 FAKE_ENV = {
@@ -20,10 +21,13 @@ FAKE_ENV = {
 @pytest.fixture
 def counting_builder(monkeypatch):
     calls = []
+    built_options = []
+    monkeypatch.setattr(tensorrt_cache, "_built_options", built_options, raising=False)
 
     def fake_build_engine(onnx_path, output_path, *, precision, min_samples, opt_samples,
-                           max_samples):
+                           max_samples, options=None):
         calls.append(precision)
+        built_options.append(options)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(f"FAKE ENGINE {precision}".encode())
         return output_path
@@ -99,7 +103,7 @@ def test_empty_cache_builds(counting_builder, onnx_a, tmp_path):
     engine_path = get_or_build_engine(onnx_a, precision="fp16", cache_dir=tmp_path / "cache")
     assert len(counting_builder) == 1
     assert engine_path.exists()
-    metadata = json.loads((engine_path.parent / "metadata.json").read_text())
+    metadata = json.loads((engine_path.parent / "metadata.json").read_text(encoding="utf-8"))
     assert metadata["profile"] == {"min": 400, "opt": 80000, "max": 480000}
 
 
@@ -142,7 +146,7 @@ def test_incompatible_metadata_triggers_rebuild(counting_builder, onnx_a, tmp_pa
     cache_dir = tmp_path / "cache"
     engine_path = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache_dir)
     metadata_path = engine_path.parent / "metadata.json"
-    metadata = json.loads(metadata_path.read_text())
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     metadata["tensorrt_version"] = "1.0.0.0"  # simulate a stale/incompatible record
     metadata_path.write_text(json.dumps(metadata))
 
@@ -264,7 +268,7 @@ def test_changing_only_external_weights_triggers_rebuild(counting_builder, exter
 def test_metadata_records_external_weight_hashes(counting_builder, external_model, tmp_path):
     engine_path = get_or_build_engine(external_model, precision="fp32",
                                       cache_dir=tmp_path / "cache")
-    metadata = json.loads((engine_path.parent / "metadata.json").read_text())
+    metadata = json.loads((engine_path.parent / "metadata.json").read_text(encoding="utf-8"))
     assert sorted(metadata["external_data_sha256"]) == ["model.onnx.data", "weights/nested.bin"]
 
 
@@ -504,7 +508,7 @@ def test_mixed_precision_has_its_own_cache_entry(counting_builder, onnx_a, tmp_p
     mixed = get_or_build_engine(onnx_a, precision="mixed", cache_dir=cache_dir)
     assert fp16 != mixed and counting_builder == ["fp16", "mixed"]
     assert get_or_build_engine(onnx_a, precision="mixed", cache_dir=cache_dir) == mixed
-    metadata = json.loads((mixed.parent / "metadata.json").read_text())
+    metadata = json.loads((mixed.parent / "metadata.json").read_text(encoding="utf-8"))
     assert metadata["mixed_recipe"]["fp32_names"] == ["/model/pos_encoder/conv/Conv"]
 
 
@@ -520,7 +524,7 @@ def test_changing_the_mixed_recipe_rebuilds(counting_builder, onnx_a, tmp_path, 
 # --- cached engines are integrity-checked before reuse (issue #15) ---
 
 def _engine_and_metadata(path):
-    return path, json.loads((path.parent / "metadata.json").read_text())
+    return path, json.loads((path.parent / "metadata.json").read_text(encoding="utf-8"))
 
 
 def test_metadata_records_the_engine_checksum(counting_builder, onnx_a, tmp_path):
@@ -553,12 +557,12 @@ def test_entries_cached_before_checksums_are_adopted_not_rebuilt(counting_builde
     cache = tmp_path / "c"
     engine = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
     metadata_path = engine.parent / "metadata.json"
-    legacy = json.loads(metadata_path.read_text())
+    legacy = json.loads(metadata_path.read_text(encoding="utf-8"))
     del legacy["engine"]
     metadata_path.write_text(json.dumps(legacy))
     assert get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache) == engine
     assert counting_builder == ["fp16"]
-    assert "engine" in json.loads(metadata_path.read_text())
+    assert "engine" in json.loads(metadata_path.read_text(encoding="utf-8"))
 
 
 def test_rebuild_forces_a_new_engine(counting_builder, onnx_a, tmp_path):
@@ -589,7 +593,8 @@ def _from_pretrained_with(monkeypatch, tmp_path, failures):
     from fast_omniasr import OmniASR, hub, model
 
     monkeypatch.setattr(hub, "download_verified", lambda *a, **k: (
-        {}, {"model.onnx": tmp_path / "m.onnx", "tokenizer.model": tmp_path / "t.model"}))
+        {}, {"model.onnx": tmp_path / "m.onnx", "tokenizer.model": tmp_path / "t.model"},
+        *((None,) if k.get("return_snapshot") else ())))
     rebuilds = []
 
     def fake_cache(onnx_path, **kwargs):
@@ -597,6 +602,8 @@ def _from_pretrained_with(monkeypatch, tmp_path, failures):
         return tmp_path / "e.engine"
 
     monkeypatch.setattr(tensorrt_cache, "get_or_build_engine", fake_cache)
+    monkeypatch.setattr(model, "Tokenizer", lambda path: None)
+    monkeypatch.setattr(model, "check_compatible", lambda *a, **k: None)
     real_init = model.OmniASR.__init__
 
     def fake_init(self, *args, **kwargs):
@@ -614,6 +621,35 @@ def _from_pretrained_with(monkeypatch, tmp_path, failures):
         return result, rebuilds, caught
     finally:
         monkeypatch.setattr(model.OmniASR, "__init__", real_init)
+
+
+def test_from_pretrained_keeps_build_options_on_every_build(monkeypatch, tmp_path):
+    from fast_omniasr import OmniASR, hub, model
+
+    monkeypatch.setattr(hub, "download_verified", lambda *a, **k: (
+        {}, {"model.onnx": tmp_path / "m.onnx", "tokenizer.model": tmp_path / "t.model"},
+        *((None,) if k.get("return_snapshot") else ())))
+    seen = []
+
+    def fake_cache(onnx_path, **kwargs):
+        seen.append(kwargs["options"])
+        return tmp_path / "e.engine"
+
+    monkeypatch.setattr(tensorrt_cache, "get_or_build_engine", fake_cache)
+    monkeypatch.setattr(tensorrt_cache, "recorded_engine_sha256", lambda path: "digest")
+    monkeypatch.setattr(model, "Tokenizer", lambda path: None)
+    monkeypatch.setattr(model, "check_compatible", lambda *a, **k: None)
+    failures = [_deserialize_error()]
+
+    def fake_init(self, *args, **kwargs):
+        if failures:
+            raise failures.pop(0)
+        self.backend = types.SimpleNamespace(closed=False, close=lambda: None)
+
+    monkeypatch.setattr(model.OmniASR, "__init__", fake_init)
+    options = TensorRTBuildOptions(optimization_level=2)
+    OmniASR.from_pretrained("o/r", backend="tensorrt", precision="fp32", build_options=options)
+    assert seen == [options, options]  # the first build and the retry
 
 
 def _deserialize_error():
@@ -655,7 +691,7 @@ def test_discard_reuses_an_engine_another_process_already_rebuilt(counting_build
     get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache, discard_sha256=failed)
     assert len(counting_builder) == 2  # it was still the failed engine: rebuilt
     engine.write_bytes(b"rebuilt by another process")
-    metadata = json.loads((engine.parent / "metadata.json").read_text())
+    metadata = json.loads((engine.parent / "metadata.json").read_text(encoding="utf-8"))
     metadata["engine"] = tensorrt_cache._engine_record(engine)
     (engine.parent / "metadata.json").write_text(json.dumps(metadata))
     get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache, discard_sha256=failed)
@@ -666,9 +702,71 @@ def test_discard_reuses_an_engine_another_process_already_rebuilt(counting_build
 def test_malformed_engine_record_triggers_a_rebuild(counting_builder, onnx_a, tmp_path, record):
     cache = tmp_path / "c"
     engine = get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
-    metadata = json.loads((engine.parent / "metadata.json").read_text())
+    metadata = json.loads((engine.parent / "metadata.json").read_text(encoding="utf-8"))
     metadata["engine"] = record
     (engine.parent / "metadata.json").write_text(json.dumps(metadata))
     with pytest.warns(UserWarning, match="recorded checksum"):
         get_or_build_engine(onnx_a, precision="fp16", cache_dir=cache)
     assert len(counting_builder) == 2
+
+
+def _metadata(engine_path):
+    return json.loads((engine_path.parent / "metadata.json").read_text(encoding="utf-8"))
+
+
+def test_default_options_keep_the_existing_cache_key(counting_builder, onnx_a, tmp_path):
+    cache_dir = tmp_path / "cache"
+    implicit = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir)
+    explicit = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir,
+                                   options=TensorRTBuildOptions())
+    assert implicit == explicit
+    assert counting_builder == ["fp32"]
+    assert "build_options" not in _metadata(implicit)
+
+
+@pytest.mark.parametrize("options,recorded", [
+    (TensorRTBuildOptions(workspace_bytes=2**31), {"workspace_bytes": 2**31}),
+    (TensorRTBuildOptions(optimization_level=4), {"optimization_level": 4}),
+    (TensorRTBuildOptions(optimization_level=3), {"optimization_level": 3}),
+    (TensorRTBuildOptions(timing_cache="timing.bin"), {"timing_cache": True}),
+])
+def test_each_non_default_option_gets_its_own_engine(counting_builder, onnx_a, tmp_path,
+                                                     options, recorded):
+    cache_dir = tmp_path / "cache"
+    default = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir)
+    custom = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir, options=options)
+    assert custom != default
+    assert _metadata(custom)["build_options"] == recorded
+    assert tensorrt_cache._built_options[-1] == options
+    get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir, options=options)
+    assert len(counting_builder) == 2  # the second custom call reused its engine
+
+
+def test_timing_cache_location_does_not_change_the_key(counting_builder, onnx_a, tmp_path):
+    cache_dir = tmp_path / "cache"
+    first = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir,
+                                options=TensorRTBuildOptions(timing_cache="a.bin"))
+    second = get_or_build_engine(onnx_a, precision="fp32", cache_dir=cache_dir,
+                                 options=TensorRTBuildOptions(timing_cache="b.bin"))
+    assert first == second and len(counting_builder) == 1
+
+
+def test_options_must_be_build_options(counting_builder, onnx_a, tmp_path):
+    with pytest.raises(TypeError, match="TensorRTBuildOptions"):
+        get_or_build_engine(onnx_a, precision="fp32", cache_dir=tmp_path / "cache",
+                            options={"workspace_bytes": 1})
+    assert counting_builder == []
+
+
+def test_from_pretrained_rejects_build_options_on_onnx():
+    from fast_omniasr import OmniASR
+
+    with pytest.raises(ValueError, match="build_options is only used"):
+        OmniASR.from_pretrained("o/r", build_options=TensorRTBuildOptions())
+
+
+def test_from_pretrained_rejects_bad_build_options_before_downloading():
+    from fast_omniasr import OmniASR
+
+    with pytest.raises(TypeError, match="TensorRTBuildOptions"):
+        OmniASR.from_pretrained("o/r", backend="tensorrt", precision="fp32", build_options=1)

@@ -17,10 +17,17 @@ onnx = ["onnxruntime>=1.23,<2"]
 cuda = ["onnxruntime-gpu[cuda,cudnn]>=1.23,<2"]
 tensorrt = ["cuda-python>=12"]
 hub = ["huggingface_hub>=0.23"]
+resample = ["soxr>=0.5"]
 dev = ["pytest>=8", "ruff>=0.9"]
+
+[project.scripts]
+fast-omniasr = "fast_omniasr.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+fast_omniasr = ["assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

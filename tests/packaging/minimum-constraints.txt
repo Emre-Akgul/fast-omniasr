@@ -1,0 +1,8 @@
+# Lower bounds from pyproject.toml, installed together by the package workflow's
+# minimum-dependencies job. Keep in sync with [project] dependencies and extras.
+numpy==1.24.4
+soundfile==0.12.1
+sentencepiece==0.2.0
+onnxruntime==1.23.0
+huggingface_hub==0.23.0
+soxr==0.5.0

@@ -185,10 +185,15 @@ def fake_trt(monkeypatch, tmp_path):
     cuda = types.ModuleType("cuda")
     bindings = types.ModuleType("cuda.bindings")
     bindings.runtime = cudart
+    # Every device already has a context, so a switched-away caller is switched back.
+    bindings.driver = types.SimpleNamespace(cuInit=lambda flags: (0,),
+                                            cuDevicePrimaryCtxGetState=lambda d: (0, 0, 1))
     cuda.bindings = bindings
     monkeypatch.setitem(sys.modules, "tensorrt", trt)
     monkeypatch.setitem(sys.modules, "cuda", cuda)
     monkeypatch.setitem(sys.modules, "cuda.bindings", bindings)
+    monkeypatch.setitem(sys.modules, "cuda.bindings.runtime", cudart)
+    monkeypatch.setitem(sys.modules, "cuda.bindings.driver", bindings.driver)
     engine_path = tmp_path / "model.engine"
     engine_path.write_bytes(b"fake")
     return types.SimpleNamespace(trt=trt, cudart=cudart, path=engine_path)
@@ -247,6 +252,7 @@ def test_omniasr_close_releases_tensorrt_resources(fake_trt, monkeypatch):
     from fast_omniasr import model as model_module
 
     monkeypatch.setattr(model_module, "Tokenizer", lambda path: object())
+    monkeypatch.setattr(model_module, "check_compatible", lambda *a, **k: None)
     asr = model_module.OmniASR(fake_trt.path, "tokenizer.model", backend="tensorrt")
     engine_ref = weakref.ref(asr.backend.engine)
     with asr:

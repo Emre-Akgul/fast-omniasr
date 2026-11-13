@@ -1,0 +1,88 @@
+# Pinned export environment for export_onnx.py (and the LLM export scripts), separate from
+# the runtime. The export-environment workflow installs exactly this set on Linux x86_64,
+# Python 3.11, and exports and validates omniASR_CTC_300M_v2 with it. Install with:
+#
+#   python -m pip install -c constraints/export.txt -e ".[onnx]" \
+#     torch torchaudio fairseq2 omnilingual-asr onnx
+#
+# The PyPI fairseq2n 0.6 wheel requires the CUDA 12.8 build of torch 2.8.0 (PyPI's default
+# on Linux; torch pins its nvidia-* and triton dependencies exactly) and refuses a CPU-only
+# build, although the export itself runs on the CPU. kenlm (an omnilingual-asr dependency)
+# builds from source, so a C++ compiler is needed. Exported graphs record the versions
+# actually used in provenance.json.
+
+# Export stack
+omnilingual-asr==0.2.0
+fairseq2==0.6
+fairseq2n==0.6
+torch==2.8.0
+torchaudio==2.8.0
+onnx==1.17.0
+onnxruntime==1.23.2
+numpy==1.26.4
+sentencepiece==0.2.0
+soundfile==0.13.1
+
+# Transitive dependencies
+blobfile==3.0.0
+certifi==2025.1.31
+cffi==1.17.1
+charset-normalizer==3.4.1
+colorama==0.4.6
+coloredlogs==15.0.1
+editdistance==0.8.1
+filelock==3.16.1
+flatbuffers==24.3.25
+fsspec==2024.12.0
+hf-xet==1.3.2
+huggingface_hub==0.36.2
+humanfriendly==10.0
+idna==3.3
+importlib_metadata==7.2.1
+importlib_resources==6.4.5
+Jinja2==3.1.5
+kenlm==0.3.0
+llvmlite==0.43.0
+lxml==5.3.1
+markdown-it-py==3.0.0
+MarkupSafe==2.1.5
+mdurl==0.1.2
+mpmath==1.3.0
+mypy-extensions==1.0.0
+networkx==3.4.2
+numba==0.60.0
+packaging==24.2
+pandas==2.2.3
+polars==1.42.1
+polars-runtime-32==1.42.1
+portalocker==2.10.1
+protobuf==5.29.6
+psutil==5.9.8
+pyarrow==23.0.1
+pycparser==2.22
+pycryptodomex==3.11.0
+Pygments==2.18.0
+python-dateutil==2.9.0.post0
+pytz==2025.1
+PyYAML==6.0.2
+regex==2023.12.25
+requests==2.32.3
+retrying==1.3.4
+rich==13.9.4
+ruamel.yaml==0.18.10
+ruamel.yaml.clib==0.2.15
+sacrebleu==2.4.0
+safetensors==0.8.0
+six==1.16.0
+sympy==1.14.0
+tabulate==0.9.0
+tbb==2023.1.0
+tcmlib==1.5.0
+tiktoken==0.9.0
+torcheval==0.0.7
+tqdm==4.67.1
+typing_extensions==4.15.0
+tzdata==2024.2
+urllib3==2.7.0
+xxhash==3.5.0
+zipp==3.21.0

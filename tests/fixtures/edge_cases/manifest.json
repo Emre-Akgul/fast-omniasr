@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "description": "Edge-case clips built by clips.py and what the pinned models in ../fleurs/manifest.json do on them on CPU. See README.md.",
+  "language": "eng_Latn",
+  "clips": {
+    "silence": {
+      "samples": 16000,
+      "sha256": "0c92bddb4e96f3ea9ec9f0f64a668255a6c15527ac09f6f119cafde60c7c4a39",
+      "ctc": {
+        "text": ""
+      },
+      "llm": {
+        "max_new_tokens": 64,
+        "stop_reason": "max_new_tokens"
+      }
+    },
+    "white_noise": {
+      "samples": 48000,
+      "sha256": "ee3dbad8fd0e2cc7c99429c74b0165498724637704ce1f2973c97df205248899",
+      "ctc": {
+        "text": ""
+      },
+      "llm": {
+        "max_new_tokens": 64,
+        "stop_reason": "eos"
+      }
+    },
+    "mains_hum": {
+      "samples": 48000,
+      "sha256": "0fbc9043e595949da6ae325fef11686ad4ac03743865b7899a544e6ae411495d",
+      "ctc": {
+        "text": ""
+      },
+      "llm": {
+        "max_new_tokens": 64,
+        "stop_reason": "max_new_tokens"
+      }
+    },
+    "clipped_speech": {
+      "samples": 69120,
+      "sha256": "fc62afca6006ce2330a473214f077e9c18a717fbb5ca35c0f9b0e663e78669e1",
+      "reference": [
+        "en_us"
+      ],
+      "ctc": {
+        "max_cer": 16.0
+      },
+      "llm": {
+        "stop_reason": "eos",
+        "max_cer": 5.0
+      }
+    },
+    "long_pause": {
+      "samples": 197120,
+      "sha256": "c3c4a69f345c6b233fcfd72a0c931b584c3d547d14dc2e6704d0805f97f7851d",
+      "reference": [
+        "en_us"
+      ],
+      "ctc": {
+        "max_cer": 12.0
+      },
+      "llm": {
+        "stop_reason": "eos",
+        "max_cer": 5.0
+      }
+    },
+    "code_switching": {
+      "samples": 144320,
+      "sha256": "82b9d2b2c58fc3ce7c4b3b8e9fcaa71b322d48da5a5d0addbb9b32bd0629f932",
+      "reference": [
+        "en_us",
+        "tr_tr"
+      ],
+      "ctc": {
+        "max_cer": 40.0,
+        "contains": "saygılarını sundular"
+      },
+      "llm": {
+        "stop_reason": "eos",
+        "max_cer": 46.0,
+        "contains": "sundular"
+      }
+    },
+    "repeated_sentence": {
+      "samples": 292480,
+      "sha256": "7ac9988dba509482de4f59886f4aa70e51ac22ad946d01e4672a9e083f19b451",
+      "reference": [
+        "en_us",
+        "en_us",
+        "en_us",
+        "en_us"
+      ],
+      "ctc": {
+        "max_cer": 12.0
+      },
+      "llm": {
+        "stop_reason": "eos",
+        "max_cer": 5.0
+      }
+    },
+    "stutter": {
+      "samples": 320000,
+      "sha256": "ffc592e092ce708e96d7b127a68a96683428c9e34a58c652c03387ddf3948fbf",
+      "ctc": {},
+      "llm": {
+        "max_new_tokens": 64,
+        "stop_reason": "max_new_tokens"
+      }
+    },
+    "shortest_clip": {
+      "samples": 400,
+      "sha256": "782a535411fd58636bfdf0187ebeff60dd212a203109e1f6a3deb212958e2ef0",
+      "ctc": {
+        "text": ""
+      },
+      "llm": {
+        "max_new_tokens": 64,
+        "stop_reason": "eos"
+      }
+    },
+    "longest_clip": {
+      "samples": 480000,
+      "sha256": "100be03b97447ab82fffc959ba5c7c4163c7b9a30ee767861ce8245cfb642fb9",
+      "reference": [
+        "en_us",
+        "tr_tr"
+      ],
+      "ctc": {
+        "max_cer": 43.0,
+        "contains": "saygılarını sundular"
+      },
+      "llm": {
+        "stop_reason": "eos",
+        "max_cer": 40.0,
+        "contains": "sundular"
+      }
+    }
+  }
+}

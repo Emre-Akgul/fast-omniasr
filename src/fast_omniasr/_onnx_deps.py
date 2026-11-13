@@ -1,4 +1,5 @@
-"""Find the external-data files an ONNX graph references, without the onnx package.
+"""Read what an ONNX graph references (external-data files) and its metadata_props,
+without the onnx package.
 
 The graph is memory-mapped and its protobuf fields are walked directly; inline weight
 bytes are skipped, never read, so multi-GB graphs are scanned in milliseconds. Every
@@ -11,7 +12,7 @@ import posixpath
 from pathlib import Path
 
 # onnx.proto field numbers
-_MODEL_GRAPH, _MODEL_FUNCTIONS = 7, 25
+_MODEL_GRAPH, _MODEL_METADATA, _MODEL_FUNCTIONS = 7, 14, 25
 _FUNCTION_NODES, _FUNCTION_ATTRIBUTES = 7, 11  # node, attribute_proto (default values)
 _GRAPH_NODES, _GRAPH_INITIALIZERS, _GRAPH_SPARSE_INITIALIZERS = 1, 5, 15
 _NODE_ATTRIBUTES = 5
@@ -174,3 +175,98 @@ def graph_dependencies(graph_name: str, path: str | Path) -> set[str]:
             raise ValueError(f"{graph_name} has an unsafe external-data location: {location}")
         names.add(posixpath.join(directory, relative) if directory else relative)
     return names
+
+
+def model_metadata(path: str | Path) -> dict[str, str]:
+    """The model's metadata_props as {key: value}."""
+    path = Path(path)
+    with path.open("rb") as f:
+        if path.stat().st_size == 0:
+            raise ValueError(f"{path} is empty, not an ONNX model")
+        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as buf:
+            metadata = {}
+            try:
+                for field, span in _fields(buf, 0, len(buf)):
+                    if field == _MODEL_METADATA:
+                        entry = dict(_fields(buf, *_span(span)))
+                        key, value = _span(entry.get(1, (0, 0))), _span(entry.get(2, (0, 0)))
+                        metadata[bytes(buf[key[0]:key[1]]).decode("utf-8")] = bytes(
+                            buf[value[0]:value[1]]).decode("utf-8")
+            except (_Malformed, UnicodeDecodeError) as exc:
+                raise ValueError(f"{path} is not a valid ONNX model ({exc})") from exc
+            return metadata
+
+
+# GraphProto input/output -> ValueInfoProto(name, type) -> TypeProto.tensor_type ->
+# (elem_type, shape) -> TensorShapeProto.dim -> (dim_value | dim_param)
+_GRAPH_INPUTS, _GRAPH_OUTPUTS = 11, 12
+_VALUE_NAME, _VALUE_TYPE = 1, 2
+_TYPE_TENSOR = 1
+_TENSOR_ELEM_TYPE, _TENSOR_SHAPE = 1, 2
+_SHAPE_DIM = 1
+_DIM_VALUE, _DIM_PARAM = 1, 2
+
+ELEMENT_TYPES = {1: "float", 6: "int32", 7: "int64", 10: "float16", 16: "bfloat16"}
+
+
+def _text(buf, span):
+    start, end = _span(span)
+    return bytes(buf[start:end]).decode("utf-8")
+
+
+def _value_info(buf, start, end):
+    """(name, element type name, dims) with dims as ints or symbolic strings (None when
+    neither is given); dims is None when the graph declares no shape, and the type is
+    None for non-tensor values."""
+    name, element, dims = "", None, None
+    for field, value in _fields(buf, start, end):
+        if field == _VALUE_NAME:
+            name = _text(buf, value)
+        elif field == _VALUE_TYPE:
+            for inner, tensor in _fields(buf, *_span(value)):
+                if inner != _TYPE_TENSOR:
+                    continue
+                for key, item in _fields(buf, *_span(tensor)):
+                    if key == _TENSOR_ELEM_TYPE:
+                        element = ELEMENT_TYPES.get(item, f"type{item}")
+                    elif key == _TENSOR_SHAPE:
+                        dims = []
+                        for kind, dim in _fields(buf, *_span(item)):
+                            if kind != _SHAPE_DIM:
+                                continue
+                            size = None
+                            for part, raw in _fields(buf, *_span(dim)):
+                                if part == _DIM_VALUE:
+                                    size = raw
+                                elif part == _DIM_PARAM:
+                                    size = _text(buf, raw)
+                            dims.append(size)
+    return name, element, None if dims is None else tuple(dims)
+
+
+def graph_signature(path: str | Path):
+    """The main graph's inputs and outputs as lists of (name, element type, dims), read
+    without the onnx package or an inference session."""
+    path = Path(path)
+    with path.open("rb") as f:
+        if path.stat().st_size == 0:
+            raise ValueError(f"{path} is empty, not an ONNX model")
+        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as buf:
+            inputs, outputs, initializers = [], [], set()
+            try:
+                for field, span in _fields(buf, 0, len(buf)):
+                    if field != _MODEL_GRAPH:
+                        continue
+                    for inner, value in _fields(buf, *_span(span)):
+                        if inner == _GRAPH_INPUTS:
+                            inputs.append(_value_info(buf, *_span(value)))
+                        elif inner == _GRAPH_OUTPUTS:
+                            outputs.append(_value_info(buf, *_span(value)))
+                        elif inner == _GRAPH_INITIALIZERS:
+                            for key, name in _fields(buf, *_span(value)):
+                                if key == 8:  # TensorProto.name
+                                    initializers.add(_text(buf, name))
+            except (_Malformed, UnicodeDecodeError) as exc:
+                raise ValueError(f"{path} is not a valid ONNX model ({exc})") from exc
+            # Initializers listed as graph inputs (older IRs) aren't runtime inputs.
+            return [i for i in inputs if i[0] not in initializers], outputs

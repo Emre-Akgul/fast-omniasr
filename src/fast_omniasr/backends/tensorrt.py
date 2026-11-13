@@ -77,6 +77,54 @@ def _validate_contract(trt, engine, context):
     return min_shape[1], max_shape[1], resolved["maximum"]
 
 
+def _context_active(device: int) -> bool:
+    """Whether GPU `device` already has its primary CUDA context. cudaGetDevice() reports
+    0 in a thread that never chose a device; switching back to it with cudaSetDevice would
+    create a context there (~100 MiB) in every process pinned to another GPU. True when
+    the driver can't be asked, so the previous device is restored as before."""
+    try:
+        from cuda.bindings import driver
+
+        driver.cuInit(0)
+        error, _, active = driver.cuDevicePrimaryCtxGetState(device)
+    except Exception:  # noqa: BLE001 -- best effort; restoring is the safe default
+        return True
+    return int(error) != 0 or bool(active)
+
+
+@contextlib.contextmanager
+def cuda_device(index: int | None):
+    """Make GPU `index` this thread's current CUDA device, restoring the previous one
+    afterwards. `None` leaves the current device alone. TensorRT builds, deserializes and
+    runs engines on the current device."""
+    if index is None:
+        yield
+        return
+    try:
+        from cuda.bindings import runtime as cudart
+    except ImportError as exc:
+        raise ImportError("Install fast-omniasr[tensorrt] for the cuda-python dependency") from exc
+
+    def check(result, what):
+        error, *values = result
+        if int(error) != 0:
+            raise RuntimeError(f"{what} failed: {error}")
+        return values[0] if values else None
+
+    previous = check(cudart.cudaGetDevice(), "cudaGetDevice")
+    count = check(cudart.cudaGetDeviceCount(), "cudaGetDeviceCount")
+    if index >= count:
+        raise ValueError(f"device_index={index} but only {count} CUDA device(s) are visible")
+    restore = previous != index and _context_active(previous)
+    check(cudart.cudaSetDevice(index), f"cudaSetDevice({index})")
+    try:
+        yield
+    finally:
+        if restore:
+            # Best effort: the work already succeeded or is raising its own error.
+            cudart.cudaSetDevice(previous)
+
+
 class TensorRTBackend:
     """Batch-one TensorRT engine runner.
 
@@ -120,6 +168,7 @@ class TensorRTBackend:
         self.min_samples, self.max_samples, max_output_shape = _validate_contract(
             trt, engine, self.context
         )
+        self.vocabulary_size = max_output_shape[2]
         self.stream = self._check(cudart.cudaStreamCreate())
         self.input_ptr = self._check(cudart.cudaMalloc(self.max_samples * np.dtype(np.float32).itemsize))
         max_output_elements = int(np.prod(max_output_shape))
@@ -158,6 +207,7 @@ class TensorRTBackend:
             return
         try:
             previous = self._check(self._cudart.cudaGetDevice())
+            restore = previous != device and _context_active(previous)
             if previous != device:
                 self._check(self._cudart.cudaSetDevice(device))
         except RuntimeError:
@@ -168,7 +218,7 @@ class TensorRTBackend:
         try:
             yield
         finally:
-            if previous != device:
+            if restore:
                 self._cudart.cudaSetDevice(previous)
 
     def _release(self) -> None:

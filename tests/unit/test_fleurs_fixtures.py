@@ -8,7 +8,7 @@ import pytest
 import soundfile as sf
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "fleurs"
-MANIFEST = json.loads((FIXTURES / "manifest.json").read_text())
+MANIFEST = json.loads((FIXTURES / "manifest.json").read_text(encoding="utf-8"))
 
 
 def test_manifest_pins_dataset_and_models():
@@ -20,7 +20,7 @@ def test_manifest_pins_dataset_and_models():
 
 
 def test_attribution_is_present():
-    readme = (FIXTURES / "README.md").read_text()
+    readme = (FIXTURES / "README.md").read_text(encoding="utf-8")
     assert "CC BY 4.0" in readme and MANIFEST["revision"] in readme
 
 

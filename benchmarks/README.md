@@ -1,12 +1,34 @@
 # Benchmark
 
 ```bash
-python benchmarks/benchmark.py speech.wav --model dynamic.onnx --tokenizer omniASR_tokenizer_written_v2.model --runs 10
+# a published model, by repo (records the resolved commit)
+python benchmarks/benchmark.py speech.wav --repo EmreAkgul/omniASR-CTC-300M-v2-ONNX \
+    --precision fp16 --device cuda --runs 20 --output report.json
+# local assets (records their sha256)
+python benchmarks/benchmark.py speech.wav --model model.onnx --tokenizer tokenizer.model --runs 10
+python benchmarks/benchmark.py speech.wav --model fp16.engine --tokenizer tokenizer.model --backend tensorrt
 ```
 
-Use `--device cuda` for ONNX Runtime CUDA. This measures the public API end to end: file loading, normalization, inference and decoding. Model load, first call and warmed samples are reported separately.
+This measures the public API end to end: file loading, normalization, inference and
+decoding. The JSON report (`report_version` 1) records everything needed to reproduce it:
 
-These times are not directly comparable to the forward-only exploratory TensorRT measurements in the main README. The packaged benchmark supports ONNX; TensorRT inference benchmarking is not part of the public API yet.
+| field | contents |
+|---|---|
+| `model` | `repo`, `revision` and resolved `commit`, or local `model_path`, `files_sha256` (the graph and every external-data file it references, e.g. `model.onnx.data`) and `tokenizer_path`/`tokenizer_sha256`; hashing happens outside the timed load |
+| `backend`, `precision`, `device`, `threads` | how it ran (`--precision` fp32/fp16/bf16 for ONNX; fp32/fp16/mixed for TensorRT with `--repo`; a local engine's precision is read from its cache `metadata.json`, else null) |
+| `audio` | path, sha256, duration, sample rate, channels |
+| `load_seconds`, `first_seconds` | model load and the first (cold) call |
+| `latency_seconds` | over `--runs` warm calls after `--warmup` unmeasured ones (default 2): mean, stdev, min, max, p50/p90/p95/p99, and the real-time factor `rtf_p50`/`rtf_mean` (seconds of compute per second of audio) |
+| `memory` | peak process RSS, and peak GPU memory sampled from nvidia-smi on CUDA |
+| `environment` | Python, platform, CPU count, versions of the relevant packages, and on CUDA runs the GPUs and `CUDA_VISIBLE_DEVICES` |
+
+`load_seconds` and the peak memory figures cover model loading too. On a cold cache a
+`--repo` run therefore includes the download and, for TensorRT, the engine build (whose
+memory peak can exceed inference's); run twice and keep the second report for
+steady-state numbers.
+
+These times are not directly comparable to the forward-only exploratory TensorRT
+measurements in the main README.
 
 ## Explicit LLM KV cache (CPU)
 
@@ -37,7 +59,7 @@ reports total latency and the mean latency of the final five steps. Attention st
 and this first implementation concatenates K/V tensors; cached decoding is not
 constant-time or allocation-free.
 
-Measured on an Intel Core i7-11800H with four CPU threads, float32, and three
+Measured on a laptop CPU with four threads, float32, and three
 warm repetitions ([raw measurements](llm_300m_v2_cache_scaling.json)):
 
 | Output steps | Full-prefix seconds | Cached seconds | Speedup |
@@ -87,6 +109,13 @@ pytest tests/integration/test_llm_cache_reference.py -q
 ```
 
 ## ONNX LLM cache (CPU and CUDA)
+
+> These measurements are of the first ONNX implementation: separate prefill and step
+> graphs with the K/V cache passed through host memory, as `tools/benchmark_llm_onnx.py`
+> still loads them. The current runtime uses one unified decoder and keeps the cache on
+> the GPU (see the [README](../README.md#llm-asr-models) and the
+> [LLM export history](../docs/llm-export-history.md)), so these CUDA numbers are not its
+> current performance.
 
 Day 3 keeps the Day 2 TorchScript files frozen and exports three ONNX graphs.
 The decoder graphs share one external weight file; their K/V tensors remain
@@ -143,8 +172,8 @@ peak RSS, sampled CUDA process memory, and the theoretical float32 cache bytes a
 100 positions are recorded. Cache concatenation and CPU-owned cache transfers are
 part of the measured implementation.
 
-Measured with four CPU threads on an Intel Core i7-11800H and, for CUDA, an RTX
-3060 Laptop GPU with 6 GiB. Values are medians of three measured runs after one
+Measured with four CPU threads on a laptop CPU and, for CUDA, a consumer laptop GPU
+with 6 GiB. Values are medians of three measured runs after one
 warmup:
 
 | Backend | 10 positions | 25 positions | 50 positions | 100 positions |
@@ -169,3 +198,31 @@ measurements are in
 [`llm_300m_v2_onnx_cuda.json`](llm_300m_v2_onnx_cuda.json). The curated
 [parity record](llm_300m_v2_onnx_parity.json) points to the generated raw-tensor
 reports in the artifact directory.
+
+## LLM encoder context on the GPU (CUDA)
+
+The ONNX runtime copies the encoder output to the host, writes the language embedding into
+its last row there, and binds it back as a CPU input to prefill. Keeping it on the GPU would
+save both copies (#46). `tools/benchmark_llm_context.py` times each half of that round trip
+against the device-resident path and checks that the prefill logits are identical:
+
+```bash
+python tools/benchmark_llm_context.py --model EmreAkgul/omniASR-LLM-300M-v2-ONNX \
+  --precision fp16 --output benchmarks/llm_300m_v2_context_cuda.json
+```
+
+300M v2, fp16, resident sessions, 64-token decode budget, on a CUDA GPU
+([`llm_300m_v2_context_cuda.json`](llm_300m_v2_context_cuda.json)):
+
+| Clip | Context | Encode → host / on GPU | Prefill from host / from GPU | Transcription | Saved |
+|---|---|---|---|---|---|
+| 5 s | 3.9 MiB | 56.7 / 56.2 ms | 45.2 / 44.7 ms | 637 ms | 1.0 ms (0.16%) |
+| 15 s | 11.7 MiB | 133.7 / 132.5 ms | 135.8 / 134.5 ms | 1,266 ms | 2.5 ms (0.20%) |
+| 30 s | 23.5 MiB | 274.6 / 271.4 ms | 303.7 / 301.3 ms | 1,903 ms | 5.6 ms (0.29%) |
+
+The logits are identical either way. Encode and prefill are medians of 15 runs and the
+transcription a median of 5. The figure leaves out the host copy the runtime makes to write
+the language row (about 0.1, 1.3 and 1.6 ms at these lengths), so the full saving at 30 s is
+about 7 ms (0.37%). A device-resident context would need that row written on the GPU, which
+takes a graph change or a raw CUDA copy (ONNX Runtime's Python API updates whole tensors
+only). For under 0.4% of a transcription, the runtime keeps the host round trip.

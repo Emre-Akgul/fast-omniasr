@@ -48,8 +48,11 @@ def if_node(then_graph):
     return _field(1, "cond") + _field(4, "If") + _field(5, attribute)
 
 
-def model(graph_bytes):
-    return _field(1, 8) + _field(2, "test") + _field(7, graph_bytes) + _field(8, _field(2, 17))
+def model(graph_bytes, metadata=None):
+    props = b"".join(_field(14, _field(1, key) + _field(2, value))
+                     for key, value in (metadata or {}).items())
+    return (_field(1, 8) + _field(2, "test") + _field(7, graph_bytes) + _field(8, _field(2, 17))
+            + props)
 
 
 def model_with_external(*locations, inline=b""):
@@ -66,3 +69,22 @@ def graph_file(name, listed):
     data = name.rsplit("/", 1)[-1] + ".data"
     sibling = name + ".data"
     return model_with_external(*([data] if sibling in listed else []), inline=name.encode())
+
+
+ELEMENT = {"float": 1, "int32": 6, "int64": 7}
+
+
+def value_info(name, element, dims):
+    """A ValueInfoProto for a tensor; dims are ints or symbolic names."""
+    shape = b"".join(_field(1, _field(1, d) if isinstance(d, int) else _field(2, d))
+                     for d in dims)
+    tensor = _field(1, ELEMENT[element]) + _field(2, shape)
+    return _field(1, name) + _field(2, _field(1, tensor))
+
+
+def signature_model(inputs, outputs):
+    """A model whose graph declares only `inputs`/`outputs` [(name, element, dims)]."""
+    body = _field(2, "g")
+    body += b"".join(_field(11, value_info(*v)) for v in inputs)
+    body += b"".join(_field(12, value_info(*v)) for v in outputs)
+    return model(body)

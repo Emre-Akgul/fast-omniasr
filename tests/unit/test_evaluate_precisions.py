@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "evaluate_precisions.py"
@@ -52,6 +53,50 @@ def test_all_empty_and_silent_is_still_defined_as_none():
     result = error_rates([""], [""])
     assert result["wer"] is None and result["cer"] is None
     assert result["empty_reference_nonempty_hypotheses"] == 0
+
+
+def _frames(*rows):
+    """[1, frames, 5] logits; each row gives (top index, top logit, runner-up logit)."""
+    out = np.full((1, len(rows), 5), -10.0, dtype=np.float32)
+    for frame, (index, top, second) in enumerate(rows):
+        out[0, frame, index], out[0, frame, (index + 1) % 5] = top, second
+    return out
+
+
+# Blank is 0. Decodes to [2, 3, 1, 4]; frames 2 and 4 are FP32 near-ties (the margins of
+# the two #104 frames: 0.128 and 0.007), every other frame is decisive.
+REFERENCE = _frames((2, 5.0, 1.0), (0, 6.0, 0.0), (3, 3.128, 3.0), (0, 6.0, 0.0),
+                    (1, 2.007, 2.0), (0, 6.0, 0.0), (4, 5.0, 1.0))
+
+
+def test_near_tie_flips_do_not_change_the_compared_tokens():
+    # The #104 case: the mixed engine sends both near-ties to blank.
+    mixed = REFERENCE.copy()
+    mixed[0, [2, 4], 0] = 9.0
+    assert evaluate.greedy_token_ids(mixed) == [2, 4]  # exact equality would fail
+    expected = evaluate.greedy_token_ids(REFERENCE)
+    assert evaluate.tokens_outside_near_ties(mixed, REFERENCE, min_margin=1.0) == expected
+    assert evaluate.tokens_outside_near_ties(mixed, REFERENCE, min_margin=0.0) == [2, 4]
+
+
+def test_a_flip_at_a_decisive_frame_still_changes_the_tokens():
+    degraded = REFERENCE.copy()
+    degraded[0, 6, 0] = 9.0  # frame 6 has a margin of 4: a real disagreement
+    assert evaluate.tokens_outside_near_ties(degraded, REFERENCE, min_margin=1.0) == [2, 3, 1]
+    degraded = REFERENCE.copy()
+    degraded[0, 3, 2] = 9.0  # a decisive blank becomes a token
+    assert evaluate.tokens_outside_near_ties(degraded, REFERENCE, 1.0) == [2, 3, 2, 1, 4]
+
+
+def test_flips_that_ctc_collapses_away_are_not_differences():
+    stretched = REFERENCE.copy()
+    stretched[0, 1, 2] = 9.0  # a decisive blank becomes a repeat of the previous token
+    assert evaluate.tokens_outside_near_ties(stretched, REFERENCE, 1.0) == [2, 3, 1, 4]
+
+
+def test_near_tie_comparison_rejects_mismatched_shapes():
+    with pytest.raises(ValueError, match="shaped"):
+        evaluate.tokens_outside_near_ties(REFERENCE[:, :3], REFERENCE, min_margin=1.0)
 
 
 def test_corpus_rate_weights_by_reference_length():
@@ -117,7 +162,7 @@ def _fake_llm_main(monkeypatch, tmp_path, reasons_by_precision):
         "--precision", *reasons_by_precision, "--report", str(report), "--no-isolate",
     ])
     evaluate.main()
-    return json.loads(report.read_text())
+    return json.loads(report.read_text(encoding="utf-8"))
 
 
 def test_main_reports_llm_truncation(monkeypatch, tmp_path, capsys):
@@ -580,5 +625,20 @@ def test_main_isolated_report_has_peak_gpu_mib(tmp_path, monkeypatch):
                                       "fp32", "fp16", "--audio", str(tmp_path / "clips/a.flac"),
                                       "--report", str(report)])
     evaluate.main()
-    results = json.loads(report.read_text())["precisions"]
+    results = json.loads(report.read_text(encoding="utf-8"))["precisions"]
     assert {p: r["peak_gpu_mib"] for p, r in results.items()} == {"fp32": 2048, "fp16": 1024}
+
+
+@pytest.mark.parametrize("spec, expected", [
+    ("clip.wav", ("clip.wav", "")),
+    ("clip.wav:eng_Latn", ("clip.wav", "eng_Latn")),
+    ("C:\\clips\\a.wav", ("C:\\clips\\a.wav", "")),          # Windows drive letter
+    ("C:\\clips\\a.wav:tur_Latn", ("C:\\clips\\a.wav", "tur_Latn")),
+    ("odd:name.wav", ("odd:name.wav", "")),                   # colon not followed by a code
+    ("clip.wav:roh_Latn_surs1244", ("clip.wav", "roh_Latn_surs1244")),  # dialect code
+    ("clip.wav:", ("clip.wav", "")),                          # explicit "no language"
+    ("C:", ("C:", "")),
+    ("D:", ("D:", "")),
+])
+def test_audio_specs_split_only_on_a_language_code(spec, expected):
+    assert evaluate._split_audio_spec(spec) == expected

@@ -1,16 +1,18 @@
-"""Greedy decoding with full-prefix or explicit-cache OmniASR LLM-ASR graphs."""
+"""Greedy or beam-search decoding with full-prefix or explicit-cache OmniASR LLM-ASR graphs."""
 
 import json
+import math
+import numbers
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
-from ..audio import load_audio, prepare_audio
-from ..options import check_device, check_flag, resolve_threads
+from ..audio import DEFAULT_CHUNK_LENGTH, load_audio, prepare_audio, prepare_chunks
+from ..options import check_device, check_device_index, check_flag, resolve_threads
+from ..precision import check_precision
 from ..tokenizer import Tokenizer
-from .models import LLM_MODEL_CARDS
 
 # Every value LLMTranscription.stop_reason can take: "eos" means the transcript is
 # complete; the other two mean generation was cut off.
@@ -32,11 +34,130 @@ def _language_files(config: dict) -> set[str]:
     return names
 
 
+def _check_repetition_penalty(penalty) -> float:
+    try:
+        valid = (isinstance(penalty, numbers.Real) and not isinstance(penalty, (bool, np.bool_))
+                 and math.isfinite(penalty) and penalty > 0)
+    except OverflowError:  # an integer too large for a float
+        valid = False
+    if not valid:
+        raise ValueError(f"repetition_penalty must be a positive number, got {penalty!r}")
+    return float(penalty)
+
+
+def _next_token(logits, generated, penalty) -> int:
+    """Greedy choice after the repetition penalty, with the same rule as faster-whisper
+    (CTranslate2): each token generated so far has its score multiplied by `penalty` if
+    negative and divided by it otherwise, so values above 1 discourage repeats."""
+    if not generated or penalty == 1:
+        return int(logits.argmax(-1).item())
+    values = logits.float().cpu().numpy() if hasattr(logits, "cpu") else logits
+    values = np.array(values, dtype=np.float32, copy=True).reshape(-1)
+    ids = np.unique(generated)
+    scores = values[ids]
+    values[ids] = np.where(scores < 0, scores * penalty, scores / penalty)
+    return int(values.argmax())
+
+
+def _check_beam_size(beam_size) -> int:
+    if not isinstance(beam_size, int) or isinstance(beam_size, bool) or beam_size < 1:
+        raise ValueError(f"beam_size must be a positive integer, got {beam_size!r}")
+    return beam_size
+
+
+def _log_probs(logits, generated, penalty) -> np.ndarray:
+    """Log-softmax of one hypothesis's next-token scores, after the repetition penalty."""
+    values = logits.float().cpu().numpy() if hasattr(logits, "cpu") else logits
+    values = np.array(values, dtype=np.float64, copy=True).reshape(-1)
+    if not np.isfinite(values).all():
+        raise RuntimeError("Decoder produced non-finite logits")
+    if generated and penalty != 1:
+        ids = np.unique(generated)
+        scores = values[ids]
+        values[ids] = np.where(scores < 0, scores * penalty, scores / penalty)
+    values -= values.max()
+    return values - np.log(np.exp(values).sum())
+
+
+def _beam_search(logits, state, advance, *, budget, beam_size, eos, penalty, length_norm):
+    """Upstream's beam search (omnilingual_asr Wav2Vec2LlamaBeamSearchSeq2SeqGenerator) on
+    batch-one graphs. Each step, every live hypothesis is extended by its log-probabilities
+    and the best `beam_size` candidates overall survive. A hypothesis that emits EOS keeps
+    its score and stays in the beam, competing with the live ones, until every hypothesis
+    has ended or `budget` steps have run; the best-scoring one is returned. With
+    `length_norm` a hypothesis scores by its mean log-probability per token instead of the
+    sum. Upstream's compression-ratio early stop is not applied.
+
+    `logits` and `state` come from the prefill; `advance(state, tokens)` runs the decoder
+    on a hypothesis's latest token and returns its next logits and state. States are never
+    modified, so hypotheses that share a parent share its state (its K/V cache).
+    Returns (tokens, ended_at_eos)."""
+    # Each hypothesis: [tokens, score, next-token logits, decoder state, ended].
+    beams = [[[], 0.0, logits, state, False]]
+    for step in range(budget):
+        candidates = []
+        for rank, (tokens, score, scores, _, ended) in enumerate(beams):
+            if ended:
+                candidates.append((score, rank, eos))
+                continue
+            totals = _log_probs(scores, tokens, penalty)
+            totals = (score * step + totals) / (step + 1) if length_norm else score + totals
+            best = np.argsort(-totals, kind="stable")[:beam_size]
+            candidates.extend((float(totals[token]), rank, int(token)) for token in best)
+        # Stable sort: ties go to the earlier hypothesis, then the lower token id.
+        candidates.sort(key=lambda candidate: -candidate[0])
+        survivors = []
+        for score, rank, token in candidates[:beam_size]:
+            tokens, _, _, state, ended = beams[rank]
+            if ended:
+                survivors.append(beams[rank])
+            elif token == eos:
+                survivors.append([tokens, score, None, None, True])
+            else:
+                tokens = [*tokens, token]
+                scores = None
+                if step + 1 < budget:
+                    scores, state = advance(state, tokens)
+                survivors.append([tokens, score, scores, state, False])
+        beams = survivors
+        if all(beam[4] for beam in beams):
+            break
+    return beams[0][0], beams[0][4]
+
+
+def list_languages(repo_id: str, *, revision: str | None = None,
+                   cache_dir: str | Path | None = None,
+                   local_files_only: bool = False) -> list[str]:
+    """The language codes a published model accepts, sorted. Downloads only the code table."""
+    from ..hub import download_verified
+
+    def mapping(config):
+        names = {(config.get("languages") or {}).get("mapping")} - {None}
+        if not names:
+            raise ValueError(f"{repo_id} has no language table")
+        return names
+
+    _, verified = download_verified(repo_id, mapping, revision=revision, cache_dir=cache_dir,
+                                    dependencies=True, local_files_only=local_files_only)
+    path = next(iter(verified.values()))
+    return sorted(json.loads(path.read_text(encoding="utf-8")))
+
+
+@dataclass(frozen=True)
+class LLMTranscriptionChunk:
+    start: float  # seconds into the recording
+    end: float
+    text: str
+    token_ids: list[int]
+    stop_reason: str  # one of STOP_REASONS
+
+
 @dataclass(frozen=True)
 class LLMTranscription:
     text: str
     token_ids: list[int]
     stop_reason: str  # one of STOP_REASONS
+    chunks: tuple[LLMTranscriptionChunk, ...] = ()  # set by transcribe_long
 
 
 class OmniASRLLM:
@@ -44,7 +165,8 @@ class OmniASRLLM:
 
     The default baseline recomputes the prefix. Set cached=True to load the
     explicit-cache decoder, which processes the prefix once per transcription.
-    It supports one mono 16 kHz clip, up to 30 seconds, without language conditioning.
+    It supports one mono 16 kHz clip, up to 30 seconds; `transcribe(lang=...)` needs the
+    language tables (tools/export_llm_languages.py).
 
     Thread-safe: an instance may be shared across threads. Its sessions, lazily created
     graphs, low_memory phasing and device buffers are per-instance state, so concurrent
@@ -56,6 +178,8 @@ class OmniASRLLM:
     don't call its methods directly while the model is in use.
     """
 
+    snapshot = None  # set by from_pretrained: where the assets came from (hub.Snapshot)
+
     def __init__(
         self,
         directory: str | Path,
@@ -66,8 +190,10 @@ class OmniASRLLM:
         threads: int | None = None,
         low_memory: bool = False,
         precision: str = "fp32",
+        device_index: int | None = None,
     ):
-        """`threads` (default 4) and `low_memory` apply to backend="onnx"; the TorchScript
+        """`device_index` picks the GPU for device="cuda" (default: ONNX Runtime's GPU 0).
+        `threads` (default 4) and `low_memory` apply to backend="onnx"; the TorchScript
         baseline uses PyTorch's process-wide thread setting and loads one copy, so it
         rejects both rather than silently ignoring them. `cached` selects the TorchScript
         baseline's decoder; the ONNX backend always decodes with an explicit KV cache."""
@@ -77,6 +203,7 @@ class OmniASRLLM:
         if backend not in {"torch", "onnx"}:
             raise ValueError("backend must be torch or onnx")
         check_device(device)
+        device_index = check_device_index(device_index, device)
         check_flag("low_memory", low_memory)
         check_flag("cached", cached)
         if backend == "onnx":
@@ -93,20 +220,36 @@ class OmniASRLLM:
 
         directory = Path(directory)
         self.directory = directory
-        self.config = json.loads((directory / "config.json").read_text())
-        if (
-            self.config.get("format_version") != 1
-            or self.config.get("model") not in LLM_MODEL_CARDS
-        ):
-            raise ValueError("Unsupported LLM artifact format or model")
+        from .validation import (
+            InvalidArtifactError,
+            validate_config,
+            validate_graphs,
+            validate_languages,
+            validate_tokenizer,
+        )
+
+        try:
+            self.config = json.loads((directory / "config.json").read_text(encoding="utf-8"))
+        except ValueError as exc:
+            raise InvalidArtifactError(
+                f"Invalid LLM artifact {directory / 'config.json'}: not valid JSON ({exc})"
+            ) from exc
+        # Everything below is checked before any session or module is loaded.
+        validate_config(self.config, directory)
+        self.tokenizer = Tokenizer(directory / "tokenizer.model")
+        validate_tokenizer(self.tokenizer, self.config, directory)
         if backend == "onnx":
+            check_precision(precision, device)
+            hidden = validate_graphs(directory, precision, self.config)
+            validate_languages(self.config, directory, hidden)
             from .onnx_backend import ONNXLLMBackend
 
-            self.onnx = ONNXLLMBackend(directory, device, threads, low_memory, precision)
+            self.onnx = ONNXLLMBackend(directory, device, threads, low_memory, precision,
+                                       device_index)
             self.device = device
             self.cached = True
-            self.tokenizer = Tokenizer(directory / "tokenizer.model")
             return
+        validate_languages(self.config, directory, None)
         import torch
 
         self.device = torch.device(device)
@@ -118,7 +261,6 @@ class OmniASRLLM:
         self.decoder = torch.jit.load(str(directory / decoder_file), map_location=self.device)
         self.encoder.eval()
         self.decoder.eval()
-        self.tokenizer = Tokenizer(directory / "tokenizer.model")
 
     @classmethod
     def from_pretrained(
@@ -131,6 +273,8 @@ class OmniASRLLM:
         precision: str = "fp32",
         revision: str | None = None,
         cache_dir: str | Path | None = None,
+        local_files_only: bool = False,
+        device_index: int | None = None,
     ) -> "OmniASRLLM":
         """Download, verify and load published ONNX assets (no PyTorch needed).
 
@@ -145,28 +289,38 @@ class OmniASRLLM:
 
         precision="fp16" or "bf16" downloads only that variant (MatMul weights in half
         precision, about half the size) plus the shared tokenizer and language tables.
-        bf16 needs device="cuda" and an Ampere or newer GPU.
+        bf16 needs device="cuda" and an Ampere or newer GPU. `device_index` picks the GPU
+        (default: ONNX Runtime's GPU 0).
+
+        `local_files_only=True` loads the cached copy without contacting the Hub (raising
+        fast_omniasr.hub.LocalBundleNotFoundError if there is none). The returned model's
+        `snapshot` records the repo, revision, resolved commit and local directory.
         """
         check_device(device)
+        check_device_index(device_index, device)
         threads = resolve_threads(threads)
         check_flag("low_memory", low_memory)
+        check_flag("local_files_only", local_files_only)
         from ..hub import download_verified
         from ..precision import check_precision
 
         check_precision(precision, device)
         if precision != "fp32":
             required = {f"{precision}/encoder.onnx", f"{precision}/decoder.onnx", "tokenizer.model"}
-            _, verified = download_verified(
+            _, verified, snapshot = download_verified(
                 repo_id, lambda config: required | _language_files(config), revision=revision,
-                cache_dir=cache_dir, dependencies=True,
+                cache_dir=cache_dir, dependencies=True, local_files_only=local_files_only,
+                return_snapshot=True,
             )
             directory = verified["tokenizer.model"].parent
             if any(verified[name].parent != directory / precision for name in required - {"tokenizer.model"}):
                 raise RuntimeError("Downloaded assets are not co-located in one snapshot")
-            return cls(
+            model = cls(
                 directory, backend="onnx", device=device, threads=threads,
-                low_memory=low_memory, precision=precision,
+                low_memory=low_memory, precision=precision, device_index=device_index,
             )
+            model.snapshot = snapshot
+            return model
         required = {"encoder.onnx", "decoder.weights", "decoder_weights.json", "tokenizer.model"}
 
         def fp32_files(config):
@@ -176,8 +330,9 @@ class OmniASRLLM:
                 "decoder_prefill.onnx", "decoder_step.onnx"} & listed.keys()
             return required | graphs | _language_files(config)
 
-        _, verified = download_verified(
-            repo_id, fp32_files, revision=revision, cache_dir=cache_dir, dependencies=True
+        _, verified, snapshot = download_verified(
+            repo_id, fp32_files, revision=revision, cache_dir=cache_dir, dependencies=True,
+            local_files_only=local_files_only, return_snapshot=True,
         )
         # decoder.onnx (one session) is preferred; older repos ship only prefill/step graphs.
         graphs = {"decoder.onnx"} & verified.keys() or {"decoder_prefill.onnx", "decoder_step.onnx"}
@@ -186,9 +341,12 @@ class OmniASRLLM:
         directory = verified["encoder.onnx"].parent
         if any(verified[name].parent != directory for name in required | graphs):
             raise RuntimeError("Downloaded assets are not co-located in one snapshot")
-        return cls(
-            directory, backend="onnx", device=device, threads=threads, low_memory=low_memory
+        model = cls(
+            directory, backend="onnx", device=device, threads=threads, low_memory=low_memory,
+            device_index=device_index,
         )
+        model.snapshot = snapshot
+        return model
 
     def language_embedding(self, lang: str) -> np.ndarray:
         """Return the learned embedding row for an upstream code such as eng_Latn."""
@@ -198,7 +356,7 @@ class OmniASRLLM:
         if not hasattr(self, "_lang_embeddings"):
             with self._ensure_lock("_language_lock"):
                 if not hasattr(self, "_lang_embeddings"):  # loaded once, even concurrently
-                    mapping = json.loads((self.directory / languages["mapping"]).read_text())
+                    mapping = json.loads((self.directory / languages["mapping"]).read_text(encoding="utf-8"))
                     embeddings = np.load(self.directory / languages["embeddings"],
                                          mmap_mode="r")
                     self._languages = mapping
@@ -241,41 +399,128 @@ class OmniASRLLM:
         sample_rate: int = 16000,
         max_new_tokens: int = 512,
         lang: str | None = None,
+        convert_audio: bool = False,
+        repetition_penalty: float = 1,
+        beam_size: int = 1,
+        length_norm: bool = False,
     ) -> LLMTranscription:
         """Greedy-decode one clip. `lang` conditions on an upstream language code
-        (e.g. "eng_Latn"); without it the model's learned no-language row is used."""
+        (e.g. "eng_Latn"); without it the model's learned no-language row is used.
+        `convert_audio=True` downmixes and resamples audio that isn't mono 16 kHz (the
+        `resample` extra); by default it is rejected. `repetition_penalty` above 1
+        discourages tokens already generated, as in faster-whisper; 1 leaves the model's
+        output untouched. It can end loops on audio with no speech, but it can also end a
+        transcript early, because a penalized token can lose to EOS, which is never
+        penalized.
+
+        `beam_size` above 1 runs upstream's beam search instead of greedy decoding
+        (upstream's own pipeline uses 5 beams); `length_norm=True` ranks hypotheses by
+        their mean token log-probability, as upstream's `length_norm` option does. The
+        graphs are batch-one, so each step runs the decoder once per live beam: decoding
+        is up to `beam_size` times slower and holds up to `beam_size` K/V caches."""
+        max_new_tokens, repetition_penalty, beam_size = self._check_request(
+            max_new_tokens, repetition_penalty, beam_size, length_norm)
+        waveform = (
+            load_audio(audio, convert_audio=convert_audio)
+            if isinstance(audio, (str, Path))
+            else prepare_audio(audio, sample_rate, convert_audio=convert_audio)
+        )
+        if waveform.shape[1] > 30 * 16000:
+            raise ValueError("This runtime supports clips of at most 30 seconds")
+        self._warn_without_language(lang)
+        return self._decode(waveform, max_new_tokens, self._language(lang), repetition_penalty,
+                            beam_size, length_norm)
+
+    def _check_request(self, max_new_tokens, repetition_penalty, beam_size=1,
+                       length_norm=False):
         if getattr(self, "closed", False):
             raise RuntimeError("This OmniASRLLM model is closed")
+        repetition_penalty = _check_repetition_penalty(repetition_penalty)
+        beam_size = _check_beam_size(beam_size)
+        check_flag("length_norm", length_norm)
         if (
             not isinstance(max_new_tokens, int)
             or isinstance(max_new_tokens, bool)
             or max_new_tokens < 1
         ):
             raise ValueError("max_new_tokens must be a positive integer")
-        waveform = (
-            load_audio(audio)
-            if isinstance(audio, (str, Path))
-            else prepare_audio(audio, sample_rate)
-        )
-        if waveform.shape[1] > 30 * 16000:
-            raise ValueError("This runtime supports clips of at most 30 seconds")
+        return max_new_tokens, repetition_penalty, beam_size
+
+    @staticmethod
+    def _warn_without_language(lang):
         if lang is None:
             import warnings
 
             warnings.warn(
                 "Transcribing without a `lang` code can degrade quality, as upstream warns; "
                 "pass e.g. lang='eng_Latn'",
-                stacklevel=2,
+                stacklevel=3,
             )
-        language = None if lang is None else self.language_embedding(lang)
+
+    def _language(self, lang):
+        return None if lang is None else self.language_embedding(lang)
+
+    def _decode(self, waveform, max_new_tokens, language, repetition_penalty, beam_size=1,
+                length_norm=False):
         with self._ensure_lock("_lock"):  # one request at a time per instance
             if getattr(self, "closed", False):
                 raise RuntimeError("This OmniASRLLM model is closed")
-            if getattr(self, "backend", "torch") == "onnx":
-                return self._transcribe_onnx(waveform, max_new_tokens, language)
-            return self._transcribe_torch(waveform, max_new_tokens, language)
+            transcribe = (self._transcribe_onnx if getattr(self, "backend", "torch") == "onnx"
+                          else self._transcribe_torch)
+            return transcribe(waveform, max_new_tokens, language, repetition_penalty,
+                              beam_size=beam_size, length_norm=length_norm)
 
-    def _transcribe_torch(self, waveform, max_new_tokens, language=None):
+    def transcribe_long(
+        self,
+        audio: str | Path | np.ndarray,
+        *,
+        sample_rate: int = 16000,
+        chunk_length: float = DEFAULT_CHUNK_LENGTH,
+        max_new_tokens: int = 512,
+        lang: str | None = None,
+        convert_audio: bool = False,
+        repetition_penalty: float = 1,
+        beam_size: int = 1,
+        length_norm: bool = False,
+        vad_filter: bool = False,
+        vad_options=None,
+    ) -> LLMTranscription:
+        """Transcribe a recording of any length by cutting it every `chunk_length` seconds
+        (at most 30) and joining the text in order. Chunks don't overlap and nothing is
+        reconciled across a cut, so a word on a boundary can be damaged. `max_new_tokens`
+        and the decoding options (`repetition_penalty`, `beam_size`, `length_norm`, as in
+        `transcribe()`) apply per chunk. `.chunks` has each chunk's times, text and stop reason, and
+        `stop_reason` is "eos" only if every chunk reached it, otherwise the first other.
+
+        `vad_filter=True` keeps only speech and cuts at silence, using Silero VAD as
+        faster-whisper does (needs onnxruntime); `vad_options` is a `vad.VadOptions` or a
+        dict of its fields. A chunk then holds at most `chunk_length` seconds of audio, but
+        its `start` and `end` can span more, since silence is left out. If the VAD finds no
+        speech, the decoder doesn't run and the result has empty text and no chunks.
+        Non-speech the VAD mistakes for speech, such as some tones, is still decoded."""
+        max_new_tokens, repetition_penalty, beam_size = self._check_request(
+            max_new_tokens, repetition_penalty, beam_size, length_norm)
+        chunks = prepare_chunks(audio, sample_rate, chunk_length=chunk_length,
+                                convert_audio=convert_audio, max_chunk_length=30,
+                                vad_filter=vad_filter, vad_options=vad_options)
+        self._warn_without_language(lang)
+        language = self._language(lang)
+        results = []
+        for start, end, waveform, _ in chunks:
+            result = self._decode(waveform, max_new_tokens, language, repetition_penalty,
+                                  beam_size, length_norm)
+            results.append(LLMTranscriptionChunk(start, end, result.text, result.token_ids,
+                                                 result.stop_reason))
+        reasons = [chunk.stop_reason for chunk in results if chunk.stop_reason != "eos"]
+        return LLMTranscription(
+            " ".join(chunk.text for chunk in results if chunk.text),
+            [token for chunk in results for token in chunk.token_ids],
+            reasons[0] if reasons else "eos",
+            tuple(results),
+        )
+
+    def _transcribe_torch(self, waveform, max_new_tokens, language=None, repetition_penalty=1,
+                          *, beam_size=1, length_norm=False):
         import torch
 
         with torch.inference_mode():
@@ -291,6 +536,11 @@ class OmniASRLLM:
             if budget < 1:
                 raise ValueError("Audio prefix exceeds decoder context capacity")
             reason = "max_new_tokens" if budget == max_new_tokens else "context_limit"
+            if beam_size > 1:
+                generated, ended = self._beam_search_torch(
+                    context, budget, beam_size, repetition_penalty, length_norm)
+                return LLMTranscription(self.tokenizer.decode(generated), generated,
+                                        "eos" if ended else reason)
             cache = None
             for _ in range(budget):
                 if getattr(self, "cached", False):
@@ -304,7 +554,7 @@ class OmniASRLLM:
                     logits = self.decoder(context, ids)
                 if not torch.isfinite(logits).all():
                     raise RuntimeError("Decoder produced non-finite logits")
-                token = int(logits.argmax(-1).item())
+                token = _next_token(logits, generated, repetition_penalty)
                 if token == self.config["eos_idx"]:
                     reason = "eos"
                     break
@@ -312,7 +562,30 @@ class OmniASRLLM:
                 tokens.append(token)
         return LLMTranscription(self.tokenizer.decode(generated), generated, reason)
 
-    def _transcribe_onnx(self, waveform, max_new_tokens, language=None):
+    def _beam_search_torch(self, context, budget, beam_size, repetition_penalty, length_norm):
+        import torch
+
+        def ids(tokens):
+            return torch.tensor([tokens], dtype=torch.int64, device=self.device)
+
+        bos = self.config["bos_idx"]
+        if getattr(self, "cached", False):
+            logits, state = self.decoder.prefill(context, ids([bos]))
+
+            def advance(cache, tokens):
+                return self.decoder.decode_step(ids(tokens[-1:]), cache)
+        else:
+            logits, state = self.decoder(context, ids([bos])), None
+
+            def advance(_, tokens):
+                return self.decoder(context, ids([bos, *tokens])), None
+
+        return _beam_search(logits, state, advance, budget=budget, beam_size=beam_size,
+                            eos=self.config["eos_idx"], penalty=repetition_penalty,
+                            length_norm=length_norm)
+
+    def _transcribe_onnx(self, waveform, max_new_tokens, language=None, repetition_penalty=1,
+                         *, beam_size=1, length_norm=False):
         context = self.onnx.encode(waveform)
         if language is not None:
             context = np.array(context, copy=True)
@@ -323,11 +596,20 @@ class OmniASRLLM:
         reason = "max_new_tokens" if budget == max_new_tokens else "context_limit"
         token = np.array([[self.config["bos_idx"]]], dtype=np.int64)
         logits, cache = self.onnx.prefill(context, token)
+        if beam_size > 1:
+            def advance(cache, tokens):
+                return self.onnx.decode_step(np.array([tokens[-1:]], dtype=np.int64), cache)
+
+            generated, ended = _beam_search(
+                logits, cache, advance, budget=budget, beam_size=beam_size,
+                eos=self.config["eos_idx"], penalty=repetition_penalty, length_norm=length_norm)
+            return LLMTranscription(self.tokenizer.decode(generated), generated,
+                                    "eos" if ended else reason)
         generated = []
         for index in range(budget):
             if not np.isfinite(logits).all():
                 raise RuntimeError("Decoder produced non-finite logits")
-            next_token = int(logits.argmax(-1).item())
+            next_token = _next_token(logits, generated, repetition_penalty)
             if next_token == self.config["eos_idx"]:
                 reason = "eos"
                 break
