@@ -32,7 +32,14 @@ CTC_MODEL_CARDS = (
 VALIDATION_AUDIO = tuple(sorted((Path(__file__).parent / "tests/fixtures/fleurs").glob("*.flac")))
 VALIDATION_NOISE_SAMPLES = (400, 480000)
 LOGIT_RTOL = 1e-4
-LOGIT_ATOL = 1e-3
+# Measured on the official omniASR_CTC_300M_v2 export (batch-one and --batch graphs alike,
+# ONNX Runtime CPU against fairseq2 CPU, float32): logits span about +-21 and differ by up to
+# 0.0021 (English FLEURS clip; 0.0009 on the others) with every greedy token equal. 1e-2
+# leaves about 5x headroom over that float32 reordering noise and still fails real
+# breakage: scaling only the output projection's weights by 1.001 moves logits by 0.021,
+# and a random 0.1% relative change to every weight by about 3. Token flips are caught
+# separately, whatever the tolerance.
+LOGIT_ATOL = 1e-2
 # Frames whose top two source logits are this close may flip under float32 reordering.
 TIE_MARGIN = 1e-3
 PARITY_REPORT = "export_parity.json"

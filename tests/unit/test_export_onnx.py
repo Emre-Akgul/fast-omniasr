@@ -170,13 +170,24 @@ def test_matching_logits_pass_parity():
     [
         (lambda e: e[:, :-1], "shape"),
         (lambda e: np.where(np.arange(e.size).reshape(e.shape) == 3, np.nan, e), "NaN"),
-        (lambda e: e + 0.01, "logits differ by up to"),
+        (lambda e: e + 0.02, "logits differ by up to"),
     ],
 )
 def test_diverging_logits_fail_parity(actual, message):
     expected = _logits()
     with pytest.raises(ValueError, match=message):
         export_onnx.compare_logits(expected, actual(expected))
+
+
+def test_default_tolerance_accepts_official_export_noise_but_not_real_breakage():
+    # The official omniASR_CTC_300M_v2 export differs from its source by up to 0.0021 (the
+    # English FLEURS clip) with every token equal; a broken export by far more.
+    expected = _logits()
+    report = export_onnx.compare_logits(expected, expected + 0.0021)
+    assert report["tokens_equal"] is True
+    for offset in (0.021, 0.42):
+        with pytest.raises(ValueError, match="logits differ by up to"):
+            export_onnx.compare_logits(expected, expected + offset)
 
 
 def test_flipped_token_fails_even_within_loose_logit_tolerance():
