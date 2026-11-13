@@ -12,7 +12,11 @@ from dataclasses import asdict
 EXPECTED_ERRORS = (ValueError, TypeError, RuntimeError, OSError, ImportError)
 PACKAGES = ("numpy", "soundfile", "sentencepiece", "onnxruntime", "onnxruntime-gpu", "torch",
             "huggingface-hub", "soxr", "cuda-python")
-CTC_ONLY = {"backend": "--backend", "word_timestamps": "--word-timestamps"}
+CTC_ONLY = {"backend": "--backend", "word_timestamps": "--word-timestamps", "lm": "--lm",
+            "lm_weight": "--lm-weight", "word_bonus": "--word-bonus", "hotword": "--hotword",
+            "hotword_weight": "--hotword-weight"}
+# Beam-search options that only mean something together with another one.
+NEEDS = {"lm_weight": "lm", "word_bonus": "lm", "hotword_weight": "hotword"}
 LLM_ONLY = {"lang": "--lang", "max_new_tokens": "--max-new-tokens",
             "repetition_penalty": "--repetition-penalty", "low_memory": "--low-memory"}
 
@@ -39,6 +43,9 @@ def _check_kind(parser, args) -> None:
     for option, flag in options.items():
         if _given(args, option):
             parser.error(f"{flag} doesn't apply to --kind {args.kind}")
+    for option, needed in NEEDS.items():
+        if _given(args, option) and not _given(args, needed):
+            parser.error(f"{CTC_ONLY[option]} needs {CTC_ONLY[needed]}")
 
 
 def _load(args):
@@ -61,8 +68,11 @@ def _request(args) -> tuple[bool, dict]:
     request = {"convert_audio": args.convert_audio}
     if args.kind == "ctc":
         request["word_timestamps"] = args.word_timestamps
+        decoder = _decoder(args)
+        if decoder is not None:
+            request["decoder"] = decoder
     else:
-        for option in ("lang", "max_new_tokens", "repetition_penalty"):
+        for option in ("lang", "max_new_tokens", "repetition_penalty", "beam_size"):
             if getattr(args, option) is not None:
                 request[option] = getattr(args, option)
     long = args.long or args.vad or args.chunk_length is not None
@@ -71,6 +81,18 @@ def _request(args) -> tuple[bool, dict]:
         if args.chunk_length is not None:
             request["chunk_length"] = args.chunk_length
     return long, request
+
+
+def _decoder(args):
+    """A BeamSearchDecoder if any beam-search option was given, else None (greedy)."""
+    if not any(_given(args, option) for option in ("beam_size", "lm", "hotword")):
+        return None
+    from .beam_search import BeamSearchDecoder
+
+    options = {option: getattr(args, option)
+               for option in ("beam_size", "lm", "lm_weight", "word_bonus", "hotword_weight")
+               if getattr(args, option) is not None}
+    return BeamSearchDecoder(hotwords=args.hotword or (), **options)
 
 
 def _print_text(path: str, result, many: bool) -> None:
@@ -221,6 +243,17 @@ def build_parser() -> argparse.ArgumentParser:
     transcribe.add_argument("--lang", help="LLM only: language code such as eng_Latn")
     transcribe.add_argument("--max-new-tokens", type=int, help="LLM only")
     transcribe.add_argument("--repetition-penalty", type=float, help="LLM only")
+    transcribe.add_argument("--beam-size", type=int,
+                            help="beam search with this many beams (default: greedy decoding)")
+    transcribe.add_argument("--lm", help="CTC only: KenLM n-gram model (ARPA or binary) to "
+                                         "fuse with beam search (the lm extra)")
+    transcribe.add_argument("--lm-weight", type=float, help="CTC only: LM weight (default 0.5)")
+    transcribe.add_argument("--word-bonus", type=float,
+                            help="CTC only: score added per word with --lm (default 2.0)")
+    transcribe.add_argument("--hotword", action="append",
+                            help="CTC only: word or phrase to favour; repeatable")
+    transcribe.add_argument("--hotword-weight", type=float,
+                            help="CTC only: score of a whole hotword (default 5.0)")
     transcribe.set_defaults(handler=_transcribe)
 
     inspect = commands.add_parser("inspect", help="load a model and report what was loaded")

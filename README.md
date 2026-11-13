@@ -28,6 +28,7 @@ The same clip measured by the original exploration harness (H2D + inference + D2
 python -m pip install "fast-omniasr[onnx,hub]"  # ONNX Runtime CPU + from_pretrained()
 python -m pip install "fast-omniasr[cuda]"      # ONNX Runtime GPU (device="cuda")
 python -m pip install "fast-omniasr[tensorrt]"  # cuda-python; also requires a separate TensorRT install
+python -m pip install "fast-omniasr[lm]"        # kenlm, for n-gram LM beam search (builds from source)
 ```
 
 The requested provider/backend must initialize, and ONNX Runtime run-level fallback
@@ -70,13 +71,14 @@ From the command line, after installing the `onnx` (or `cuda`) and `hub` extras 
 ```bash
 fast-omniasr transcribe speech.wav --model EmreAkgul/omniASR-CTC-300M-v2-ONNX
 fast-omniasr transcribe meeting.wav --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --vad --json
+fast-omniasr transcribe speech.wav --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --lm lm.arpa --hotword "can fly"
 fast-omniasr transcribe clip.wav --model EmreAkgul/omniASR-LLM-300M-v2-ONNX --kind llm --lang eng_Latn
 fast-omniasr languages --model EmreAkgul/omniASR-LLM-300M-v2-ONNX
 fast-omniasr inspect --model EmreAkgul/omniASR-CTC-300M-v2-ONNX --json
 fast-omniasr diagnose
 ```
 
-Output is UTF-8. With `--json`, `transcribe` writes one JSON object per line, one per audio file, with the same fields as the result object plus `path`. A file that fails gets `path` and `error` instead, the rest still run, and the exit code is 1. `inspect` and `diagnose` write one JSON object and `languages` one JSON array. Options for the other model kind, such as `--lang` on CTC, are usage errors. `--chunk-length` and `--vad` imply `--long`, which uses `transcribe_long`. `diagnose` loads no model and lists versions, ONNX Runtime providers, whether TensorRT imports, and cached models. `inspect` loads the model, so it needs the same extras as `transcribe`. `languages` downloads only the code table and prints codes in lower case, and `--lang` accepts either case. `python -m fast_omniasr` works the same way.
+Output is UTF-8. With `--json`, `transcribe` writes one JSON object per line, one per audio file, with the same fields as the result object plus `path`. A file that fails gets `path` and `error` instead, the rest still run, and the exit code is 1. `inspect` and `diagnose` write one JSON object and `languages` one JSON array. Options for the other model kind, such as `--lang` on CTC, are usage errors. `--chunk-length` and `--vad` imply `--long`, which uses `transcribe_long`. `diagnose` loads no model and lists versions, ONNX Runtime providers, whether TensorRT imports, and cached models. `inspect` loads the model, so it needs the same extras as `transcribe`. `languages` downloads only the code table and prints codes in lower case, and `--lang` accepts either case. `python -m fast_omniasr` works the same way. `--beam-size`, `--lm`, `--lm-weight`, `--word-bonus`, `--hotword` (repeatable) and `--hotword-weight` select CTC beam search (see below); `--beam-size` also sets the LLM's beam search.
 
 ### Precision (fp32, fp16, bf16)
 
@@ -190,6 +192,36 @@ for word in result.words:
 ```
 
 They have 20 ms resolution, and a word's times cover only the frames where the model emitted it, not its full sound. See [docs/timestamps.md](docs/timestamps.md).
+
+### Beam search, language models and hotwords (CTC)
+
+CTC decoding is greedy by default: the most likely token in each frame, with repeats and blanks removed. Pass a `BeamSearchDecoder` as `decoder` to `transcribe`, `transcribe_numpy`, `transcribe_batch` or `transcribe_long` to run a CTC prefix beam search instead, which ranks whole transcripts by their probability summed over every alignment and can add a word-level n-gram language model and hotwords:
+
+```python
+from fast_omniasr import BeamSearchDecoder
+
+decoder = BeamSearchDecoder(beam_size=8)                                  # NumPy only
+decoder = BeamSearchDecoder(lm="lm.arpa", lm_weight=0.5, word_bonus=2.0)  # needs the lm extra
+decoder = BeamSearchDecoder(hotwords=["Kinshasa", "can fly"], hotword_weight=5.0)
+result = model.transcribe("speech.wav", decoder=decoder)
+```
+
+- The beam search itself needs nothing beyond NumPy. A KenLM model (ARPA or KenLM binary) needs `kenlm` (`pip install "fast-omniasr[lm]"`; it builds from source, so a C++ compiler is needed). Create the decoder once: it loads the LM, and can be reused across calls and threads. `lm` can also be any object with `begin()`, `score(state, word)` and `end(state)` (see `fast_omniasr.beam_search.LanguageModel`).
+- The released CTC vocabularies are characters with a separate space token, so the LM scores a word when a space follows it (or the clip ends). Words are looked up exactly as the model spells them: train the LM on lowercase text without punctuation. With an LM, a transcript is ranked by its CTC log-probability plus `lm_weight` × LM log-probability plus `word_bonus` per word. Words outside the LM vocabulary get `<unk>`'s probability minus `KenLM(path, unknown_word_penalty=10.0)`; for an ARPA file this applies as soon as a word being spelled can't become a known word. Without that penalty, `<unk>` is often cheaper than a real rare word, and the search glues words together. Tune `lm_weight` and `word_bonus` for each LM and domain.
+- `hotwords` are words or phrases (case-insensitive) to favour, for names and domain terms. A transcript earns the matched fraction of `hotword_weight` while it spells a hotword from the start of a word, and keeps the whole weight for each complete occurrence. A hotword only wins where the acoustic model already gives it some probability.
+- `word_timestamps=True` works as with greedy decoding; the times come from the most likely alignment of the chosen transcript. In `transcribe_long` each chunk is decoded on its own, so the LM starts afresh at every cut.
+
+Measured with `omniASR-CTC-300M-v2` (ONNX FP32, CPU), by decoding the same logits each way. For a language model, the [LibriSpeech pruned 3-gram](https://www.openslr.org/11/) (`3-gram.pruned.1e-7.arpa.gz`, 34 MB, lowercased) was used. It is audiobook text, out of domain for FLEURS, and English only.
+
+| Decoding | 3 committed FLEURS clips, WER / CER | English, 20 clips, WER / CER | Turkish, 20 clips, WER / CER | Decoding time per audio second |
+|---|---:|---:|---:|---:|
+| greedy | 29.0 / 6.2 | 19.4 / 6.4 | 26.5 / 5.1 | 0.4 ms |
+| `beam_size=8` | 29.0 / 6.2 | 18.5 / 6.3 | 26.2 / 5.1 | 9 ms |
+| `beam_size=32` | 29.0 / 6.2 | 18.5 / 6.3 | 26.5 / 5.1 | 20 ms |
+| `beam_size=8`, LM | English clip: 26.7 → 6.7 WER | 17.1 / 6.0 | not measured | 10 ms |
+| `beam_size=32`, LM | English clip: 26.7 → 6.7 WER | 16.2 / 5.9 | not measured | 23 ms |
+
+The 20-clip sets are the first 20 rows per language of the FLEURS test split. They are not in the repo. Without a language model, `beam_size=8` changed none of the committed clips' transcripts and 9 of the 40 others, mostly by a single letter, space or apostrophe. That is a 0.9-point WER gain in English and no real change in Turkish. With the LM, English WER fell by 2.3 points at `beam_size=8`, at the defaults `lm_weight=0.5`, `word_bonus=2.0`. Those defaults were picked from a sweep on the same 20 clips (at `beam_size=8`, `lm_weight` 0.3–0.8 and `word_bonus` 0–3 gave 16.2–30.1 WER), so the LM gain is optimistic, and a poorly weighted LM makes results worse than greedy. Without the unknown-word penalty, the same LM gave 23.5 WER. Hotwords were only checked by hand, on the committed clips at `beam_size=8`. `["can fly"]` turned "canfly" into "can fly", and `["luna'ya"]` turned the Turkish "zunaya" into "luna'ya". `["dinosaurs"]` replaced "diner storis" only at `hotword_weight=10`. Whether a hotword also gets inserted where it wasn't said was not measured. The times are for decoding alone (Python, on a busy 16-thread CPU) and do not include the model, which is the same for all rows.
 
 The LLM's output is the model's own, repeats included: nothing is detected or filtered. On audio with no speech it can loop until `max_new_tokens`, which `stop_reason` reports. To discourage that, pass `repetition_penalty`, which works as in faster-whisper: `model.transcribe(audio, lang="eng_Latn", repetition_penalty=1.1)`. Values above 1 penalize tokens already generated, and the default of 1 changes nothing.
 
