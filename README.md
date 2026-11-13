@@ -1,6 +1,6 @@
 # fast-omniasr
 
-A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr). Its CTC runtime runs all eight released CTC models (`300M`, `1B`, `3B`, and `7B`, both original and v2) on ONNX Runtime or TensorRT without PyTorch, fairseq2 or Transformers on the CTC inference path. A separate LLM-ASR runtime runs the eight standard LLM models (`300M`, `1B`, `3B`, and `7B`, original and v2) with KV-cached greedy decoding on ONNX Runtime, loaded with `OmniASRLLM.from_pretrained()`; PyTorch/TorchScript graphs remain available as a correctness baseline.
+A standalone inference runtime for [Meta's Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr). Its CTC runtime runs all eight released CTC models (`300M`, `1B`, `3B`, and `7B`, both original and v2) on ONNX Runtime or TensorRT without PyTorch, fairseq2 or Transformers on the CTC inference path. A separate LLM-ASR runtime runs the eight standard LLM models (`300M`, `1B`, `3B`, and `7B`, original and v2) with KV-cached greedy or beam-search decoding on ONNX Runtime, loaded with `OmniASRLLM.from_pretrained()`; PyTorch/TorchScript graphs remain available as a correctness baseline.
 
 ## Benchmark
 
@@ -326,8 +326,8 @@ Integration tests need real assets via env vars and skip otherwise: `OMNIASR_ONN
 ## LLM-ASR models
 
 `fast_omniasr.llm.OmniASRLLM` runs the wav2vec2 encoder + LLaMA decoder LLM-ASR models with
-KV-cached greedy decoding on ONNX Runtime (CPU or CUDA). Inference imports only NumPy, ONNX
-Runtime and SentencePiece.
+KV-cached greedy or beam-search decoding on ONNX Runtime (CPU or CUDA). Inference imports only
+NumPy, ONNX Runtime and SentencePiece.
 
 ```python
 from fast_omniasr.llm import OmniASRLLM
@@ -377,8 +377,43 @@ about 10 GiB for 300M (12 GiB for 30 s inputs) and 34 GiB for 7B v2. On smaller 
 `low_memory=True` to `from_pretrained` to load one session at a time (300M peaks at ~5.4 GiB),
 at the cost of reloading weights for every clip.
 
-Scope: batch one, clips up to 30 seconds, greedy decoding (upstream defaults to five-beam
-search, so outputs can differ). The zero-shot (`7B_ZS`) and streaming `Unlimited` models use
+### Beam search
+
+Decoding is greedy by default. `beam_size` runs upstream's beam search instead (upstream's
+own inference pipeline uses five beams), on `transcribe` and `transcribe_long` alike:
+
+```python
+result = model.transcribe("speech.wav", lang="eng_Latn", beam_size=5)
+```
+
+It follows `omnilingual_asr`'s `Wav2Vec2LlamaBeamSearchSeq2SeqGenerator`: each step keeps the
+`beam_size` best-scoring continuations, a hypothesis that emits EOS keeps its score and stays
+in the beam, and decoding stops once every hypothesis has ended (or the token budget runs
+out), returning the best one. `length_norm=True` ranks hypotheses by mean token
+log-probability instead of the sum, as upstream's `length_norm` option does (off by default
+there too). `repetition_penalty` applies to each hypothesis's own tokens. Upstream's
+compression-ratio early stop is not applied; `max_new_tokens` bounds every hypothesis.
+`beam_size=1` is the greedy path, unchanged.
+
+The exported graphs are batch-one, so each step runs the decoder once per live beam and
+hypotheses keep their own K/V caches (siblings share their parent's). Decoding time grows
+about linearly with `beam_size`, and so does K/V cache memory: on the GPU without
+`low_memory`, in host memory with it. Measured with `omniASR_LLM_300M_v2` in fp16 on an
+RTX 3060 (6 GB, shared, so `low_memory=True`), on 10 FLEURS test clips (the first five
+English and five Turkish of a local sample, 4-13 s each, all ending at EOS):
+
+| Decoding | English WER / CER | Turkish WER / CER | Time vs greedy | Peak host RSS |
+|---|---:|---:|---:|---:|
+| greedy | 10.7 / 5.5 | 15.8 / 3.7 | 1.0x (173 s) | 1.9 GB |
+| `beam_size=2` | 8.7 / 3.9 | 14.7 / 3.6 | 2.0x | 3.3 GB |
+| `beam_size=5` | 8.7 / 3.9 | 14.7 / 3.6 | 4.6x | 5.6 GB |
+| `beam_size=5, length_norm=True` | 8.7 / 3.9 | 14.7 / 3.6 | 4.5x | 5.6 GB |
+
+Three of the ten transcripts changed (for example "the caboolture's changes color" became
+"the cabbage juice changes color"); peak GPU memory was the same for all four. The sample is
+small and the timings include low_memory's host round trips, so treat these as indicative.
+
+Scope: batch one, clips up to 30 seconds. The zero-shot (`7B_ZS`) and streaming `Unlimited` models use
 other prompt formats and are not supported. Load only trusted model assets.
 
 ### Exporting and validating an LLM model
