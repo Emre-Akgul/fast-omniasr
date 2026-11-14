@@ -1,0 +1,425 @@
+{
+  "model": "EmreAkgul/omniASR-CTC-300M-v2-ONNX@6c1096d65763f1d268a7ed61fe8874596f0a4eb8",
+  "device": "cpu",
+  "threads": 4,
+  "repeats": 3,
+  "dataset": "google/fleurs",
+  "dataset_revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+  "per_language": {
+    "en_us": 20,
+    "tr_tr": 20,
+    "ckb_iq": 20,
+    "de_de": 20,
+    "es_419": 20,
+    "fr_fr": 20,
+    "hi_in": 20,
+    "cmn_hans_cn": 20
+  },
+  "audio_seconds": 1787.64,
+  "gates": {
+    "quality": {
+      "wer": {
+        "absolute": 1.0,
+        "relative": 0.05
+      },
+      "cer": {
+        "absolute": 0.5,
+        "relative": 0.05
+      }
+    },
+    "efficiency": {
+      "min_speedup": 1.2,
+      "max_memory_ratio": 0.7
+    },
+    "speed_reference": {
+      "cpu": "fp32",
+      "cuda": "trt-fp16"
+    },
+    "shipped": {
+      "cpu": [
+        "fp32"
+      ],
+      "cuda": [
+        "fp32",
+        "fp16",
+        "trt-fp16",
+        "trt-mixed"
+      ]
+    },
+    "variants": {
+      "cpu": [
+        "fp32",
+        "int8-dynamic",
+        "int8-static",
+        "int8-weight-only",
+        "int4-weight-only"
+      ],
+      "cuda": [
+        "fp32",
+        "fp16",
+        "int8-dynamic",
+        "int8-static",
+        "int8-weight-only",
+        "int4-weight-only",
+        "trt-fp16",
+        "trt-mixed",
+        "trt-int8",
+        "trt-int8-mixed"
+      ]
+    }
+  },
+  "environment": {
+    "python": "3.10.12",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
+    "cpu_count": 16,
+    "processor": "x86_64",
+    "onnxruntime": "1.23.2",
+    "onnx": "1.17.0"
+  },
+  "variants": {
+    "int4-weight-only": {
+      "bytes": 247952345,
+      "languages": {
+        "en_us": {
+          "wer": 22.96983758700696,
+          "cer": 5.85480093676815,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.82608695652174,
+          "cer": 4.157468727005151,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 45.378151260504204,
+          "cer": 9.359151682803136,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 14.950980392156863,
+          "cer": 3.700906344410876,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.288537549407115,
+          "cer": 2.859993348852677,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 19.187358916478555,
+          "cer": 5.82891748675246,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 13.381123058542414,
+          "cer": 6.231003039513678,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 23.627684964200476,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 254.319,
+        "pass_totals": [
+          251.806,
+          263.985,
+          254.319
+        ],
+        "rtf": 0.14227,
+        "clip_p50_ms": 1562.2,
+        "clip_p90_ms": 2424.6
+      },
+      "load_seconds": 0.45,
+      "peak_rss_mib": 1050,
+      "peak_gpu_mib": null,
+      "deterministic": true,
+      "identical_to_fp32": null
+    },
+    "int8-weight-only": {
+      "bytes": 404476890,
+      "languages": {
+        "en_us": {
+          "wer": 21.11368909512761,
+          "cer": 5.542544886807182,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.282608695652176,
+          "cer": 4.120676968359088,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 42.57703081232493,
+          "cer": 8.759797141539881,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 12.990196078431373,
+          "cer": 3.285498489425982,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 8.893280632411066,
+          "cer": 2.660458929165281,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 18.73589164785553,
+          "cer": 5.715367146101438,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 12.664277180406213,
+          "cer": 5.623100303951368,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 22.0763723150358,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 295.134,
+        "pass_totals": [
+          295.134,
+          307.662,
+          287.417
+        ],
+        "rtf": 0.1651,
+        "clip_p50_ms": 1794.5,
+        "clip_p90_ms": 2736.5
+      },
+      "load_seconds": 0.54,
+      "peak_rss_mib": 1174,
+      "peak_gpu_mib": null,
+      "deterministic": true,
+      "identical_to_fp32": null
+    },
+    "int8-static": {
+      "bytes": 366951483,
+      "languages": {
+        "en_us": {
+          "wer": 19.953596287703018,
+          "cer": 5.542544886807182,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.01086956521739,
+          "cer": 4.157468727005151,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 42.296918767507,
+          "cer": 8.990318118948824,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 14.950980392156863,
+          "cer": 3.474320241691843,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.881422924901186,
+          "cer": 2.859993348852677,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 19.41309255079007,
+          "cer": 6.018168054504163,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 12.664277180406213,
+          "cer": 5.420466058763931,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 22.553699284009546,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 196.56,
+        "pass_totals": [
+          186.99,
+          197.847,
+          196.56
+        ],
+        "rtf": 0.10996,
+        "clip_p50_ms": 1171.1,
+        "clip_p90_ms": 1872.9
+      },
+      "load_seconds": 0.88,
+      "peak_rss_mib": 1631,
+      "peak_gpu_mib": null,
+      "deterministic": true,
+      "identical_to_fp32": null
+    },
+    "int8-dynamic": {
+      "bytes": 366861826,
+      "languages": {
+        "en_us": {
+          "wer": 21.11368909512761,
+          "cer": 5.503512880562061,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 21.467391304347824,
+          "cer": 4.157468727005151,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 42.296918767507,
+          "cer": 8.898109727985247,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 13.970588235294118,
+          "cer": 3.3987915407854983,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.683794466403162,
+          "cer": 2.627203192550715,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 18.510158013544018,
+          "cer": 5.7532172596517785,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 13.022700119474313,
+          "cer": 5.825734549138804,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 22.0763723150358,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 134.695,
+        "pass_totals": [
+          140.153,
+          118.205,
+          134.695
+        ],
+        "rtf": 0.07535,
+        "clip_p50_ms": 789.7,
+        "clip_p90_ms": 1378.0
+      },
+      "load_seconds": 0.69,
+      "peak_rss_mib": 1543,
+      "peak_gpu_mib": null,
+      "deterministic": true,
+      "identical_to_fp32": null
+    },
+    "fp32": {
+      "bytes": 1304471269,
+      "languages": {
+        "en_us": {
+          "wer": 20.88167053364269,
+          "cer": 5.425448868071819,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.01086956521739,
+          "cer": 4.083885209713024,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 42.296918767507,
+          "cer": 8.71369294605809,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 12.990196078431373,
+          "cer": 3.285498489425982,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.288537549407115,
+          "cer": 2.693714665779847,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 18.510158013544018,
+          "cer": 5.7532172596517785,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 12.664277180406213,
+          "cer": 5.572441742654509,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 21.837708830548927,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 260.368,
+        "pass_totals": [
+          257.436,
+          260.368,
+          260.828
+        ],
+        "rtf": 0.14565,
+        "clip_p50_ms": 1546.6,
+        "clip_p90_ms": 2567.6
+      },
+      "load_seconds": 1.93,
+      "peak_rss_mib": 2460,
+      "peak_gpu_mib": null,
+      "deterministic": true,
+      "identical_to_fp32": 160
+    }
+  },
+  "decisions": {
+    "int4-weight-only": {
+      "ship": false,
+      "reasons": [
+        "en_us: WER 22.97 > 21.92 (fp32 20.88)",
+        "ckb_iq: WER 45.38 > 44.41 (fp32 42.30)",
+        "ckb_iq: CER 9.36 > 9.21 (fp32 8.71)",
+        "de_de: WER 14.95 > 13.99 (fp32 12.99)",
+        "hi_in: CER 6.23 > 6.07 (fp32 5.57)",
+        "cmn_hans_cn: CER 23.63 > 22.93 (fp32 21.84)"
+      ],
+      "efficiency": "speedup 1.024x (needs >= 1.2), memory ratio 0.427 (or <= 0.7)"
+    },
+    "int8-weight-only": {
+      "ship": true,
+      "reasons": [],
+      "efficiency": "speedup 0.882x (needs >= 1.2), memory ratio 0.477 (or <= 0.7)"
+    },
+    "int8-static": {
+      "ship": false,
+      "reasons": [
+        "de_de: WER 14.95 > 13.99 (fp32 12.99)"
+      ],
+      "efficiency": "speedup 1.325x (needs >= 1.2), memory ratio 0.663 (or <= 0.7)"
+    },
+    "int8-dynamic": {
+      "ship": true,
+      "reasons": [],
+      "efficiency": "speedup 1.933x (needs >= 1.2), memory ratio 0.627 (or <= 0.7)"
+    },
+    "fp32": {
+      "ship": null,
+      "reasons": [
+        "already shipped (reference)"
+      ],
+      "quality_failures": []
+    }
+  },
+  "note": "Per-clip hypotheses removed for size; the tool's --report keeps them. Shared machine: other jobs used the CPU and GPU during the run."
+}

@@ -340,6 +340,8 @@ python tools/fleurs_eval.py run --model ctc --backend tensorrt --precision mixed
 
 An earlier 40-clip English/Turkish experiment on an older TensorRT and profile reported 34/40 identical FP16 transcripts; those numbers are superseded by the measurements above.
 
+No quantized (INT8 or weight-only) models are published. They were evaluated on the same sample against explicit quality and efficiency gates: on the GPU none passed (TensorRT INT8 is at most about 1.2× faster than `fp16` and loses accuracy in some languages unless the front end stays in FP32, which makes it slower than `fp16`); on the CPU, ONNX Runtime dynamic INT8 passed, about 1.9× faster than fp32 with 0.63× the memory, with little accuracy headroom in German. See [benchmarks/quantization](benchmarks/quantization/README.md) for the results and `tools/quantize_ctc.py` to rerun them.
+
 ## Benchmark and tests
 
 ```bash
