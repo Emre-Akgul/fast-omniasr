@@ -1,0 +1,20 @@
+{
+  "quality": {
+    "wer": {"absolute": 1.0, "relative": 0.05},
+    "cer": {"absolute": 0.5, "relative": 0.05}
+  },
+  "efficiency": {
+    "min_speedup": 1.2,
+    "max_memory_ratio": 0.7
+  },
+  "speed_reference": {"cpu": "fp32", "cuda": "trt-fp16"},
+  "shipped": {
+    "cpu": ["fp32"],
+    "cuda": ["fp32", "fp16", "trt-fp16", "trt-mixed"]
+  },
+  "variants": {
+    "cpu": ["fp32", "int8-dynamic", "int8-static", "int8-weight-only", "int4-weight-only"],
+    "cuda": ["fp32", "fp16", "int8-dynamic", "int8-static", "int8-weight-only",
+             "int4-weight-only", "trt-fp16", "trt-mixed", "trt-int8", "trt-int8-mixed"]
+  }
+}
