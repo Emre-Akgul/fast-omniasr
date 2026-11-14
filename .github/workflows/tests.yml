@@ -24,6 +24,17 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest tests/unit/test_locking.py tests/unit/test_tensorrt_cache.py -v
+  lm-unit:
+    # The KenLM language-model path of CTC beam search (kenlm builds from source).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -e ".[dev,lm]"
+      - run: python -c "import kenlm"
+      - run: python -m pytest tests/unit/test_beam_search.py -v
   llm-unit:
     runs-on: ubuntu-latest
     steps:

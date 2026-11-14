@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fast_omniasr import OmniASR, Transcription, Word, hub
+from fast_omniasr import BeamSearchDecoder, OmniASR, Transcription, Word, hub
 from fast_omniasr.cli import main
 from fast_omniasr.llm import LLMTranscription, OmniASRLLM
 
@@ -242,11 +242,47 @@ def test_llm_options_are_refused_on_ctc(flags, capsys):
     assert stopped.value.code == 2 and "doesn't apply to --kind ctc" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("flags", [["--backend", "onnx"], ["--word-timestamps"]])
+@pytest.mark.parametrize("flags", [["--backend", "onnx"], ["--word-timestamps"],
+                                   ["--lm", "lm.arpa"], ["--hotword", "cat"]])
 def test_ctc_options_are_refused_on_llm(flags, capsys):
     with pytest.raises(SystemExit) as stopped:
         run("transcribe", "a.wav", "--model", "m", "--kind", "llm", *flags)
     assert stopped.value.code == 2 and "doesn't apply to --kind llm" in capsys.readouterr().err
+
+
+def test_beam_search_options_build_a_decoder(ctc):
+    assert run("transcribe", "a.wav", "--model", "m", "--beam-size", "4", "--hotword", "cat",
+               "--hotword", "new  york", "--hotword-weight", "3") == 0
+    decoder = ctc.calls[0][2]["decoder"]
+    assert isinstance(decoder, BeamSearchDecoder)
+    assert (decoder.beam_size, decoder.hotwords, decoder.hotword_weight, decoder.lm) == (
+        4, ("cat", "new york"), 3.0, None)
+
+
+def test_hotwords_alone_use_the_default_beam(ctc):
+    run("transcribe", "a.wav", "--model", "m", "--hotword", "cat")
+    assert ctc.calls[0][2]["decoder"].beam_size == BeamSearchDecoder().beam_size
+
+
+def test_a_language_model_that_will_not_load_is_a_message(ctc, capsys, tmp_path):
+    missing = str(tmp_path / "missing.arpa")
+    assert run("transcribe", "a.wav", "--model", "m", "--lm", missing) == 1
+    assert capsys.readouterr().err.startswith("error: ")
+    assert ctc.calls == []
+
+
+@pytest.mark.parametrize("flags, needed", [(["--lm-weight", "1"], "--lm"),
+                                           (["--word-bonus", "1"], "--lm"),
+                                           (["--hotword-weight", "1"], "--hotword")])
+def test_beam_search_weights_need_what_they_weigh(flags, needed, capsys):
+    with pytest.raises(SystemExit) as stopped:
+        run("transcribe", "a.wav", "--model", "m", *flags)
+    assert stopped.value.code == 2 and f"needs {needed}" in capsys.readouterr().err
+
+
+def test_llm_beam_size_reaches_the_model(llm):
+    run("transcribe", "a.wav", "--model", "m", "--kind", "llm", "--beam-size", "3")
+    assert llm.calls == [("transcribe", "a.wav", {"convert_audio": False, "beam_size": 3})]
 
 
 def test_inspect_reports_the_model(ctc, capsys):

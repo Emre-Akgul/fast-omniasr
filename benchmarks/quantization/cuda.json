@@ -1,0 +1,749 @@
+{
+  "model": "EmreAkgul/omniASR-CTC-300M-v2-ONNX@6c1096d65763f1d268a7ed61fe8874596f0a4eb8",
+  "device": "cuda",
+  "threads": 4,
+  "repeats": 3,
+  "dataset": "google/fleurs",
+  "dataset_revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+  "per_language": {
+    "en_us": 20,
+    "tr_tr": 20,
+    "ckb_iq": 20,
+    "de_de": 20,
+    "es_419": 20,
+    "fr_fr": 20,
+    "hi_in": 20,
+    "cmn_hans_cn": 20
+  },
+  "audio_seconds": 1787.64,
+  "gates": {
+    "quality": {
+      "wer": {
+        "absolute": 1.0,
+        "relative": 0.05
+      },
+      "cer": {
+        "absolute": 0.5,
+        "relative": 0.05
+      }
+    },
+    "efficiency": {
+      "min_speedup": 1.2,
+      "max_memory_ratio": 0.7
+    },
+    "speed_reference": {
+      "cpu": "fp32",
+      "cuda": "trt-fp16"
+    },
+    "shipped": {
+      "cpu": [
+        "fp32"
+      ],
+      "cuda": [
+        "fp32",
+        "fp16",
+        "trt-fp16",
+        "trt-mixed"
+      ]
+    },
+    "variants": {
+      "cpu": [
+        "fp32",
+        "int8-dynamic",
+        "int8-static",
+        "int8-weight-only",
+        "int4-weight-only"
+      ],
+      "cuda": [
+        "fp32",
+        "fp16",
+        "int8-dynamic",
+        "int8-static",
+        "int8-weight-only",
+        "int4-weight-only",
+        "trt-fp16",
+        "trt-mixed",
+        "trt-int8",
+        "trt-int8-mixed"
+      ]
+    }
+  },
+  "environment": {
+    "python": "3.10.12",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
+    "cpu_count": 16,
+    "processor": "x86_64",
+    "onnxruntime": "1.23.2",
+    "onnx": "1.17.0",
+    "tensorrt": "10.16.1.11",
+    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU, 6144 MiB, 595.84"
+  },
+  "variants": {
+    "fp32": {
+      "bytes": 1304471269,
+      "languages": {
+        "en_us": {
+          "wer": 20.88167053364269,
+          "cer": 5.425448868071819,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.01086956521739,
+          "cer": 4.083885209713024,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 42.296918767507,
+          "cer": 8.71369294605809,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 12.990196078431373,
+          "cer": 3.285498489425982,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.288537549407115,
+          "cer": 2.693714665779847,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 18.510158013544018,
+          "cer": 5.7532172596517785,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 12.664277180406213,
+          "cer": 5.572441742654509,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 21.837708830548927,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 22.644,
+        "pass_totals": [
+          22.219,
+          22.644,
+          22.861
+        ],
+        "rtf": 0.01267,
+        "clip_p50_ms": 131.9,
+        "clip_p90_ms": 219.6
+      },
+      "load_seconds": 2.59,
+      "peak_rss_mib": 1746,
+      "peak_gpu_mib": 3206,
+      "deterministic": true,
+      "identical_to_fp32": 160,
+      "cpu_placed_ops": {
+        "Cast": 24,
+        "Concat": 96,
+        "Div": 24,
+        "Gather": 48,
+        "Slice": 192,
+        "Sqrt": 48
+      }
+    },
+    "trt-int8-mixed": {
+      "bytes": 370737052,
+      "languages": {
+        "en_us": {
+          "wer": 20.185614849187935,
+          "cer": 5.581576893052303,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.282608695652176,
+          "cer": 4.047093451066961,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 42.296918767507,
+          "cer": 8.80590133702167,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 12.990196078431373,
+          "cer": 3.2099697885196377,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.683794466403162,
+          "cer": 2.726970402394413,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 18.73589164785553,
+          "cer": 5.715367146101438,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 12.783751493428912,
+          "cer": 5.623100303951368,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 22.0763723150358,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 5.904,
+        "pass_totals": [
+          5.95,
+          5.878,
+          5.904
+        ],
+        "rtf": 0.0033,
+        "clip_p50_ms": 35.5,
+        "clip_p90_ms": 53.9
+      },
+      "load_seconds": 0.72,
+      "peak_rss_mib": 860,
+      "peak_gpu_mib": 1096,
+      "deterministic": true,
+      "identical_to_fp32": 63
+    },
+    "trt-int8": {
+      "bytes": 345319716,
+      "languages": {
+        "en_us": {
+          "wer": 20.88167053364269,
+          "cer": 5.542544886807182,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 21.73913043478261,
+          "cer": 4.157468727005151,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 44.817927170868344,
+          "cer": 9.12863070539419,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 14.46078431372549,
+          "cer": 3.474320241691843,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.486166007905139,
+          "cer": 2.726970402394413,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 19.187358916478555,
+          "cer": 5.677517032551098,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 13.261648745519713,
+          "cer": 5.8763931104356635,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 22.79236276849642,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 4.024,
+        "pass_totals": [
+          4.024,
+          4.018,
+          4.05
+        ],
+        "rtf": 0.00225,
+        "clip_p50_ms": 23.8,
+        "clip_p90_ms": 37.2
+      },
+      "load_seconds": 0.67,
+      "peak_rss_mib": 834,
+      "peak_gpu_mib": 1002,
+      "deterministic": true,
+      "identical_to_fp32": 53
+    },
+    "trt-mixed": {
+      "bytes": 683192068,
+      "languages": {
+        "en_us": {
+          "wer": 20.88167053364269,
+          "cer": 5.46448087431694,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.282608695652176,
+          "cer": 4.120676968359088,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 42.016806722689076,
+          "cer": 8.667588750576302,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 12.990196078431373,
+          "cer": 3.285498489425982,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.090909090909092,
+          "cer": 2.660458929165281,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 18.510158013544018,
+          "cer": 5.7532172596517785,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 12.903225806451612,
+          "cer": 5.673758865248227,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 22.0763723150358,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 6.693,
+        "pass_totals": [
+          6.717,
+          6.693,
+          6.647
+        ],
+        "rtf": 0.00374,
+        "clip_p50_ms": 40.3,
+        "clip_p90_ms": 61.9
+      },
+      "load_seconds": 0.99,
+      "peak_rss_mib": 1157,
+      "peak_gpu_mib": 1428,
+      "deterministic": true,
+      "identical_to_fp32": 148
+    },
+    "trt-fp16": {
+      "bytes": 657907420,
+      "languages": {
+        "en_us": {
+          "wer": 21.809744779582367,
+          "cer": 5.698672911787666,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.01086956521739,
+          "cer": 4.083885209713024,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 42.57703081232493,
+          "cer": 8.80590133702167,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 12.990196078431373,
+          "cer": 3.285498489425982,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.288537549407115,
+          "cer": 2.693714665779847,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 18.73589164785553,
+          "cer": 5.79106737320212,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 12.664277180406213,
+          "cer": 5.572441742654509,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 22.0763723150358,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 4.821,
+        "pass_totals": [
+          4.839,
+          4.821,
+          4.818
+        ],
+        "rtf": 0.0027,
+        "clip_p50_ms": 29.3,
+        "clip_p90_ms": 42.8
+      },
+      "load_seconds": 0.91,
+      "peak_rss_mib": 1133,
+      "peak_gpu_mib": 1306,
+      "deterministic": true,
+      "identical_to_fp32": 139
+    },
+    "int4-weight-only": {
+      "bytes": 247952345,
+      "languages": {
+        "en_us": {
+          "wer": 22.96983758700696,
+          "cer": 5.85480093676815,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.82608695652174,
+          "cer": 4.157468727005151,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 45.378151260504204,
+          "cer": 9.359151682803136,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 14.950980392156863,
+          "cer": 3.700906344410876,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.288537549407115,
+          "cer": 2.859993348852677,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 19.187358916478555,
+          "cer": 5.82891748675246,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 13.381123058542414,
+          "cer": 6.231003039513678,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 23.627684964200476,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 25.398,
+        "pass_totals": [
+          25.218,
+          25.398,
+          25.432
+        ],
+        "rtf": 0.01421,
+        "clip_p50_ms": 152.5,
+        "clip_p90_ms": 232.9
+      },
+      "load_seconds": 1.02,
+      "peak_rss_mib": 973,
+      "peak_gpu_mib": 2180,
+      "deterministic": true,
+      "identical_to_fp32": 44,
+      "cpu_placed_ops": {
+        "Cast": 24,
+        "Concat": 96,
+        "Div": 24,
+        "Gather": 48,
+        "Slice": 192,
+        "Sqrt": 48
+      }
+    },
+    "int8-weight-only": {
+      "bytes": 404476890,
+      "languages": {
+        "en_us": {
+          "wer": 21.11368909512761,
+          "cer": 5.542544886807182,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.282608695652176,
+          "cer": 4.120676968359088,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 42.57703081232493,
+          "cer": 8.759797141539881,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 12.990196078431373,
+          "cer": 3.285498489425982,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 8.893280632411066,
+          "cer": 2.660458929165281,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 18.73589164785553,
+          "cer": 5.715367146101438,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 12.664277180406213,
+          "cer": 5.623100303951368,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 22.0763723150358,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 24.864,
+        "pass_totals": [
+          24.685,
+          24.864,
+          24.986
+        ],
+        "rtf": 0.01391,
+        "clip_p50_ms": 150.0,
+        "clip_p90_ms": 230.7
+      },
+      "load_seconds": 1.17,
+      "peak_rss_mib": 1036,
+      "peak_gpu_mib": 2180,
+      "deterministic": true,
+      "identical_to_fp32": 143,
+      "cpu_placed_ops": {
+        "Cast": 24,
+        "Concat": 96,
+        "Div": 24,
+        "Gather": 48,
+        "Slice": 192,
+        "Sqrt": 48
+      }
+    },
+    "int8-static": {
+      "bytes": 366951483,
+      "languages": {
+        "en_us": {
+          "wer": 20.88167053364269,
+          "cer": 5.737704918032787,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.554347826086957,
+          "cer": 4.2310522442972776,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 41.73669467787115,
+          "cer": 8.852005532503458,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 14.46078431372549,
+          "cer": 3.5876132930513593,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.683794466403162,
+          "cer": 2.693714665779847,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 19.864559819413092,
+          "cer": 6.131718395155185,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 11.827956989247312,
+          "cer": 5.268490374873354,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 23.031026252983292,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 25.838,
+        "pass_totals": [
+          25.735,
+          25.838,
+          25.878
+        ],
+        "rtf": 0.01445,
+        "clip_p50_ms": 151.2,
+        "clip_p90_ms": 245.2
+      },
+      "load_seconds": 1.63,
+      "peak_rss_mib": 1014,
+      "peak_gpu_mib": 2180,
+      "deterministic": true,
+      "identical_to_fp32": 63,
+      "cpu_placed_ops": {
+        "Cast": 24,
+        "Concat": 96,
+        "Div": 24,
+        "Gather": 48,
+        "Slice": 192,
+        "Sqrt": 48
+      }
+    },
+    "fp16": {
+      "bytes": 678460613,
+      "languages": {
+        "en_us": {
+          "wer": 20.88167053364269,
+          "cer": 5.425448868071819,
+          "n": 20
+        },
+        "tr_tr": {
+          "wer": 22.01086956521739,
+          "cer": 4.083885209713024,
+          "n": 20
+        },
+        "ckb_iq": {
+          "wer": 42.296918767507,
+          "cer": 8.759797141539881,
+          "n": 20
+        },
+        "de_de": {
+          "wer": 12.990196078431373,
+          "cer": 3.285498489425982,
+          "n": 20
+        },
+        "es_419": {
+          "wer": 9.288537549407115,
+          "cer": 2.693714665779847,
+          "n": 20
+        },
+        "fr_fr": {
+          "wer": 18.510158013544018,
+          "cer": 5.7532172596517785,
+          "n": 20
+        },
+        "hi_in": {
+          "wer": 12.664277180406213,
+          "cer": 5.572441742654509,
+          "n": 20
+        },
+        "cmn_hans_cn": {
+          "wer": null,
+          "cer": 21.837708830548927,
+          "n": 20
+        }
+      },
+      "latency": {
+        "total_seconds": 15.221,
+        "pass_totals": [
+          15.209,
+          15.221,
+          15.246
+        ],
+        "rtf": 0.00851,
+        "clip_p50_ms": 89.5,
+        "clip_p90_ms": 140.7
+      },
+      "load_seconds": 1.78,
+      "peak_rss_mib": 1130,
+      "peak_gpu_mib": 1164,
+      "deterministic": true,
+      "identical_to_fp32": 159,
+      "cpu_placed_ops": {
+        "Cast": 24,
+        "Concat": 96,
+        "Div": 24,
+        "Gather": 48,
+        "Slice": 192,
+        "Sqrt": 48
+      }
+    }
+  },
+  "decisions": {
+    "fp32": {
+      "ship": null,
+      "reasons": [
+        "already shipped (reference)"
+      ],
+      "quality_failures": []
+    },
+    "trt-int8-mixed": {
+      "ship": false,
+      "reasons": [
+        "not efficient enough: speedup 0.82x, memory ratio 0.84"
+      ],
+      "efficiency": "speedup 0.82x, memory ratio 0.84"
+    },
+    "trt-int8": {
+      "ship": false,
+      "reasons": [
+        "ckb_iq: WER 44.82 > 44.41 (fp32 42.30)",
+        "de_de: WER 14.46 > 13.99 (fp32 12.99)",
+        "not efficient enough: speedup 1.20x, memory ratio 0.77"
+      ],
+      "efficiency": "speedup 1.20x, memory ratio 0.77"
+    },
+    "trt-mixed": {
+      "ship": null,
+      "reasons": [
+        "already shipped (reference)"
+      ],
+      "quality_failures": []
+    },
+    "trt-fp16": {
+      "ship": null,
+      "reasons": [
+        "already shipped (reference)"
+      ],
+      "quality_failures": []
+    },
+    "int4-weight-only": {
+      "ship": false,
+      "reasons": [
+        "en_us: WER 22.97 > 21.92 (fp32 20.88)",
+        "ckb_iq: WER 45.38 > 44.41 (fp32 42.30)",
+        "ckb_iq: CER 9.36 > 9.21 (fp32 8.71)",
+        "de_de: WER 14.95 > 13.99 (fp32 12.99)",
+        "hi_in: CER 6.23 > 6.07 (fp32 5.57)",
+        "cmn_hans_cn: CER 23.63 > 22.93 (fp32 21.84)",
+        "not efficient enough: speedup 0.19x, memory ratio 1.67"
+      ],
+      "efficiency": "speedup 0.19x, memory ratio 1.67"
+    },
+    "int8-weight-only": {
+      "ship": false,
+      "reasons": [
+        "not efficient enough: speedup 0.19x, memory ratio 1.67"
+      ],
+      "efficiency": "speedup 0.19x, memory ratio 1.67"
+    },
+    "int8-static": {
+      "ship": false,
+      "reasons": [
+        "de_de: WER 14.46 > 13.99 (fp32 12.99)",
+        "fr_fr: WER 19.86 > 19.51 (fp32 18.51)",
+        "cmn_hans_cn: CER 23.03 > 22.93 (fp32 21.84)",
+        "not efficient enough: speedup 0.19x, memory ratio 1.67"
+      ],
+      "efficiency": "speedup 0.19x, memory ratio 1.67"
+    },
+    "fp16": {
+      "ship": null,
+      "reasons": [
+        "already shipped (reference)"
+      ],
+      "quality_failures": []
+    }
+  },
+  "note": "Per-clip hypotheses removed for size; the tool's --report keeps them. Shared machine: other jobs used the CPU and GPU during the run."
+}

@@ -24,6 +24,16 @@ class Tokenizer:
     def decode(self, ids: list[int]) -> str:
         return self._processor.decode(ids)
 
+    def pieces(self) -> tuple[str, ...]:
+        """The text of each token id (`\u2581` as a space); "" for control and unknown
+        tokens."""
+        processor = self._processor
+        return tuple(
+            "" if processor.is_control(token) or processor.is_unknown(token)
+            else processor.id_to_piece(token).replace("\u2581", " ")
+            for token in range(processor.get_piece_size())
+        )
+
     def split_words(self, ids: list[int]) -> list[list[int]]:
         """Group token positions into words. A word ends at a whitespace token and starts
         at a token with leading whitespace (`\\u2581` in SentencePiece). Text written

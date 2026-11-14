@@ -76,6 +76,17 @@ def check_batch_size(batch_size) -> int:
     return value
 
 
+def check_beam_size(beam_size) -> int:
+    """A positive integer of any integer type (int, numpy integers); bools rejected."""
+    try:
+        value = None if isinstance(beam_size, bool) else operator.index(beam_size)
+    except TypeError:
+        value = None
+    if value is None or value < 1:
+        raise ValueError(f"beam_size must be a positive integer, got {beam_size!r}")
+    return value
+
+
 def resolve_threads(threads) -> int:
     """`None` means the default thread count; anything else must pass check_threads."""
     return DEFAULT_THREADS if threads is None else check_threads(threads)

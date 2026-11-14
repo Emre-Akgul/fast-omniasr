@@ -11,6 +11,7 @@ from .audio import (
     prepare_chunks,
     silence_before,
 )
+from .beam_search import BeamSearchDecoder
 from .decoder import FRAME_STRIDE, FRAME_WINDOW, greedy_token_ids, greedy_tokens
 from .options import (
     check_batch_size,
@@ -74,6 +75,13 @@ def _to_recording(result: Transcription, spans) -> Transcription:
                   for word in result.words)
     times = tuple(_shifted(*token, spans) for token in result.token_times)
     return replace(result, words=words, token_times=times)
+
+
+def _check_decoder(decoder):
+    if decoder is not None and not isinstance(decoder, BeamSearchDecoder):
+        raise TypeError("decoder must be None (greedy decoding) or a BeamSearchDecoder, "
+                        f"got {type(decoder).__name__}")
+    return decoder
 
 
 def _check_backend_options(backend: str, device: str | None, threads: int | None):
@@ -145,13 +153,15 @@ class OmniASR:
     def closed(self) -> bool:
         return getattr(self.backend, "closed", False)
 
-    def _transcribe(self, audio: np.ndarray, word_timestamps: bool = False) -> Transcription:
+    def _transcribe(self, audio: np.ndarray, word_timestamps: bool = False,
+                    decoder: BeamSearchDecoder | None = None) -> Transcription:
         if self.closed:
             raise RuntimeError("This OmniASR model is closed")
-        return self._decode(audio, self.backend.infer(audio), word_timestamps)
+        return self._decode(audio, self.backend.infer(audio), word_timestamps, decoder)
 
     def _transcribe_many(self, audios: list[np.ndarray], word_timestamps: bool,
-                         batch_size: int) -> list[Transcription]:
+                         batch_size: int,
+                         decoder: BeamSearchDecoder | None = None) -> list[Transcription]:
         """Transcribe normalized clips in batches of up to `batch_size`, returned in order.
         For batches, clips are sorted by length first, so each batch holds clips of similar length and
         little padding. Backends without infer_batch() run the clips one by one."""
@@ -169,15 +179,17 @@ class OmniASR:
             else:
                 logits = infer_batch([audios[index] for index in group])
             for index, row in zip(group, logits, strict=True):
-                results[index] = self._decode(audios[index], row, word_timestamps)
+                results[index] = self._decode(audios[index], row, word_timestamps, decoder)
         return results
 
-    def _decode(self, audio: np.ndarray, logits: np.ndarray,
-                word_timestamps: bool) -> Transcription:
+    def _decode(self, audio: np.ndarray, logits: np.ndarray, word_timestamps: bool,
+                decoder: BeamSearchDecoder | None = None) -> Transcription:
         if not word_timestamps:
-            ids = greedy_token_ids(logits)
+            ids = (greedy_token_ids(logits) if decoder is None
+                   else decoder.token_ids(logits, self.tokenizer))
             return Transcription(self.tokenizer.decode(ids), tuple(ids), tuple(logits.shape))
-        tokens = greedy_tokens(logits)
+        tokens = (greedy_tokens(logits) if decoder is None
+                  else decoder.tokens(logits, self.tokenizer))
         if logits.shape[1] != (audio.shape[-1] - FRAME_WINDOW) // FRAME_STRIDE + 1:
             raise ValueError(f"word_timestamps needs a model with {FRAME_STRIDE} samples per "
                              f"frame, but {audio.shape[-1]} samples gave "
@@ -191,26 +203,36 @@ class OmniASR:
                              words=words, token_times=times)
 
     def transcribe(self, path: str | Path, *, convert_audio: bool = False,
-                   word_timestamps: bool = False) -> Transcription:
+                   word_timestamps: bool = False,
+                   decoder: BeamSearchDecoder | None = None) -> Transcription:
         """Transcribe a mono 16 kHz file. `convert_audio=True` downmixes and resamples other
         formats first (the `resample` extra); by default they are rejected.
-        `word_timestamps=True` also sets `.words` and `.token_times`; see docs/timestamps.md."""
+        `word_timestamps=True` also sets `.words` and `.token_times`; see docs/timestamps.md.
+        Decoding is greedy unless `decoder` is a BeamSearchDecoder (beam search, optionally
+        with a language model and hotwords)."""
         check_flag("word_timestamps", word_timestamps)
-        return self._transcribe(load_audio(path, convert_audio=convert_audio), word_timestamps)
+        _check_decoder(decoder)
+        return self._transcribe(load_audio(path, convert_audio=convert_audio), word_timestamps,
+                                decoder)
 
     def transcribe_numpy(self, waveform: np.ndarray, sample_rate: int = 16000,
                          *, convert_audio: bool = False,
-                         word_timestamps: bool = False) -> Transcription:
+                         word_timestamps: bool = False,
+                         decoder: BeamSearchDecoder | None = None) -> Transcription:
         """Transcribe a mono 16 kHz waveform. `convert_audio=True` also takes other rates and
         (samples, channels) arrays (the `resample` extra); by default they are rejected.
-        `word_timestamps=True` also sets `.words` and `.token_times`; see docs/timestamps.md."""
+        `word_timestamps=True` also sets `.words` and `.token_times`; see docs/timestamps.md.
+        `decoder` is as for transcribe()."""
         check_flag("word_timestamps", word_timestamps)
+        _check_decoder(decoder)
         return self._transcribe(prepare_audio(waveform, sample_rate,
-                                              convert_audio=convert_audio), word_timestamps)
+                                              convert_audio=convert_audio), word_timestamps,
+                                decoder)
 
     def transcribe_batch(self, audios, sample_rate: int = 16000, *,
                          batch_size: int = DEFAULT_BATCH_SIZE, convert_audio: bool = False,
-                         word_timestamps: bool = False) -> list[Transcription]:
+                         word_timestamps: bool = False,
+                         decoder: BeamSearchDecoder | None = None) -> list[Transcription]:
         """Transcribe a list of clips (file paths or waveforms at `sample_rate`), returning
         one Transcription per clip in the same order. Clips are sorted by length and run in
         zero-padded batches of up to `batch_size`; each result matches transcribing that
@@ -224,17 +246,19 @@ class OmniASR:
                             "transcribe() or transcribe_numpy() for a single clip")
         batch_size = check_batch_size(batch_size)
         check_flag("word_timestamps", word_timestamps)
+        _check_decoder(decoder)
         clips = [load_audio(audio, convert_audio=convert_audio)
                  if isinstance(audio, (str, Path))
                  else prepare_audio(audio, sample_rate, convert_audio=convert_audio)
                  for audio in audios]
-        return self._transcribe_many(clips, word_timestamps, batch_size)
+        return self._transcribe_many(clips, word_timestamps, batch_size, decoder)
 
     def transcribe_long(self, audio: str | Path | np.ndarray, sample_rate: int = 16000, *,
                         chunk_length: float = DEFAULT_CHUNK_LENGTH,
                         convert_audio: bool = False, vad_filter: bool = False,
                         vad_options=None, word_timestamps: bool = False,
-                        batch_size: int = 1) -> Transcription:
+                        batch_size: int = 1,
+                        decoder: BeamSearchDecoder | None = None) -> Transcription:
         """Transcribe a recording of any length by cutting it every `chunk_length` seconds
         and joining the text in order. Chunks don't overlap and nothing is reconciled across
         a cut, so a word on a boundary can be damaged; `.chunks` has each chunk's times and
@@ -250,16 +274,20 @@ class OmniASR:
         recording, on the result and on each chunk; see docs/timestamps.md.
 
         `batch_size` > 1 runs up to that many chunks at once, as transcribe_batch() does;
-        the result is the same."""
+        the result is the same.
+
+        `decoder` is as for transcribe(). Each chunk is decoded on its own, so a language
+        model starts afresh at every cut."""
         if self.closed:
             raise RuntimeError("This OmniASR model is closed")
         check_flag("word_timestamps", word_timestamps)
         batch_size = check_batch_size(batch_size)
+        _check_decoder(decoder)
         pieces = prepare_chunks(audio, sample_rate, chunk_length=chunk_length,
                                 convert_audio=convert_audio, vad_filter=vad_filter,
                                 vad_options=vad_options)
         results = self._transcribe_many([chunk.audio for chunk in pieces], word_timestamps,
-                                        batch_size)
+                                        batch_size, decoder)
         chunks = [(chunk.start, chunk.end, _to_recording(result, chunk.spans))
                   for chunk, result in zip(pieces, results, strict=True)]
         return Transcription(

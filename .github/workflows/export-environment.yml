@@ -65,11 +65,7 @@ jobs:
           PY
       - name: Export omniASR_CTC_300M_v2
         run: |
-          # The default --logit-atol (1e-3) rejects this unmodified upstream model: its
-          # English FLEURS clip differs by up to 0.0021 with these pins, with every greedy
-          # token equal. 0.005 is set from that measurement until the default is revisited.
-          python export_onnx.py --model omniASR_CTC_300M_v2 --output export/model.onnx \
-            --logit-atol 0.005
+          python export_onnx.py --model omniASR_CTC_300M_v2 --output export/model.onnx
       - name: Check the recorded provenance
         run: |
           python - <<'PY'

@@ -1,6 +1,6 @@
 """Smoke-test an *installed* fast-omniasr (wheel, not the source tree) with one extra.
 
-  python tests/packaging/smoke.py core|onnx|hub|llm|tensorrt|resample|minimum
+  python tests/packaging/smoke.py core|onnx|hub|llm|tensorrt|resample|lm|minimum
 
 Checks that the package imports from site-packages, that the extra's runtime dependency is
 importable and works through the library's own code path, and that nothing pulls in a
@@ -91,6 +91,19 @@ def resample():
     assert prepare_audio(stereo, 44100, convert_audio=True).shape == (1, 16000)
 
 
+def lm():
+    from fast_omniasr.beam_search import KenLM
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "tiny.arpa"
+        path.write_text("\\data\\\nngram 1=4\nngram 2=1\n\n\\1-grams:\n-1\t<unk>\t0\n"
+                        "-99\t<s>\t0\n-1\t</s>\t0\n-0.5\tcat\t0\n\n\\2-grams:\n"
+                        "-0.1\t<s> cat\n\n\\end\\\n")
+        model = KenLM(path)
+        logp, _ = model.score(model.begin(), "cat")
+        assert abs(logp + 0.1 * 2.302585) < 1e-4, logp
+
+
 def tensorrt():
     # cuda-python is installable without a GPU; the bindings must import.
     try:
@@ -101,14 +114,15 @@ def tensorrt():
 
 
 CHECKS = {"core": [], "onnx": [onnx], "hub": [hub], "llm": [llm], "tensorrt": [tensorrt],
-          "resample": [resample], "minimum": [onnx, hub, resample]}
+          "resample": [resample], "lm": [lm], "minimum": [onnx, hub, resample]}
 # Dependencies an extra must not drag in (each extra is tested on its own).
-UNEXPECTED = {"core": ["onnxruntime", "torch", "huggingface_hub", "soxr"],
+UNEXPECTED = {"core": ["onnxruntime", "torch", "huggingface_hub", "soxr", "kenlm"],
               "onnx": ["torch", "huggingface_hub", "soxr"],
               "hub": ["onnxruntime", "torch", "soxr"],
               "llm": ["huggingface_hub", "soxr"],
               "tensorrt": ["onnxruntime", "torch", "soxr"],
               "resample": ["onnxruntime", "torch", "huggingface_hub"],
+              "lm": ["onnxruntime", "torch", "huggingface_hub", "soxr"],
               "minimum": ["torch"]}
 
 

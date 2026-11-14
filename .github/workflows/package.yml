@@ -68,7 +68,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extra: [onnx, hub, llm, tensorrt, resample]
+        extra: [onnx, hub, llm, tensorrt, resample, lm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
