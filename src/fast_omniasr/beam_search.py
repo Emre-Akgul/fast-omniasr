@@ -1,4 +1,4 @@
-"""CTC prefix beam search with optional word-level n-gram language model and hotwords.
+"""CTC prefix beam search with optional n-gram language model and hotwords.
 
 Greedy decoding (decoder.py) stays the default; this module is used only when a
 `BeamSearchDecoder` is passed to a transcribe call. The search itself needs only NumPy. A
@@ -6,10 +6,13 @@ KenLM language model needs the `kenlm` package (the `lm` extra) and is imported 
 is loaded.
 
 The OmniASR CTC vocabularies are character-level with a separate space token, so a word ends
-at a space (or at the end of the clip). That is where the language model scores it."""
+at a space (or at the end of the clip). That is where a word-level language model scores it; a
+character-level one scores every character."""
 
 import bisect
+import functools
 import math
+import unicodedata
 from pathlib import Path
 from typing import Protocol
 
@@ -47,6 +50,18 @@ class LanguageModel(Protocol):
     def end(self, state) -> float: ...
 
 
+class CharacterLanguageModel(Protocol):
+    """A character-level language model: like LanguageModel, but
+    `score_character(state, char)` is called with every character of the text, spaces
+    included, and returns its log-probability and the state after it."""
+
+    def begin(self): ...
+
+    def score_character(self, state, char: str) -> tuple[float, object]: ...
+
+    def end(self, state) -> float: ...
+
+
 class KenLM:
     """A KenLM n-gram model (ARPA or binary) as a LanguageModel. Needs the `kenlm` package
     (`pip install "fast-omniasr[lm]"`). Words are looked up exactly as the CTC model spells
@@ -63,18 +78,8 @@ class KenLM:
     def __init__(self, path: str | Path,
                  unknown_word_penalty: float = DEFAULT_UNKNOWN_WORD_PENALTY):
         self.unknown_word_penalty = _check_weight("unknown_word_penalty", unknown_word_penalty)
-        try:
-            import kenlm
-        except ImportError as exc:
-            raise ImportError('A KenLM language model needs the kenlm package: '
-                              'pip install "fast-omniasr[lm]"') from exc
-        path = Path(path)
-        if not path.is_file():
-            raise FileNotFoundError(f"Language model not found: {path}")
-        self.path = path
-        self._kenlm = kenlm
-        self._model = kenlm.Model(str(path))
-        self._words = _arpa_unigrams(path)
+        self._kenlm, self._model, self.path = _load_kenlm(path)
+        self._words = _arpa_unigrams(self.path)
 
     def partial_score(self, prefix: str) -> float:
         words = self._words
@@ -101,6 +106,65 @@ class KenLM:
         return self._model.BaseScore(state, "</s>", self._kenlm.State()) * _LN10
 
 
+class CharacterKenLM:
+    """A KenLM n-gram model over characters (ARPA or binary): trained on text with a space
+    between every two characters, and `space` written for the spaces of the text itself.
+    Needs the `kenlm` package (`pip install "fast-omniasr[lm]"`).
+
+    It scores each character as it is spelled, so a word outside its training text costs only
+    what its letters cost. Text is looked up lowercase (by `lang`'s rules, see
+    BeamSearchDecoder) unless `lowercase` is False, and punctuation the model doesn't know is
+    passed over: a model trained on plain lowercase text can then be used with a CTC model
+    that writes capitals and punctuation, without penalizing either.
+
+    `character_bonus` is added per scored character, to offset the language model's
+    preference for short transcripts. Scores are natural logarithms; tools that use KenLM's
+    base-10 scores directly (flashlight-text) need an `lm_weight` divided by 2.303 here for
+    the same effect."""
+
+    def __init__(self, path: str | Path, *, space: str = "<sp>", lowercase: bool = True,
+                 lang: str | None = None, character_bonus: float = 0.0):
+        self.character_bonus = _check_weight("character_bonus", character_bonus)
+        self.lang = _check_lang(lang)
+        self.lowercase = lowercase
+        self.space = space
+        self._kenlm, self._model, self.path = _load_kenlm(path)
+        if space not in self._model:
+            raise ValueError(f"{path} has no {space!r} token; is it a character-level model "
+                             "(and is `space` how it writes a space)?")
+
+    def begin(self):
+        state = self._kenlm.State()
+        self._model.BeginSentenceWrite(state)
+        return state
+
+    def score_character(self, state, char: str):
+        if char.isspace():
+            char = self.space
+        else:
+            if self.lowercase:
+                char = _fold(char, self.lang)
+            if char not in self._model and _is_boundary(char):
+                return 0.0, state
+        out = self._kenlm.State()
+        return self._model.BaseScore(state, char, out) * _LN10 + self.character_bonus, out
+
+    def end(self, state) -> float:
+        return self._model.BaseScore(state, "</s>", self._kenlm.State()) * _LN10
+
+
+def _load_kenlm(path):
+    try:
+        import kenlm
+    except ImportError as exc:
+        raise ImportError('A KenLM language model needs the kenlm package: '
+                          'pip install "fast-omniasr[lm]"') from exc
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Language model not found: {path}")
+    return kenlm, kenlm.Model(str(path)), path
+
+
 def _arpa_unigrams(path: Path) -> list[str] | None:
     """The sorted words of an ARPA file's unigram section, or None for a binary model."""
     with path.open("rb") as file:
@@ -123,6 +187,12 @@ def _arpa_unigrams(path: Path) -> list[str] | None:
     return sorted(words)
 
 
+def _check_suffix(value) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 0:
+        raise ValueError(f"hotword_max_suffix must be an integer of 0 or more, got {value!r}")
+    return int(value)
+
+
 def _check_weight(name: str, value) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float, np.number)) \
             or not math.isfinite(value):
@@ -130,15 +200,106 @@ def _check_weight(name: str, value) -> float:
     return float(value)
 
 
-def _check_hotwords(hotwords) -> tuple[str, ...]:
+# Languages that keep dotted and dotless i apart: I is the capital of ı, İ of i.
+_DOTTED_I = {"tur", "aze", "azj", "azb", "kaz", "tat", "crh", "gag"}
+# Turkish final consonants that soften before a vowel ending: Kitaplık, kitaplığa.
+_SOFTENED = {"k": "ğ", "p": "b", "ç": "c", "t": "d"}
+
+
+def _check_lang(lang) -> str | None:
+    """The ISO 639-3 part of a language code such as "tur_Latn"."""
+    if lang is None:
+        return None
+    if not isinstance(lang, str) or not lang.strip():
+        raise TypeError(f"lang must be a language code such as 'tur_Latn', got {lang!r}")
+    return lang.split("_")[0].lower()
+
+
+@functools.lru_cache(maxsize=65536)
+def _fold(char: str, lang: str | None) -> str:
+    """One character in lowercase, as one character wherever possible."""
+    if char in "’ʼ‘":
+        return "'"
+    if lang in _DOTTED_I and char == "I":
+        return "ı"
+    return char.lower().replace("i\u0307", "i")  # Python lowers İ to i + a combining dot
+
+
+@functools.lru_cache(maxsize=65536)
+def _is_boundary(char: str) -> bool:
+    """Whether a character ends a word: spaces, punctuation and symbols, but not apostrophes
+    or the combining marks that some scripts write vowels with."""
+    return char.isspace() or (char != "'" and unicodedata.category(char)[0] in "PSZ")
+
+
+def _fold_text(text: str, lang: str | None) -> str:
+    text = unicodedata.normalize("NFC", text)
+    return "".join(_fold(char, lang) for char in " ".join(text.split()))
+
+
+def _check_hotwords(hotwords, lang) -> tuple[str, ...]:
     if isinstance(hotwords, str):
         raise TypeError("hotwords must be a list of words or phrases, not a single string")
     phrases = []
     for hotword in hotwords:
         if not isinstance(hotword, str) or not hotword.split():
             raise ValueError(f"hotwords must be non-empty strings, got {hotword!r}")
-        phrases.append(" ".join(hotword.split()).lower())
+        phrases.append(_fold_text(hotword, lang))
     return tuple(dict.fromkeys(phrases))
+
+
+class _Hotwords:
+    """Matches hotwords character by character.
+
+    The state is (matches, at_word_start), where each match is (phrase index, characters
+    matched); a match longer than its phrase is spelling an ending."""
+
+    def __init__(self, phrases: tuple[str, ...], max_suffix: int, lang: str | None):
+        self.lang, self.max_suffix = lang, max_suffix
+        # (text, whether only a form with an ending counts, the hotword it stands for)
+        self.phrases = [(phrase, False, phrase) for phrase in phrases]
+        if max_suffix and lang == "tur":
+            self.phrases += [(phrase[:-1] + ("g" if phrase.endswith("nk") else
+                                             _SOFTENED[phrase[-1]]), True, phrase)
+                             for phrase in phrases if phrase[-1] in _SOFTENED]
+        self.by_first = {}
+        for index, (text, _, _) in enumerate(self.phrases):
+            self.by_first.setdefault(text[0], []).append((index, 1))
+
+    def advance(self, matches, at_start: bool, char: str):
+        """The state after `char`, and the hotwords that it completed."""
+        kept, done = [], []
+        boundary = _is_boundary(char)
+        for match in matches:
+            index, count = match
+            text = self.phrases[index][0]
+            if count < len(text):
+                if text[count] == char:
+                    kept.append((index, count + 1))
+            elif boundary:
+                if self._complete(match):
+                    done.append(match)
+            elif char == "'":
+                if self._complete(match):  # before an ending, or a closing quote
+                    kept.append(match if self.max_suffix else (index, len(text) + 1))
+            elif count - len(text) < self.max_suffix:
+                kept.append((index, count + 1))
+        if at_start:
+            kept.extend(self.by_first.get(char, ()))
+        return tuple(kept), boundary or (at_start and char == "'"), done
+
+    def _complete(self, match) -> bool:
+        text, needs_ending, _ = self.phrases[match[0]]
+        return match[1] > len(text) or (match[1] == len(text) and not needs_ending)
+
+    def completed(self, matches) -> list:
+        """The matches that count if the text ends here."""
+        return [match for match in matches if self._complete(match)]
+
+    def progress(self, matches) -> float:
+        """The matched fraction of the best match."""
+        return max((min(1.0, count / len(self.phrases[index][0])) for index, count in matches),
+                   default=0.0)
 
 
 class _Vocabulary:
@@ -161,35 +322,69 @@ class BeamSearchDecoder:
     Each hypothesis is ranked by its CTC log-probability (summed over every alignment of
     its tokens) plus `lm_weight` times the LM log-probability of its completed words plus
     `word_bonus` per completed word (the LM terms only apply with `lm`). `lm` is a path to
-    a KenLM ARPA/binary file (the `lm` extra) or any object implementing `LanguageModel`;
-    it is loaded once, here, and can be shared across calls and threads.
+    a word-level KenLM ARPA/binary file (the `lm` extra), a `CharacterKenLM`, or any object
+    implementing `LanguageModel` or `CharacterLanguageModel`; it is loaded once, here, and
+    can be shared across calls and threads. `word_bonus` defaults to 2.0 with a word-level
+    LM and to 0 with a character-level one, which has its own `character_bonus`.
 
     `hotwords` are words or phrases (case-insensitive) to favour: a hypothesis whose
     current word is a prefix of a hotword gains the matched fraction of `hotword_weight`,
-    and every complete occurrence (bounded by spaces) keeps `hotword_weight`. A hotword
-    can only win where the acoustic model gives it some probability, but too high a weight
-    can put it where it wasn't said.
+    and every complete occurrence (bounded by spaces or punctuation) keeps
+    `hotword_weight`. Hotwords that end at the same place count once. A hotword can only
+    win where the acoustic model gives it some probability, but too high a weight can put
+    it where it wasn't said.
+
+    `hotword_max_suffix` is how many letters may follow a hotword in the same word, for
+    languages that attach endings: with 5, the Turkish hotword "masa" also covers "masaya"
+    and "Masa'dan" (apostrophes don't count). It is 0 by default, whole words only; a short
+    hotword with a long suffix also covers unrelated words that start with it.
+
+    `lang` is the language code of the hotwords, such as "tur_Latn". It matters where the
+    language's rules differ: in Turkish and the other languages with a dotless ı, I is the
+    capital of ı and İ of i; and Turkish hotwords with endings also match with their last
+    consonant softened ("kitaplık", "kitaplığa").
 
     `beam_size` hypotheses survive each frame. Tokens below e^TOKEN_MIN_LOGP in a frame
     are not tried there (unless none is likelier); control and unknown tokens are never
     emitted."""
 
     def __init__(self, beam_size: int = DEFAULT_BEAM_SIZE, *, lm=None,
-                 lm_weight: float = DEFAULT_LM_WEIGHT, word_bonus: float = DEFAULT_WORD_BONUS,
-                 hotwords=(), hotword_weight: float = DEFAULT_HOTWORD_WEIGHT):
+                 lm_weight: float = DEFAULT_LM_WEIGHT, word_bonus: float | None = None,
+                 hotwords=(), hotword_weight: float = DEFAULT_HOTWORD_WEIGHT,
+                 hotword_max_suffix: int = 0, lang: str | None = None):
         self.beam_size = check_beam_size(beam_size)
         self.lm_weight = _check_weight("lm_weight", lm_weight)
-        self.word_bonus = _check_weight("word_bonus", word_bonus)
         self.hotword_weight = _check_weight("hotword_weight", hotword_weight)
-        self.hotwords = _check_hotwords(hotwords)
+        self.lang = _check_lang(lang)
+        self.hotwords = _check_hotwords(hotwords, self.lang)
+        self.hotword_max_suffix = _check_suffix(hotword_max_suffix)
+        self._matcher = _Hotwords(self.hotwords, self.hotword_max_suffix, self.lang)
         if isinstance(lm, (str, Path)):
             lm = KenLM(lm)
-        elif lm is not None and not all(callable(getattr(lm, name, None))
-                                        for name in ("begin", "score", "end")):
-            raise TypeError("lm must be a path to a KenLM model or an object with "
-                            "begin(), score(state, word) and end(state)")
+        characters = callable(getattr(lm, "score_character", None))
+        if lm is not None and not (
+                callable(getattr(lm, "begin", None)) and callable(getattr(lm, "end", None))
+                and (characters or callable(getattr(lm, "score", None)))):
+            raise TypeError("lm must be a path to a KenLM model or an object with begin(), "
+                            "end(state) and score(state, word) or "
+                            "score_character(state, char)")
+        if word_bonus is None:
+            word_bonus = 0.0 if characters else DEFAULT_WORD_BONUS
+        self.word_bonus = _check_weight("word_bonus", word_bonus)
+        self._lm_characters = characters
         self.lm = lm
         self._vocabularies = {}
+
+    def hotword_counts(self, text: str) -> dict[str, int]:
+        """How often each hotword occurs in `text` (folded as in `hotwords`), by the rules
+        of the search: at word boundaries, endings included."""
+        counts = dict.fromkeys(self.hotwords, 0)
+        state = ((), True)
+        for char in _fold_text(text, self.lang) + " ":
+            *state, done = self._matcher.advance(*state, char)
+            for hotword in {self._matcher.phrases[index][2] for index, _ in done}:
+                counts[hotword] += 1
+        return counts
 
     def _vocabulary(self, tokenizer) -> _Vocabulary:
         key = id(tokenizer)
@@ -286,7 +481,7 @@ class _Context:
     def __init__(self, lm_state, lm_logp, words, word, matches, hotword_bonus, at_word_start,
                  partial_logp=0.0):
         self.lm_state = lm_state
-        self.lm_logp = lm_logp  # summed over completed words
+        self.lm_logp = lm_logp  # summed over completed words (or over all characters)
         self.partial_logp = partial_logp  # the LM's partial_score() of `word`
         self.words = words  # completed words
         self.word = word  # the word being spelled
@@ -306,42 +501,36 @@ class _Context:
             word = ""
         else:
             word += text
-        matches, bonus = self._advance_hotwords(text, decoder)
+        if decoder._lm_characters:
+            for char in text:
+                logp, lm_state = decoder.lm.score_character(lm_state, char)
+                lm_logp += logp
+        matches, at_start, bonus = self._advance_hotwords(text, decoder)
         partial = getattr(decoder.lm, "partial_score", None)
         partial_logp = partial(word) if word and partial is not None else 0.0
-        return _Context(lm_state, lm_logp, words, word, matches, bonus, is_space, partial_logp)
+        return _Context(lm_state, lm_logp, words, word, matches, bonus, at_start, partial_logp)
 
     def _complete_word(self, decoder):
-        if decoder.lm is None:
-            return None, 0.0, self.words + 1
+        if decoder.lm is None or decoder._lm_characters:
+            return self.lm_state, self.lm_logp, self.words + 1
         logp, state = decoder.lm.score(self.lm_state, self.word)
         return state, self.lm_logp + logp, self.words + 1
 
     def _advance_hotwords(self, text, decoder):
-        hotwords = decoder.hotwords
         bonus, matches, at_start = self.hotword_bonus, self.matches, self.at_word_start
-        if not hotwords:
-            return (), bonus
-        for char in text.lower():
-            advanced = []
-            for index, count in matches:
-                phrase = hotwords[index]
-                if count == len(phrase):
-                    if char.isspace():
-                        bonus += decoder.hotword_weight  # a whole occurrence
-                elif phrase[count] == char:
-                    advanced.append((index, count + 1))
-            if at_start and not char.isspace():
-                advanced.extend((index, 1) for index, phrase in enumerate(hotwords)
-                                if phrase[0] == char)
-            matches, at_start = tuple(advanced), char.isspace()
-        return matches, bonus
+        if not decoder.hotwords:
+            return (), at_start, bonus
+        for char in text:
+            matches, at_start, done = decoder._matcher.advance(
+                matches, at_start, _fold(char, decoder.lang))
+            if done:
+                bonus += decoder.hotword_weight
+        return matches, at_start, bonus
 
     def score(self, decoder: BeamSearchDecoder) -> float:
         value = self.hotword_bonus
         if self.matches:
-            value += decoder.hotword_weight * max(
-                count / len(decoder.hotwords[index]) for index, count in self.matches)
+            value += decoder.hotword_weight * decoder._matcher.progress(self.matches)
         if decoder.lm is not None:
             value += (decoder.lm_weight * (self.lm_logp + self.partial_logp)
                       + decoder.word_bonus * self.words)
@@ -350,7 +539,7 @@ class _Context:
     def final_score(self, decoder: BeamSearchDecoder) -> float:
         """The score once the clip ends: the last word completes, and so may a hotword."""
         value = self.hotword_bonus
-        if any(count == len(decoder.hotwords[index]) for index, count in self.matches):
+        if decoder._matcher.completed(self.matches):
             value += decoder.hotword_weight
         if decoder.lm is not None:
             lm_state, lm_logp, words = self.lm_state, self.lm_logp, self.words

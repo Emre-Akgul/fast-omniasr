@@ -259,6 +259,13 @@ def test_beam_search_options_build_a_decoder(ctc):
         4, ("cat", "new york"), 3.0, None)
 
 
+def test_hotword_language_and_endings_reach_the_decoder(ctc):
+    run("transcribe", "a.wav", "--model", "m", "--hotword", "IŞIK", "--hotword-lang",
+        "tur_Latn", "--hotword-max-suffix", "5")
+    decoder = ctc.calls[0][2]["decoder"]
+    assert (decoder.hotwords, decoder.lang, decoder.hotword_max_suffix) == (("ışık",), "tur", 5)
+
+
 def test_hotwords_alone_use_the_default_beam(ctc):
     run("transcribe", "a.wav", "--model", "m", "--hotword", "cat")
     assert ctc.calls[0][2]["decoder"].beam_size == BeamSearchDecoder().beam_size
@@ -273,7 +280,10 @@ def test_a_language_model_that_will_not_load_is_a_message(ctc, capsys, tmp_path)
 
 @pytest.mark.parametrize("flags, needed", [(["--lm-weight", "1"], "--lm"),
                                            (["--word-bonus", "1"], "--lm"),
-                                           (["--hotword-weight", "1"], "--hotword")])
+                                           (["--hotword-weight", "1"], "--hotword"),
+                                           (["--hotword-max-suffix", "1"], "--hotword"),
+                                           (["--hotword-lang", "tur_Latn"], "--hotword"),
+                                           (["--lm-unit", "char"], "--lm")])
 def test_beam_search_weights_need_what_they_weigh(flags, needed, capsys):
     with pytest.raises(SystemExit) as stopped:
         run("transcribe", "a.wav", "--model", "m", *flags)
