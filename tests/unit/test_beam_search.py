@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from fast_omniasr import BeamSearchDecoder, OmniASR
-from fast_omniasr.beam_search import KenLM, _arpa_unigrams, align
+from fast_omniasr.beam_search import CharacterKenLM, KenLM, _arpa_unigrams, align
 from fast_omniasr.decoder import greedy_token_ids, greedy_tokens
 from fast_omniasr.tokenizer import Tokenizer
 
@@ -221,12 +221,162 @@ def test_hotwords_only_start_at_a_word_boundary():
     assert decode(spelled("c", "a", "t"), hotwords=["at"]) == "cat"
 
 
+def test_hotwords_can_take_an_ending():
+    # "cat" + "a": without a suffix allowance the ending takes the bonus away again.
+    logits = spelled("c", "a", {"t": 0.45, "r": 0.53}, "a", " ", "f")
+    assert decode(logits, hotwords=["cat"]) == "cara f"
+    assert decode(logits, hotwords=["cat"], hotword_max_suffix=1) == "cata f"
+    longer = spelled("c", "a", {"t": 0.45, "r": 0.53}, "a", "n")
+    assert decode(longer, hotwords=["cat"], hotword_max_suffix=1) == "caran"
+    assert decode(longer, hotwords=["cat"], hotword_max_suffix=2) == "catan"
+
+
+def counts(text, *hotwords, **options):
+    return list(BeamSearchDecoder(hotwords=hotwords, **options).hotword_counts(text).values())
+
+
+@pytest.mark.parametrize("sentence", [
+    "masa", "Masa.", "Masa, sonra", "git masa!", "(masa)", "'masa'", "“Masa”", "masa-kalem"])
+def test_hotwords_end_at_spaces_and_punctuation(sentence):
+    assert counts(sentence, "masa") == [1]
+
+
+@pytest.mark.parametrize("sentence, suffix, expected", [
+    ("masaya git", 0, 0), ("masaya git", 5, 1), ("Masa'ya git.", 0, 0), ("Masa'ya git.", 5, 1),
+    ("Masa’ya git", 5, 1), ("masalarından", 5, 0), ("masalarından", 8, 1), ("ramasa", 5, 0)])
+def test_hotword_endings_are_limited(sentence, suffix, expected):
+    assert counts(sentence, "Masa", hotword_max_suffix=suffix, lang="tur_Latn") == [expected]
+
+
+def test_turkish_capitals():
+    turkish = {"lang": "tur_Latn"}
+    assert counts("ışık IŞIK Işık", "IŞIK", **turkish) == [3]
+    assert counts("IŞIK işik", "ışık", **turkish) == [1]
+    assert counts("İniş iniş INIŞ", "iniş", **turkish) == [2]
+    assert counts("İniş", "iniş") == [1]  # no stray combining dot without a language either
+    assert counts("I\u0307niş", "İniş", **turkish) == [1]  # decomposed
+    assert counts("IN Ice", "in", "ice") == [1, 1]
+
+
+def test_turkish_consonants_soften_before_an_ending():
+    options = {"hotword_max_suffix": 5, "lang": "tur_Latn"}
+    assert counts("kitaplığa", "Kitaplık", **options) == [1]
+    assert counts("kitaplıkta", "Kitaplık", **options) == [1]
+    assert counts("rengi", "renk", **options) == [1]
+    assert counts("kitaplığ", "Kitaplık", **options) == [0]  # only with an ending
+    assert counts("kitaplığa", "Kitaplık", hotword_max_suffix=5) == [0]
+
+
+def test_combining_vowel_signs_are_part_of_the_word():
+    assert counts("काम", "क") == [0]
+    assert counts("काम", "काम") == [1]
+
+
+def test_hotwords_that_end_together_count_once():
+    decoder = BeamSearchDecoder(hotwords=["can fly", "fly"], hotword_weight=1.0)
+    logits = spelled("c", "a", "n", " ", "f", "l", "y")
+    ids = decoder.token_ids(logits, tokenizer())
+    assert text(ids) == "can fly"
+    context = decoder_context(decoder, "can fly ")
+    assert context.hotword_bonus == 1.0
+
+
+def decoder_context(decoder, sentence):
+    from fast_omniasr.beam_search import _Context
+
+    context = _Context.start(decoder.lm)
+    for char in sentence:
+        context = context.extend(char, char == " ", decoder)
+    return context
+
+
+class CharacterLM:
+    """Dislikes one character."""
+
+    def __init__(self, disliked):
+        self.disliked, self.seen = disliked, set()
+
+    def begin(self):
+        return ""
+
+    def score_character(self, state, char):
+        self.seen.add(state + char)
+        return (-5.0 if char == self.disliked else 0.0), state + char
+
+    def end(self, state):
+        return 0.0
+
+
+def test_a_character_language_model_scores_every_character():
+    lm = CharacterLM("r")
+    assert decode(CAT_OR_CAR, lm=lm) == "cat"
+    assert decode(CAT_OR_CAR, lm=lm, lm_weight=0.0) == "car"
+    lm = CharacterLM("r")
+    decode(spelled("c", "a", " ", "t"), lm=lm)
+    assert "ca t" in lm.seen
+    assert BeamSearchDecoder(lm=lm).word_bonus == 0.0
+    assert BeamSearchDecoder(lm=WordLM(set())).word_bonus == 2.0
+    assert BeamSearchDecoder(lm=lm, word_bonus=1).word_bonus == 1.0
+
+
+CHARACTER_ARPA = """\\data\\
+ngram 1=8
+ngram 2=2
+
+\\1-grams:
+-2.0\t<unk>\t0
+-99\t<s>\t-0.3
+-0.7\t</s>\t0
+-0.3\tc\t-0.2
+-0.4\ta\t-0.2
+-0.5\tt\t-0.2
+-0.6\tı\t-0.2
+-0.8\t<sp>\t-0.2
+
+\\2-grams:
+-0.1\tc a
+-0.2\ta t
+
+\\end\\
+"""
+
+
+def test_a_character_kenlm_model(tmp_path):
+    pytest.importorskip("kenlm")
+    path = tmp_path / "characters.arpa"
+    path.write_text(CHARACTER_ARPA, encoding="utf-8")
+    lm = CharacterKenLM(path, lang="tur_Latn", character_bonus=0.5)
+
+    def scored(sentence):
+        state, total = lm.begin(), 0.0
+        for char in sentence:
+            logp, state = lm.score_character(state, char)
+            total += logp
+        return total
+
+    assert scored("Cat,") == scored("cat")  # capitals and unknown punctuation are free
+    cat = (-0.3 - 0.3 - 0.1 - 0.2) * math.log(10) + 3 * 0.5
+    assert scored("cat") == pytest.approx(cat, abs=1e-4)
+    assert scored("I") == scored("ı")
+    assert scored("c c") == pytest.approx(
+        (-0.3 - 0.3 - 0.2 - 0.8 - 0.2 - 0.3) * math.log(10) + 1.5, abs=1e-4)
+    assert scored("q") < scored("a")  # an unknown letter still costs <unk>
+    assert text(BeamSearchDecoder(4, lm=lm).token_ids(CAT_OR_CAR, tokenizer())) == "cat"
+    words = tmp_path / "words.arpa"
+    words.write_text(ARPA)
+    with pytest.raises(ValueError, match="character-level"):
+        CharacterKenLM(words)
+
+
 @pytest.mark.parametrize("options, error", [
     ({"beam_size": 0}, ValueError), ({"beam_size": True}, ValueError),
     ({"beam_size": 2.5}, ValueError), ({"lm_weight": math.nan}, ValueError),
     ({"word_bonus": "1"}, ValueError), ({"hotword_weight": math.inf}, ValueError),
     ({"hotwords": "cat"}, TypeError), ({"hotwords": ["cat", " "]}, ValueError),
     ({"hotwords": [3]}, ValueError), ({"lm": object()}, TypeError),
+    ({"hotword_max_suffix": -1}, ValueError), ({"hotword_max_suffix": True}, ValueError),
+    ({"hotword_max_suffix": 1.5}, ValueError), ({"lang": ""}, TypeError),
+    ({"lang": 3}, TypeError),
 ])
 def test_invalid_options_are_refused(options, error):
     with pytest.raises(error):

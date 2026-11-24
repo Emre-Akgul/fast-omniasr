@@ -14,9 +14,12 @@ PACKAGES = ("numpy", "soundfile", "sentencepiece", "onnxruntime", "onnxruntime-g
             "huggingface-hub", "soxr", "cuda-python")
 CTC_ONLY = {"backend": "--backend", "word_timestamps": "--word-timestamps", "lm": "--lm",
             "lm_weight": "--lm-weight", "word_bonus": "--word-bonus", "hotword": "--hotword",
-            "hotword_weight": "--hotword-weight"}
+            "hotword_weight": "--hotword-weight",
+            "hotword_max_suffix": "--hotword-max-suffix", "hotword_lang": "--hotword-lang",
+            "lm_unit": "--lm-unit"}
 # Beam-search options that only mean something together with another one.
-NEEDS = {"lm_weight": "lm", "word_bonus": "lm", "hotword_weight": "hotword"}
+NEEDS = {"lm_weight": "lm", "word_bonus": "lm", "hotword_weight": "hotword",
+         "hotword_max_suffix": "hotword", "lm_unit": "lm"}
 LLM_ONLY = {"lang": "--lang", "max_new_tokens": "--max-new-tokens",
             "repetition_penalty": "--repetition-penalty", "low_memory": "--low-memory"}
 
@@ -46,6 +49,9 @@ def _check_kind(parser, args) -> None:
     for option, needed in NEEDS.items():
         if _given(args, option) and not _given(args, needed):
             parser.error(f"{CTC_ONLY[option]} needs {CTC_ONLY[needed]}")
+    if _given(args, "hotword_lang") and not (
+            _given(args, "hotword") or getattr(args, "lm_unit", None) == "char"):
+        parser.error("--hotword-lang needs --hotword or --lm-unit char")
 
 
 def _load(args):
@@ -87,12 +93,15 @@ def _decoder(args):
     """A BeamSearchDecoder if any beam-search option was given, else None (greedy)."""
     if not any(_given(args, option) for option in ("beam_size", "lm", "hotword")):
         return None
-    from .beam_search import BeamSearchDecoder
+    from .beam_search import BeamSearchDecoder, CharacterKenLM
 
     options = {option: getattr(args, option)
-               for option in ("beam_size", "lm", "lm_weight", "word_bonus", "hotword_weight")
+               for option in ("beam_size", "lm", "lm_weight", "word_bonus", "hotword_weight",
+                              "hotword_max_suffix")
                if getattr(args, option) is not None}
-    return BeamSearchDecoder(hotwords=args.hotword or (), **options)
+    if args.lm_unit == "char":
+        options["lm"] = CharacterKenLM(args.lm, lang=args.hotword_lang)
+    return BeamSearchDecoder(hotwords=args.hotword or (), lang=args.hotword_lang, **options)
 
 
 def _print_text(path: str, result, many: bool) -> None:
@@ -249,11 +258,20 @@ def build_parser() -> argparse.ArgumentParser:
                                          "fuse with beam search (the lm extra)")
     transcribe.add_argument("--lm-weight", type=float, help="CTC only: LM weight (default 0.5)")
     transcribe.add_argument("--word-bonus", type=float,
-                            help="CTC only: score added per word with --lm (default 2.0)")
+                            help="CTC only: score added per word with --lm "
+                                 "(default 2.0; 0 for a character LM)")
+    transcribe.add_argument("--lm-unit", choices=("word", "char"),
+                            help="CTC only: what --lm was trained on (default word)")
     transcribe.add_argument("--hotword", action="append",
                             help="CTC only: word or phrase to favour; repeatable")
     transcribe.add_argument("--hotword-weight", type=float,
                             help="CTC only: score of a whole hotword (default 5.0)")
+    transcribe.add_argument("--hotword-max-suffix", type=int,
+                            help="CTC only: letters that may follow a hotword in the same "
+                                 "word, for endings (default 0)")
+    transcribe.add_argument("--hotword-lang",
+                            help="CTC only: language code of the hotwords, such as tur_Latn, "
+                                 "for its casing and endings")
     transcribe.set_defaults(handler=_transcribe)
 
     inspect = commands.add_parser("inspect", help="load a model and report what was loaded")
