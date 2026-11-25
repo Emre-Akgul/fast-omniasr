@@ -213,9 +213,16 @@ class ONNXLLMBackend:
             gc.collect()
         return context
 
-    def _initialize_unified(self):
+    def _initialize_unified(self, *, batch_request=False):
+        # BF16 rows close to a decision boundary are replayed on the original graph.
+        # Drop the previous session before loading the other graph's shared weights.
+        use_batched = self.batched and (batch_request or self.precision != "bf16")
+        if self.decoder is not None and self._using_batched != use_batched:
+            self.decoder = None
+            self.keepalive = []
         if self.decoder is None:
-            name = "decoder_batched.onnx" if self.batched else "decoder.onnx"
+            self._using_batched = use_batched
+            name = "decoder_batched.onnx" if use_batched else "decoder.onnx"
             if self.precision == "fp32":
                 self.decoder, self.keepalive = decoder_session(
                     self.directory, name, self.device, self.threads, self.arena,
@@ -227,12 +234,12 @@ class ONNXLLMBackend:
                     self.device_index,
                 )
             inputs = self.decoder.get_inputs()
-            expected = UNIFIED_INPUTS + (["key_padding", "position_ids"] if self.batched else [])
+            expected = UNIFIED_INPUTS + (["key_padding", "position_ids"] if use_batched else [])
             if [value.name for value in inputs] != expected:
                 raise ValueError("Invalid ONNX unified decoder input contract")
             hidden, (heads, dim) = inputs[0].shape[2], inputs[2].shape[2:]
             self.empty_context = np.zeros((1, 0, hidden), np.float32)
-            dtype = np.float16 if self.batched and inputs[2].type == "tensor(float16)" else np.float32
+            dtype = np.float16 if use_batched and inputs[2].type == "tensor(float16)" else np.float32
             self.empty_cache = [np.zeros((1, 0, heads, dim), dtype)] * 24
 
     def initialize_decoder(self):
@@ -288,7 +295,7 @@ class ONNXLLMBackend:
 
     def _run_unified(self, context, tokens, cache):
         self._initialize_unified()
-        if self.batched:
+        if self._using_batched:
             rows = tokens.shape[0]
             past = 0 if cache is None else self.cache_length(cache)
             return self.run_batch(context, tokens, cache, np.zeros(rows, dtype=np.int64), past)
@@ -319,7 +326,7 @@ class ONNXLLMBackend:
         return binding.get_outputs()
 
     def run_batch(self, context, tokens, cache, padding, past):
-        self._initialize_unified()
+        self._initialize_unified(batch_request=True)
         end = past + context.shape[1] + tokens.shape[1]
         extra = {
             "key_padding": (np.arange(end) < padding[:, None])[:, None, None, :],

@@ -45,18 +45,30 @@ def _check_repetition_penalty(penalty) -> float:
     return float(penalty)
 
 
-def _next_token(logits, generated, penalty) -> int:
-    """Greedy choice after the repetition penalty, with the same rule as faster-whisper
-    (CTranslate2): each token generated so far has its score multiplied by `penalty` if
-    negative and divided by it otherwise, so values above 1 discourage repeats."""
-    if not generated or penalty == 1:
-        return int(logits.argmax(-1).item())
+def _penalized_scores(logits, generated, penalty):
     values = logits.float().cpu().numpy() if hasattr(logits, "cpu") else logits
     values = np.array(values, dtype=np.float32, copy=True).reshape(-1)
     ids = np.unique(generated)
     scores = values[ids]
     values[ids] = np.where(scores < 0, scores * penalty, scores / penalty)
-    return int(values.argmax())
+    return values
+
+
+def _next_token(logits, generated, penalty) -> int:
+    """Greedy choice with CTranslate2's sign-dependent repetition penalty."""
+    if not generated or penalty == 1:
+        return int(logits.argmax(-1).item())
+    return int(_penalized_scores(logits, generated, penalty).argmax())
+
+
+def _bf16_near_tie(logits, generated, penalty):
+    """Two bf16 ulps around the winning score, checked after repetition scoring."""
+    values = (_penalized_scores(logits, generated, penalty) if generated and penalty != 1
+              else logits.reshape(-1))
+    second, first = np.partition(values, -2)[-2:]
+    _, exponent = math.frexp(float(max(abs(first), abs(second))))
+    return first - second <= math.ldexp(1.0, exponent - 7)
+
 
 
 def _check_beam_size(beam_size) -> int:
@@ -487,6 +499,7 @@ class OmniASRLLM:
         tokens = np.full((len(rows), 1), self.config["bos_idx"], dtype=np.int64)
         generated = [[] for _ in rows]
         reasons = ["max_new_tokens" if b == m else "context_limit" for b, m in zip(budgets, limits)]
+        replay = []
         cache, past = None, 0
         while rows:
             logits, cache = self.onnx.run_batch(batch, tokens, cache, padding, past)
@@ -495,6 +508,10 @@ class OmniASRLLM:
             past += batch.shape[1] + 1
             active, next_tokens = [], []
             for slot, row in enumerate(rows):
+                if self.onnx.precision == "bf16" and _bf16_near_tie(
+                        logits[slot], generated[row], penalty):
+                    replay.append(row)
+                    continue
                 token = _next_token(logits[slot:slot + 1], generated[row], penalty)
                 if token == self.config["eos_idx"]:
                     reasons[row] = "eos"
@@ -511,8 +528,12 @@ class OmniASRLLM:
                 rows = [rows[slot] for slot in active]
             batch = np.empty((len(rows), 0, batch.shape[2]), dtype=np.float32)
             tokens = np.asarray(next_tokens, dtype=np.int64)[:, None]
-        return [LLMTranscription(self.tokenizer.decode(ids), ids, reason)
-                for ids, reason in zip(generated, reasons)]
+        del cache
+        results = [LLMTranscription(self.tokenizer.decode(ids), ids, reason)
+                   for ids, reason in zip(generated, reasons)]
+        for row in replay:
+            results[row] = self._decode_onnx_context(contexts[row][None], limits[row], penalty)
+        return results
 
     def _check_request(self, max_new_tokens, repetition_penalty, beam_size=1,
                        length_norm=False):
@@ -673,6 +694,11 @@ class OmniASRLLM:
         if language is not None:
             context = np.array(context, copy=True)
             context[:, -1] = language
+        return self._decode_onnx_context(context, max_new_tokens, repetition_penalty,
+                                         beam_size=beam_size, length_norm=length_norm)
+
+    def _decode_onnx_context(self, context, max_new_tokens, repetition_penalty, *,
+                             beam_size=1, length_norm=False):
         budget = min(max_new_tokens, self.config["max_seq_len"] - context.shape[1] - 3)
         if budget < 1:
             raise ValueError("Audio prefix exceeds decoder context capacity")

@@ -236,7 +236,12 @@ results = model.transcribe_batch(["short.wav", "long.wav"], lang="eng_Latn",
 Bundles with `decoder_batched.onnx` encode each clip individually and decode the
 left-padded prefixes together. Memory scales with the longest prefix and the number
 of clips supplied. The fp16 and bf16 variants store K/V tensors as float16, halving
-the bytes held per cached position. Older bundles and Torch models run clips serially.
+the bytes held per cached position. In bf16, batching can change close token scores.
+When the top two scores are within two bf16 units in the last place, the runtime
+replays that clip from its encoded prefix on the original decoder. This costs an
+extra decoder session load and can make bf16 batching slower than serial decoding.
+Single-clip bf16 calls also use the original decoder. Older bundles and Torch
+models run clips serially.
 
 On the three committed FLEURS clips with the 300M v2 fp16 model and token limits of
 4, 32 and 64, the median time for all three clips was 0.70 s batched and 0.99 s

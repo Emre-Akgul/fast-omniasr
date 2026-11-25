@@ -32,17 +32,20 @@ def measure_cache(model, prefixes, repeats):
     results = []
     backend = model.onnx
     for prefix in prefixes:
-        backend.initialize_decoder()
+        backend._initialize_unified(batch_request=backend.batched)
         hidden = backend.empty_context.shape[2]
         ctx = np.random.default_rng(123).normal(size=(1, prefix, hidden)).astype(np.float32)
         token = np.full((1, 1), model.config["bos_idx"], dtype=np.int64)
         medians = []
         for _ in range(repeats):
-            _, cache = backend.prefill(ctx, token)
+            padding = np.zeros(1, dtype=np.int64)
+            _, cache = (backend.run_batch(ctx, token, None, padding, 0) if backend.batched
+                        else backend.prefill(ctx, token))
             times = []
-            for _ in range(48):
+            for step in range(48):
                 start = time.perf_counter()
-                _, cache = backend.decode_step(token, cache)
+                _, cache = (backend.run_batch(ctx[:, :0], token, cache, padding, prefix + 1 + step)
+                            if backend.batched else backend.decode_step(token, cache))
                 times.append(time.perf_counter() - start)
             medians.append(statistics.median(times[8:]) * 1000)
         size = sum(value.nbytes if isinstance(value, np.ndarray)

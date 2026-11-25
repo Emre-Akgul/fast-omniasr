@@ -29,7 +29,7 @@ def test_finished_rows_leave_the_cache_and_results_keep_input_order():
             logits[0, 7] = 1
         return logits, cache
 
-    model.onnx = SimpleNamespace(run_batch=run_batch,
+    model.onnx = SimpleNamespace(precision="fp32", run_batch=run_batch,
                                  select_cache_rows=lambda cache, rows: [v[rows] for v in cache])
     contexts = [np.full((n, 1), value) for value, n in [(1, 2), (2, 3), (3, 1)]]
     results = model._decode_batch(contexts, [4, 8, 1], 1)
@@ -45,3 +45,24 @@ def test_legacy_model_uses_single_clip_path():
     model.transcribe = lambda clip, **kw: (clip, kw["max_new_tokens"])
     assert model.transcribe_batch(["a.wav", "b.wav"], max_new_tokens=[1, 3]) == [
         ("a.wav", 1), ("b.wav", 3)]
+
+
+def test_bf16_tie_replays_only_the_uncertain_row_from_its_unpadded_context():
+    from fast_omniasr.llm.runtime import LLMTranscription
+
+    model = object.__new__(OmniASRLLM)
+    model.config = {"bos_idx": 0, "eos_idx": 2, "max_seq_len": 8}
+    model.tokenizer = SimpleNamespace(decode=str)
+    scores = np.array([[1, 1, 0], [0, 0, 4]], dtype=np.float32)
+    model.onnx = SimpleNamespace(precision="bf16", run_batch=lambda *args: (scores, []))
+    contexts = [np.ones((1, 1)), np.ones((2, 1))]
+    calls = []
+
+    def reference(context, limit, penalty):
+        calls.append((context.shape, limit, penalty))
+        return LLMTranscription("reference", [1], "max_new_tokens")
+
+    model._decode_onnx_context = reference
+    results = model._decode_batch(contexts, [1, 4], 1)
+    assert calls == [((1, 1, 1), 1, 1)]
+    assert [r.token_ids for r in results] == [[1], []]
