@@ -70,7 +70,6 @@ def _bf16_near_tie(logits, generated, penalty):
     return first - second <= math.ldexp(1.0, exponent - 7)
 
 
-
 def _check_beam_size(beam_size) -> int:
     if not isinstance(beam_size, int) or isinstance(beam_size, bool) or beam_size < 1:
         raise ValueError(f"beam_size must be a positive integer, got {beam_size!r}")
@@ -319,6 +318,7 @@ class OmniASRLLM:
         check_precision(precision, device)
         if precision != "fp32":
             required = {f"{precision}/encoder.onnx", f"{precision}/decoder.onnx", "tokenizer.model"}
+
             def variant_files(config):
                 batched = {f"{precision}/decoder_batched.onnx"} & config.get("files", {}).keys()
                 return required | _language_files(config) | batched
@@ -344,7 +344,8 @@ class OmniASRLLM:
             listed = config.get("files", {})
             graphs = {"decoder.onnx"} if "decoder.onnx" in listed else {
                 "decoder_prefill.onnx", "decoder_step.onnx"} & listed.keys()
-            return required | graphs | _language_files(config) | ({"decoder_batched.onnx"} & listed.keys())
+            batched = {"decoder_batched.onnx"} & listed.keys()
+            return required | graphs | _language_files(config) | batched
 
         _, verified, snapshot = download_verified(
             repo_id, fp32_files, revision=revision, cache_dir=cache_dir, dependencies=True,
@@ -431,8 +432,9 @@ class OmniASRLLM:
 
         `beam_size` above 1 runs upstream's beam search instead of greedy decoding
         (upstream's own pipeline uses 5 beams); `length_norm=True` ranks hypotheses by
-        their mean token log-probability, as upstream's `length_norm` option does. Each step runs
-        the decoder once per live beam. Decoding is up to `beam_size` times slower and holds up to `beam_size` K/V caches."""
+        their mean token log-probability, as upstream's `length_norm` option does. Each step
+        runs the decoder once per live beam: decoding is up to `beam_size` times slower and
+        holds up to `beam_size` K/V caches."""
         max_new_tokens, repetition_penalty, beam_size = self._check_request(
             max_new_tokens, repetition_penalty, beam_size, length_norm)
         waveform = (
