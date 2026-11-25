@@ -1,0 +1,47 @@
+{
+  "precision": "fp16",
+  "clips": [
+    "ckb_iq_10408759303206727468.flac",
+    "en_us_10233995782544396174.flac",
+    "tr_tr_10147164563742619338.flac"
+  ],
+  "limits": [
+    4,
+    32,
+    64
+  ],
+  "token_and_stop_parity": [
+    true,
+    true,
+    true
+  ],
+  "serial_seconds": 0.9884037768933922,
+  "batch_seconds": 0.6978541531134397,
+  "serial_clips_per_second": 3.0351968194912873,
+  "batch_clips_per_second": 4.298892521618819,
+  "repeats": 3,
+  "original_cache": [
+    {
+      "prefix_positions": 252,
+      "cache_bytes_after_48_steps": 118358016,
+      "median_step_ms": 9.439900517463684
+    },
+    {
+      "prefix_positions": 1502,
+      "cache_bytes_after_48_steps": 609878016,
+      "median_step_ms": 13.512804405763745
+    }
+  ],
+  "batched_decoder_cache": [
+    {
+      "prefix_positions": 252,
+      "cache_bytes_after_48_steps": 59179008,
+      "median_step_ms": 9.128245990723372
+    },
+    {
+      "prefix_positions": 1502,
+      "cache_bytes_after_48_steps": 304939008,
+      "median_step_ms": 12.233072542585433
+    }
+  ]
+}

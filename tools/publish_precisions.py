@@ -36,7 +36,10 @@ def manifest_files(directory):
     )
     variant_graphs = ["encoder.onnx", "decoder.onnx"] if llm else ["model.onnx"]
     files = set()
-    for graph in graphs + [f"{p}/{g}" for p in PRECISIONS for g in variant_graphs]:
+    candidates = graphs + [f"{p}/{g}" for p in PRECISIONS for g in variant_graphs]
+    if llm:
+        candidates += ["decoder_batched.onnx", *[f"{p}/decoder_batched.onnx" for p in PRECISIONS]]
+    for graph in candidates:
         path = directory / graph
         if path.is_file():
             files.add(path)

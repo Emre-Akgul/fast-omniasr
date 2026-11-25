@@ -97,8 +97,9 @@ model = OmniASR.from_pretrained("EmreAkgul/omniASR-CTC-1B-v2-ONNX", device="cuda
 | `bf16` | CUDA on Ampere or newer GPUs | Same as fp16 with bfloat16; ONNX Runtime has no CPU bf16 kernels |
 
 Only the MatMul weights are converted (`tools/convert_precision.py`): convolutions,
-normalization, softmax, the LLM K/V cache and all inputs/outputs stay float32, because a
-fully fp16 graph overflowed in the LLM decoder. On English, Turkish and Central Kurdish test
+normalization, softmax, audio inputs and logits stay float32, because a fully fp16 graph
+overflowed in the LLM decoder. The original decoder uses a float32 K/V cache. The
+batched decoder uses a float16 cache in the fp16 and bf16 variants. On English, Turkish and Central Kurdish test
 clips, fp16 transcripts matched fp32 for every model; bf16 changed one word in a few runs
 (e.g. "count" -> "county"), the kind of drift upstream's own bf16 default shows. Each repo's
 model card has its numbers and `parity/precision_agreement.json`.
@@ -222,6 +223,32 @@ Measured with `omniASR-CTC-300M-v2` (ONNX FP32, CPU), by decoding the same logit
 | `beam_size=32`, LM | English clip: 26.7 → 6.7 WER | 16.2 / 5.9 | not measured | 23 ms |
 
 The 20-clip sets are the first 20 rows per language of the FLEURS test split. They are not in the repo. Without a language model, `beam_size=8` changed none of the committed clips' transcripts and 9 of the 40 others, mostly by a single letter, space or apostrophe. That is a 0.9-point WER gain in English and no real change in Turkish. With the LM, English WER fell by 2.3 points at `beam_size=8`, at the defaults `lm_weight=0.5`, `word_bonus=2.0`. Those defaults were picked from a sweep on the same 20 clips (at `beam_size=8`, `lm_weight` 0.3–0.8 and `word_bonus` 0–3 gave 16.2–30.1 WER), so the LM gain is optimistic, and a poorly weighted LM makes results worse than greedy. Without the unknown-word penalty, the same LM gave 23.5 WER. Hotwords were only checked by hand, on the committed clips at `beam_size=8`. `["can fly"]` turned "canfly" into "can fly", and `["luna'ya"]` turned the Turkish "zunaya" into "luna'ya". `["dinosaurs"]` replaced "diner storis" only at `hotword_weight=10`. Whether a hotword also gets inserted where it wasn't said was not measured. The times are for decoding alone (Python, on a busy 16-thread CPU) and do not include the model, which is the same for all rows.
+
+For greedy LLM decoding, pass clips in the same language to `transcribe_batch`.
+The return order matches the input order. A list of token limits gives each clip its
+own budget. The decoder removes a row when it reaches EOS or its limit.
+
+```python
+results = model.transcribe_batch(["short.wav", "long.wav"], lang="eng_Latn",
+                                 max_new_tokens=[32, 128])
+```
+
+Bundles with `decoder_batched.onnx` encode each clip individually and decode the
+left-padded prefixes together. Memory scales with the longest prefix and the number
+of clips supplied. The fp16 and bf16 variants store K/V tensors as float16, halving
+the bytes held per cached position. In bf16, batching can change close token scores.
+When the top two scores are within two bf16 units in the last place, the runtime
+replays that clip from its encoded prefix on the original decoder. This costs an
+extra decoder session load and can make bf16 batching slower than serial decoding.
+Single-clip bf16 calls also use the original decoder. Older bundles and Torch
+models run clips serially.
+
+On the three committed FLEURS clips with the 300M v2 fp16 model and token limits of
+4, 32 and 64, the median time for all three clips was 0.70 s batched and 0.99 s
+serially. All three token sequences and stop reasons matched. At a 1,502-position
+prefix, the cache after 48 forced steps used 291 MiB, down from 582 MiB, and median
+step time fell from 13.51 to 12.23 ms. See the
+[benchmark results](benchmarks/llm_300m_v2_batched_decoding.json).
 
 The LLM's output is the model's own, repeats included: nothing is detected or filtered. On audio with no speech it can loop until `max_new_tokens`, which `stop_reason` reports. To discourage that, pass `repetition_penalty`, which works as in faster-whisper: `model.transcribe(audio, lang="eng_Latn", repetition_penalty=1.1)`. Values above 1 penalize tokens already generated, and the default of 1 changes nothing.
 
@@ -429,7 +456,7 @@ there too). `repetition_penalty` applies to each hypothesis's own tokens. Upstre
 compression-ratio early stop is not applied; `max_new_tokens` bounds every hypothesis.
 `beam_size=1` is the greedy path, unchanged.
 
-The exported graphs are batch-one, so each step runs the decoder once per live beam and
+Beam search runs the decoder once per live beam at each step. The
 hypotheses keep their own K/V caches (siblings share their parent's). Decoding time grows
 about linearly with `beam_size`, and so does K/V cache memory: on the GPU without
 `low_memory`, in host memory with it. Measured with `omniASR_LLM_300M_v2` in fp16 on an
@@ -447,10 +474,22 @@ Three of the ten transcripts changed (for example "the caboolture's changes colo
 "the cabbage juice changes color"); peak GPU memory was the same for all four. The sample is
 small and the timings include low_memory's host round trips, so treat these as indicative.
 
-Scope: batch one, clips up to 30 seconds. The zero-shot (`7B_ZS`) and streaming `Unlimited` models use
+Each input clip can be up to 30 seconds long. The zero-shot (`7B_ZS`) and streaming `Unlimited` models use
 other prompt formats and are not supported. Load only trusted model assets.
 
 ### Exporting and validating an LLM model
+
+To add batched decoding to an existing unified ONNX bundle, derive a companion
+graph in each precision directory. It references the external weights already used
+by that precision.
+
+```bash
+python tools/export_batched_decoder.py "$bundle/decoder.onnx" "$bundle/decoder_batched.onnx"
+for precision in fp16 bf16; do
+    python tools/export_batched_decoder.py "$bundle/$precision/decoder.onnx" \
+        "$bundle/$precision/decoder_batched.onnx" --half-cache
+done
+```
 
 Export requires a working upstream `omnilingual_asr` / fairseq2 installation (tested with
 fairseq2 0.6, omnilingual-asr 0.2.0 and PyTorch 2.8):

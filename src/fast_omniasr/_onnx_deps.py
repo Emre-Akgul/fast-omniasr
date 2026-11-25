@@ -206,7 +206,7 @@ _TENSOR_ELEM_TYPE, _TENSOR_SHAPE = 1, 2
 _SHAPE_DIM = 1
 _DIM_VALUE, _DIM_PARAM = 1, 2
 
-ELEMENT_TYPES = {1: "float", 6: "int32", 7: "int64", 10: "float16", 16: "bfloat16"}
+ELEMENT_TYPES = {1: "float", 6: "int32", 7: "int64", 9: "bool", 10: "float16", 16: "bfloat16"}
 
 
 def _text(buf, span):

@@ -50,6 +50,9 @@ def prepare_bundle(directory: Path) -> tuple[dict, list[Path], list[Path]]:
     assets = [directory / name for name in RUNTIME_FILES]
     for graph in ["encoder.onnx", "decoder.onnx", "decoder_prefill.onnx", "decoder_step.onnx"]:
         assets.extend(external_data_files(directory / graph))
+    batched = directory / "decoder_batched.onnx"
+    if batched.is_file():
+        assets.extend([batched, *external_data_files(batched)])
     assets = sorted(set(assets))
     for path in assets:
         if not path.is_file():
@@ -74,6 +77,8 @@ def model_card(config: dict, repo_id: str, directory: Path) -> str:
             f"| ONNX Runtime {device.upper()} | {len(report['clips'])} | {report['total_steps']} "
             f"| {report['max_logit_abs_error']:.3g} | yes |"
         )
+    decoding = ("Batched greedy decoding" if "decoder_batched.onnx" in config["files"]
+                else "Single-clip greedy decoding")
     sizes = sum(entry["size"] for entry in config["files"].values()) / 2**30
     return f"""---
 license: apache-2.0
@@ -151,7 +156,7 @@ Reports are in `parity/`.
 
 ## Limitations
 
-Batch one, clips up to 30 seconds and greedy decoding. Output is not
+{decoding} supports clips up to 30 seconds. Output is not
 expected to match upstream's default five-beam search. This is a format conversion: it
 does not change the upstream model's capabilities, language coverage or accuracy.
 Consult the [upstream repository](https://github.com/facebookresearch/omnilingual-asr)

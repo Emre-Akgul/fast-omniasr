@@ -45,18 +45,29 @@ def _check_repetition_penalty(penalty) -> float:
     return float(penalty)
 
 
-def _next_token(logits, generated, penalty) -> int:
-    """Greedy choice after the repetition penalty, with the same rule as faster-whisper
-    (CTranslate2): each token generated so far has its score multiplied by `penalty` if
-    negative and divided by it otherwise, so values above 1 discourage repeats."""
-    if not generated or penalty == 1:
-        return int(logits.argmax(-1).item())
+def _penalized_scores(logits, generated, penalty):
     values = logits.float().cpu().numpy() if hasattr(logits, "cpu") else logits
     values = np.array(values, dtype=np.float32, copy=True).reshape(-1)
     ids = np.unique(generated)
     scores = values[ids]
     values[ids] = np.where(scores < 0, scores * penalty, scores / penalty)
-    return int(values.argmax())
+    return values
+
+
+def _next_token(logits, generated, penalty) -> int:
+    """Greedy choice with CTranslate2's sign-dependent repetition penalty."""
+    if not generated or penalty == 1:
+        return int(logits.argmax(-1).item())
+    return int(_penalized_scores(logits, generated, penalty).argmax())
+
+
+def _bf16_near_tie(logits, generated, penalty):
+    """Two bf16 ulps around the winning score, checked after repetition scoring."""
+    values = (_penalized_scores(logits, generated, penalty) if generated and penalty != 1
+              else logits.reshape(-1))
+    second, first = np.partition(values, -2)[-2:]
+    _, exponent = math.frexp(float(max(abs(first), abs(second))))
+    return first - second <= math.ldexp(1.0, exponent - 7)
 
 
 def _check_beam_size(beam_size) -> int:
@@ -307,8 +318,13 @@ class OmniASRLLM:
         check_precision(precision, device)
         if precision != "fp32":
             required = {f"{precision}/encoder.onnx", f"{precision}/decoder.onnx", "tokenizer.model"}
+
+            def variant_files(config):
+                batched = {f"{precision}/decoder_batched.onnx"} & config.get("files", {}).keys()
+                return required | _language_files(config) | batched
+
             _, verified, snapshot = download_verified(
-                repo_id, lambda config: required | _language_files(config), revision=revision,
+                repo_id, variant_files, revision=revision,
                 cache_dir=cache_dir, dependencies=True, local_files_only=local_files_only,
                 return_snapshot=True,
             )
@@ -328,7 +344,8 @@ class OmniASRLLM:
             listed = config.get("files", {})
             graphs = {"decoder.onnx"} if "decoder.onnx" in listed else {
                 "decoder_prefill.onnx", "decoder_step.onnx"} & listed.keys()
-            return required | graphs | _language_files(config)
+            batched = {"decoder_batched.onnx"} & listed.keys()
+            return required | graphs | _language_files(config) | batched
 
         _, verified, snapshot = download_verified(
             repo_id, fp32_files, revision=revision, cache_dir=cache_dir, dependencies=True,
@@ -415,9 +432,9 @@ class OmniASRLLM:
 
         `beam_size` above 1 runs upstream's beam search instead of greedy decoding
         (upstream's own pipeline uses 5 beams); `length_norm=True` ranks hypotheses by
-        their mean token log-probability, as upstream's `length_norm` option does. The
-        graphs are batch-one, so each step runs the decoder once per live beam: decoding
-        is up to `beam_size` times slower and holds up to `beam_size` K/V caches."""
+        their mean token log-probability, as upstream's `length_norm` option does. Each step
+        runs the decoder once per live beam: decoding is up to `beam_size` times slower and
+        holds up to `beam_size` K/V caches."""
         max_new_tokens, repetition_penalty, beam_size = self._check_request(
             max_new_tokens, repetition_penalty, beam_size, length_norm)
         waveform = (
@@ -430,6 +447,95 @@ class OmniASRLLM:
         self._warn_without_language(lang)
         return self._decode(waveform, max_new_tokens, self._language(lang), repetition_penalty,
                             beam_size, length_norm)
+
+    def transcribe_batch(self, audios, *, sample_rate=16000, max_new_tokens=512,
+                         lang=None, convert_audio=False, repetition_penalty=1):
+        """Greedy-decode clips in input order with a shared or per-clip token budget.
+
+        Updated ONNX bundles batch the decoder across unequal audio lengths.
+        Legacy bundles and Torch models process the clips sequentially.
+        """
+        clips = list(audios)
+        limits = (list(max_new_tokens) if isinstance(max_new_tokens, (tuple, list))
+                  else [max_new_tokens] * len(clips))
+        if len(limits) != len(clips):
+            raise ValueError("Expected one max_new_tokens value per clip")
+        if not clips:
+            return []
+        if self.backend != "onnx" or not self.onnx.batched:
+            return [self.transcribe(clip, sample_rate=sample_rate, max_new_tokens=limit,
+                                    lang=lang, convert_audio=convert_audio,
+                                    repetition_penalty=repetition_penalty)
+                    for clip, limit in zip(clips, limits)]
+        for limit in limits:
+            self._check_request(limit, repetition_penalty, 1, False)
+        self._warn_without_language(lang)
+        language = self._language(lang)
+        with self._ensure_lock("_lock"):
+            if self.closed:
+                raise RuntimeError("This OmniASRLLM model is closed")
+            contexts = []
+            for clip in clips:
+                audio = (load_audio(clip, convert_audio=convert_audio)
+                         if isinstance(clip, (str, Path))
+                         else prepare_audio(clip, sample_rate, convert_audio=convert_audio))
+                if audio.shape[1] > 30 * 16000:
+                    raise ValueError("This runtime supports clips of at most 30 seconds")
+                ctx = self.onnx.encode(audio)
+                if language is not None:
+                    ctx[:, -1] = language
+                contexts.append(ctx[0])
+            return self._decode_batch(contexts, limits, repetition_penalty)
+
+    def _decode_batch(self, contexts, limits, penalty):
+        lengths = np.array([len(ctx) for ctx in contexts])
+        budgets = np.minimum(limits, self.config["max_seq_len"] - lengths - 3)
+        if np.any(budgets < 1):
+            raise ValueError("Audio prefix exceeds decoder context capacity")
+        width = int(max(lengths))
+        rows = list(range(len(contexts)))
+        batch = np.zeros((len(rows), width, contexts[0].shape[-1]), dtype=np.float32)
+        for i, ctx in enumerate(contexts):
+            batch[i, -len(ctx):] = ctx
+        padding = width - lengths
+        tokens = np.full((len(rows), 1), self.config["bos_idx"], dtype=np.int64)
+        generated = [[] for _ in rows]
+        reasons = ["max_new_tokens" if b == m else "context_limit" for b, m in zip(budgets, limits)]
+        replay = []
+        cache, past = None, 0
+        while rows:
+            logits, cache = self.onnx.run_batch(batch, tokens, cache, padding, past)
+            if not np.isfinite(logits).all():
+                raise RuntimeError("Decoder produced non-finite logits")
+            past += batch.shape[1] + 1
+            active, next_tokens = [], []
+            for slot, row in enumerate(rows):
+                if self.onnx.precision == "bf16" and _bf16_near_tie(
+                        logits[slot], generated[row], penalty):
+                    replay.append(row)
+                    continue
+                token = _next_token(logits[slot:slot + 1], generated[row], penalty)
+                if token == self.config["eos_idx"]:
+                    reasons[row] = "eos"
+                    continue
+                generated[row].append(token)
+                if len(generated[row]) < budgets[row]:
+                    active.append(slot)
+                    next_tokens.append(token)
+            if not active:
+                break
+            if len(active) < len(rows):
+                cache = self.onnx.select_cache_rows(cache, active)
+                padding = padding[active]
+                rows = [rows[slot] for slot in active]
+            batch = np.empty((len(rows), 0, batch.shape[2]), dtype=np.float32)
+            tokens = np.asarray(next_tokens, dtype=np.int64)[:, None]
+        del cache
+        results = [LLMTranscription(self.tokenizer.decode(ids), ids, reason)
+                   for ids, reason in zip(generated, reasons)]
+        for row in replay:
+            results[row] = self._decode_onnx_context(contexts[row][None], limits[row], penalty)
+        return results
 
     def _check_request(self, max_new_tokens, repetition_penalty, beam_size=1,
                        length_norm=False):
@@ -590,6 +696,11 @@ class OmniASRLLM:
         if language is not None:
             context = np.array(context, copy=True)
             context[:, -1] = language
+        return self._decode_onnx_context(context, max_new_tokens, repetition_penalty,
+                                         beam_size=beam_size, length_norm=length_norm)
+
+    def _decode_onnx_context(self, context, max_new_tokens, repetition_penalty, *,
+                             beam_size=1, length_norm=False):
         budget = min(max_new_tokens, self.config["max_seq_len"] - context.shape[1] - 3)
         if budget < 1:
             raise ValueError("Audio prefix exceeds decoder context capacity")

@@ -90,13 +90,16 @@ def test_from_pretrained_rejects_unknown_device_before_download():
         OmniASRLLM.from_pretrained("EmreAkgul/omniASR-LLM-1B-v2-ONNX", device="tpu")
 
 
-def test_from_pretrained_fp16_downloads_only_its_variant(monkeypatch, tmp_path):
+@pytest.mark.parametrize("batched", [False, True])
+def test_from_pretrained_fp16_downloads_only_its_variant(monkeypatch, tmp_path, batched):
     variant = [
         "fp16/encoder.onnx",
         "fp16/encoder.onnx.data",
         "fp16/decoder.onnx",
         "fp16/decoder.onnx.data",
     ]
+    if batched:
+        variant.append("fp16/decoder_batched.onnx")
     shared = ["tokenizer.model", "languages.json", "lang_embeddings.npy"]
     _, fetched = fake_hub(
         monkeypatch, tmp_path, files=[*FILES, "decoder.onnx", *shared[1:], *variant]

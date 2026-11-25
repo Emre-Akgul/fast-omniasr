@@ -334,3 +334,41 @@ def test_fold_file_rewrites_per_tensor_external_model_in_place(tmp_path):
         torch.from_numpy(x).double(), weight, conv.bias.detach().double(), padding=8, groups=4
     ).numpy()
     np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.parametrize("cache_dtype", [np.float32, np.float16])
+def test_batched_decoder_matches_separate_variable_length_prefixes(tmp_path, cache_dtype):
+    from fast_omniasr.llm.onnx_backend import decoder_session
+
+    lowering = load("onnx_lowering", ROOT / "tools/llm_onnx_graphs.py")
+    converter = load("batch_export", ROOT / "tools/export_batched_decoder.py")
+    traced = traced_decoder(tmp_path)
+    with torch.inference_mode():
+        lowering.export_decoder(traced, tmp_path)
+    path = tmp_path / "decoder_batched.onnx"
+    converter.export(tmp_path / "decoder.onnx", path, half_cache=cache_dtype == np.float16)
+    session, _keepalive = decoder_session(tmp_path, path.name)
+    inputs = [value.name for value in session.get_inputs()]
+    cache = [np.empty((2, 0, 4, 8), cache_dtype)] * (len(inputs) - 4)
+    context = torch.randn(2, 9, 32)
+    offsets = np.array([6, 0])[:, None]
+    with torch.inference_mode():
+        reference = [traced.prefill(c[None, offset:], torch.zeros(1, 1, dtype=torch.long))
+                     for c, offset in zip(context, offsets[:, 0])]
+        tokens = np.zeros((2, 1), dtype=np.int64)
+        past = 0
+        for step in range(3):
+            new = context.numpy() if step == 0 else np.empty((2, 0, 32), np.float32)
+            end = past + new.shape[1] + 1
+            padding = (np.arange(end) < offsets)[:, None, None, :]
+            positions = np.maximum(np.arange(past, end) - offsets, 0)
+            feeds = [new, tokens, *cache, padding, positions]
+            logits, *cache = session.run(None, dict(zip(inputs, feeds, strict=True)))
+            expected = torch.cat([pair[0] for pair in reference]).numpy()
+            np.testing.assert_allclose(logits, expected, atol=1e-3 if cache_dtype == np.float16
+                                       else 4e-6, rtol=1e-4)
+            assert all(value.dtype == cache_dtype for value in cache)
+            tokens = expected.argmax(axis=1)[:, None]
+            reference = [traced.decode_step(torch.from_numpy(tokens[i:i + 1]), pair[1])
+                         for i, pair in enumerate(reference)]
+            past = end
