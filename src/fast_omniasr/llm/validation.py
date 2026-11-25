@@ -185,20 +185,26 @@ def validate_graphs(directory: Path, precision: str, config: dict) -> int:
         decoders = {graphs / "decoder_prefill.onnx": [("context", "float", 3),
                                                       ("bos", "int64", 2)],
                     graphs / "decoder_step.onnx": [("token", "int64", 2)]}
+    batched = graphs / "decoder_batched.onnx"
+    if batched.is_file():
+        decoders[batched] = [("context", "float", 3), ("tokens", "int64", 2)]
     for path, leading in decoders.items():
         inputs, outputs = signature(path)
         takes_cache = path.name != "decoder_prefill.onnx"
-        _check_io(path, inputs, leading + ([(n, "float", 4) for n in cache]
-                                           if takes_cache else []), "input")
+        cache_type = "float16" if path == batched and precision != "fp32" else "float"
+        expected = leading + ([(n, cache_type, 4) for n in cache] if takes_cache else [])
+        if path == batched:
+            expected += [("key_padding", "bool", 4), ("position_ids", "int64", 2)]
+        _check_io(path, inputs, expected, "input")
         # The prefill graph names its cache outputs past_* (the step graph's inputs).
         produced = present if takes_cache else cache
-        _check_io(path, outputs, [("logits", "float", 2)] + [(n, "float", 4) for n in produced],
+        _check_io(path, outputs, [("logits", "float", 2)] + [(n, cache_type, 4) for n in produced],
                   "output")
         _fixed(path, "logits", outputs[0][2], 1, vocab, "vocabulary size", "config vocab_size")
-        if path.name == "decoder.onnx":
+        if path in (unified, batched):
             # The runtime builds empty context and cache inputs from these sizes.
             static = [("context", inputs[0][2], [2]),
-                      *[(n, d, [2, 3]) for n, _, d in inputs[2:]]]
+                      *[(n, d, [2, 3]) for n, _, d in inputs[2:2 + len(cache)]]]
             for name, dims, axes in static:
                 if dims is None or any(not isinstance(dims[a], int) for a in axes):
                     _fail(path, f"input {name!r} needs static sizes on axes {axes}, got {dims}")

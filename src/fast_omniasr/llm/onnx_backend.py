@@ -120,7 +120,7 @@ def decoder_session(directory, graph, device="cpu", threads=4, arena="kSameAsReq
 
 
 class ONNXLLMBackend:
-    """Batch-one float32 graphs; K/V caches are opaque values passed back to decode_step.
+    """ONNX encoder and cached decoder sessions for single clips and batches.
 
     With decoder.onnx (the unified graph) one decoder session serves prefill and every
     step, so CUDA holds a single copy of the decoder weights. Older exports fall back to
@@ -132,7 +132,7 @@ class ONNXLLMBackend:
     so small GPUs fit, at the cost of reloading weights for every clip.
 
     precision="fp16"/"bf16" loads the graphs in that subdirectory, whose MatMul weights are
-    half precision (see fast_omniasr.precision); inputs, outputs and caches stay float32.
+    half precision (see fast_omniasr.precision). Their optional batched graphs use fp16 caches.
     """
 
     def __init__(self, directory, device="cpu", threads=4, low_memory=False, precision="fp32",
@@ -154,9 +154,10 @@ class ONNXLLMBackend:
         self.graphs = self.directory if precision == "fp32" else self.directory / precision
         self.arena = "kSameAsRequested" if low_memory else "kNextPowerOfTwo"
         providers(device)
+        self.batched = (self.graphs / "decoder_batched.onnx").is_file()
         self.unified = (self.graphs / "decoder.onnx").is_file()
         self.encoder_session = self.prefill_session = self.step_session = None
-        self.decoder = None
+        self.decoder = self.cache_gather = None
         self.keepalive = []
         # Shrinking returns arena memory after every run; only phased sessions need it.
         self.run_options = run_options(device, self.device_index) if low_memory else None
@@ -178,7 +179,7 @@ class ONNXLLMBackend:
         """Drop every loaded session; they are re-created lazily on the next call.
         low_memory mode uses this to keep a single session resident at a time."""
         self.encoder_session = self.prefill_session = self.step_session = None
-        self.decoder = None
+        self.decoder = self.cache_gather = None
         self.keepalive = []
         gc.collect()
 
@@ -214,22 +215,25 @@ class ONNXLLMBackend:
 
     def _initialize_unified(self):
         if self.decoder is None:
+            name = "decoder_batched.onnx" if self.batched else "decoder.onnx"
             if self.precision == "fp32":
                 self.decoder, self.keepalive = decoder_session(
-                    self.directory, "decoder.onnx", self.device, self.threads, self.arena,
+                    self.directory, name, self.device, self.threads, self.arena,
                     self.device_index,
                 )
             else:
                 self.decoder = session(
-                    self.graphs / "decoder.onnx", self.device, options(self.threads), self.arena,
+                    self.graphs / name, self.device, options(self.threads), self.arena,
                     self.device_index,
                 )
             inputs = self.decoder.get_inputs()
-            if [value.name for value in inputs] != UNIFIED_INPUTS:
+            expected = UNIFIED_INPUTS + (["key_padding", "position_ids"] if self.batched else [])
+            if [value.name for value in inputs] != expected:
                 raise ValueError("Invalid ONNX unified decoder input contract")
             hidden, (heads, dim) = inputs[0].shape[2], inputs[2].shape[2:]
             self.empty_context = np.zeros((1, 0, hidden), np.float32)
-            self.empty_cache = [np.zeros((1, 0, heads, dim), np.float32)] * 24
+            dtype = np.float16 if self.batched and inputs[2].type == "tensor(float16)" else np.float32
+            self.empty_cache = [np.zeros((1, 0, heads, dim), dtype)] * 24
 
     def initialize_decoder(self):
         self._check_open()
@@ -284,19 +288,60 @@ class ONNXLLMBackend:
 
     def _run_unified(self, context, tokens, cache):
         self._initialize_unified()
+        if self.batched:
+            rows = tokens.shape[0]
+            past = 0 if cache is None else self.cache_length(cache)
+            return self.run_batch(context, tokens, cache, np.zeros(rows, dtype=np.int64), past)
+        return self._run_decoder(context, tokens, cache, {})
+
+    @staticmethod
+    def cache_length(cache):
+        first = cache[0]
+        shape = first.shape() if callable(first.shape) else first.shape
+        return shape[1]
+
+    def select_cache_rows(self, cache, rows):
+        """Keep unfinished requests in their current memory domain."""
+        if not self.bound:
+            return [value[rows] for value in cache]
+        if self.cache_gather is None:
+            precision = "fp16" if cache[0].data_type() == "tensor(float16)" else "fp32"
+            path = Path(__file__).resolve().parents[1] / "assets" / f"llm_cache_gather_{precision}.onnx"
+            self.cache_gather = session(path, self.device, options(self.threads), self.arena,
+                                        self.device_index)
+        binding = self.cache_gather.io_binding()
+        indices = np.asarray(rows, dtype=np.int64)
+        binding.bind_cpu_input("rows", indices)
+        for i, value in enumerate(cache):
+            binding.bind_ortvalue_input(f"cache_{i}", value)
+            binding.bind_output(f"selected_{i}", "cuda", self.device_index or 0)
+        self.cache_gather.run_with_iobinding(binding)
+        return binding.get_outputs()
+
+    def run_batch(self, context, tokens, cache, padding, past):
+        self._initialize_unified()
+        end = past + context.shape[1] + tokens.shape[1]
+        extra = {
+            "key_padding": (np.arange(end) < padding[:, None])[:, None, None, :],
+            "position_ids": np.maximum(np.arange(past, end, dtype=np.int64) - padding[:, None], 0),
+        }
+        return self._run_decoder(context, tokens, cache, extra)
+
+    def _run_decoder(self, context, tokens, cache, extra):
+        host = {"context": context, "tokens": tokens, **extra}
+        device = []
+        if cache is None:
+            empty = self.empty_cache[0]
+            shape = (tokens.shape[0], *empty.shape[1:])
+            cache = [np.empty(shape, empty.dtype)] * len(self.empty_cache)
+        for name, value in zip(UNIFIED_INPUTS[2:], cache, strict=True):
+            if self.bound and not isinstance(value, np.ndarray):
+                device.append((name, value))
+            else:
+                host[name] = value
         if self.bound:
-            if cache is None:
-                host = dict(zip(UNIFIED_INPUTS, [context, tokens, *self.empty_cache]))
-                return self._run_bound(self.decoder, host)
-            return self._run_bound(
-                self.decoder,
-                {"context": context, "tokens": tokens},
-                zip(UNIFIED_INPUTS[2:], cache, strict=True),
-            )
-        feeds = [context, tokens, *(self.empty_cache if cache is None else cache)]
-        outputs = self.decoder.run(
-            None, dict(zip(UNIFIED_INPUTS, feeds, strict=True)), self.run_options
-        )
+            return self._run_bound(self.decoder, host, device)
+        outputs = self.decoder.run(None, host, self.run_options)
         return outputs[0], outputs[1:]
 
     def prefill(self, context, bos):
